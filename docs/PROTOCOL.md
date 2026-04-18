@@ -1,0 +1,679 @@
+# DreamBall Protocol
+
+**Status:** Draft v0 — 2026-04-18
+**File extension:** `.jelly`
+**Media type:** `application/jelly+cbor` (binary), `application/jelly+json` (export)
+**Sister project:** [recrypt](../../recrypt/) — shares cryptographic methodology (see `recrypt/docs/wire-protocol.md`)
+
+---
+
+## 1. Elevator pitch
+
+A **DreamBall** is a self-contained, signed, evolvable container that bundles three axes of an "aspect":
+
+| Axis       | What it holds                                                        |
+| ---------- | -------------------------------------------------------------------- |
+| **look**   | visual representation — URLs or embedded GLB/GLTF/splat/image assets |
+| **feel**   | personality — tone, values, voice, affective profile                 |
+| **act**    | executable layer — LLM model refs, system prompts, skills, scripts   |
+
+DreamBalls are addressed by an **Ed25519 public key** (the container's identity key) and carry **dual signatures** (Ed25519 + ML-DSA-87) for classical + post-quantum integrity — the same hybrid model as recrypt.
+
+The lifecycle has three named stages:
+
+| Stage          | Meaning                                                              |
+| -------------- | -------------------------------------------------------------------- |
+| **DreamSeed**  | Early/nascent form. Minimal slots filled. Growing.                   |
+| **DreamBall**  | Fruition form. Populated, signed, shareable. Can be added to over time. |
+| **DragonBall** | Sealed form. Compressed and optionally encrypted. 3D assets may be attached/embedded for transport. |
+
+### 1.1 What a DreamBall is **not**
+
+- Not a fork/clone artifact. Development is **ongoing and additive** — more like a living document on a shared drive than a Git tree. Branching exists as _containment_ (a DreamBall referencing another), not as copy-and-diverge.
+- Not a monolithic blob. DreamBalls nest; the structure is a **directed graph** of containment with fractal, self-similar internal organization. A DreamBall may contain other DreamBalls (by fingerprint reference or by embedded envelope).
+- Not private by default. The protocol is **open** — the binary wire format has an exhaustive JSON export, and consumers that cannot parse CBOR can still read every field.
+
+---
+
+## 2. Design conventions (inherited from recrypt)
+
+The protocol reuses recrypt's wire conventions verbatim, except where noted:
+
+1. **CBOR wire format, dCBOR-style determinism.** Map keys sorted canonically, smallest integer encoding, no floats in protocol fields, no indefinite-length items, tagged timestamps (`#6.1`), tagged envelopes (`#6.200`) and leaves (`#6.201`). See [recrypt wire-protocol §2.1](../../recrypt/docs/wire-protocol.md#21-dcbor).
+2. **Envelope = subject + assertions.** Load-bearing anchors (`type`, `format-version`, identity key, content hashes) go in the subject. Mutable, elidable, descriptive metadata goes in assertions.
+3. **Dual signatures, both required.** Every signed DreamBall carries exactly one Ed25519 and one ML-DSA-87 `'signed'` assertion. A verifier that sees only one MUST reject.
+4. **Salted assertions for low-entropy elidable fields** (timestamps, small enums, templated strings). See [recrypt wire-protocol §6](../../recrypt/docs/wire-protocol.md#6-salting-policy).
+5. **Fingerprint = `Blake3(Ed25519 public key)`**, 32 bytes, base58 for display.
+6. **`format-version` in every subject.** Parsers reject unknown versions before reading further.
+7. **Three interchange formats**, same bytes underneath:
+
+| Format      | Extension    | Primary use                        |
+| ----------- | ------------ | ---------------------------------- |
+| CBOR        | `.jelly`     | canonical binary; the authority    |
+| JSON        | `.jelly.json` | open-protocol export; readable in any stack |
+| ASCII armor | `.jelly.asc` | copy-paste / email / printed backups |
+
+The CBOR bytes are authoritative. JSON and armor are wrappings of the same semantic content.
+
+---
+
+## 3. CBOR tags
+
+| Tag      | Role                                   | Owner                |
+| -------- | -------------------------------------- | -------------------- |
+| `#6.200` | Envelope                               | Blockchain Commons   |
+| `#6.201` | Leaf (dCBOR-encoded subject)           | Blockchain Commons   |
+| `#6.1`   | Epoch time (RFC 8949)                  | IETF                 |
+| `#6.???` | `jelly.asset-ref` (content-addressed)  | TBD — private-use until registered |
+| `#6.???` | `jelly.dreamball-ref` (fingerprint)    | TBD — private-use until registered |
+
+---
+
+## 4. Domain types
+
+### 4.1 `jelly.dreamball`
+
+The primary envelope — represents a single DreamBall at any stage of its lifecycle.
+
+```
+200(                                              ; envelope
+  201(                                            ; leaf subject
+    {
+      "type":           "jelly.dreamball",
+      "format-version": 1,
+      "stage":          "dreamball",              ; "seed" | "dreamball" | "dragonball"
+      "identity":       h'...32 bytes...',        ; Ed25519 public key (the DreamBall's ID)
+      "genesis-hash":   h'...32 bytes...'         ; Blake3 of the initial seed payload; immutable
+    }
+  )
+) [
+           "name":          "Aspect of Curiosity",
+  [salted] "created":       1(1712534400),
+  [salted] "updated":       1(1713000000),
+           "revision":      7,                     ; monotonic; bumped on every signed update
+  [salted] "note":          "Draft personality for the hummingbird line",
+
+  ; === look / feel / act slots ===
+           "look":          <jelly.look envelope>,
+           "feel":          <jelly.feel envelope>,
+           "act":           <jelly.act envelope>,
+
+  ; === graph linkage (fractal containment) ===
+           "contains":      h'...32 bytes...',     ; fingerprint of a nested DreamBall, repeatable
+           "derived-from":  h'...32 bytes...',     ; optional origin-seed fingerprint, repeatable
+
+           'signed':        Signature(ed25519, ...),
+           'signed':        Signature(ml-dsa-87, ...)
+]
+```
+
+**Subject fields** (all load-bearing):
+
+| Field            | Type     | Meaning                                          |
+| ---------------- | -------- | ------------------------------------------------ |
+| `type`           | string   | `"jelly.dreamball"`                              |
+| `format-version` | u32      | `1`                                              |
+| `stage`          | string   | `"seed"` → `"dreamball"` → `"dragonball"`        |
+| `identity`       | 32 bytes | Ed25519 public key; the container's identity    |
+| `genesis-hash`   | 32 bytes | Blake3 of the canonical seed payload; immutable |
+
+`identity` and `genesis-hash` together uniquely name the DreamBall across its entire lifetime. Updates bump `revision` and re-sign; they do not change these two fields.
+
+**Assertions of note:**
+
+- `look` / `feel` / `act` are **nested envelopes**, each defined below. They may be elided (replaced with their digest) when transporting a "pointer only" view of the DreamBall.
+- `contains` carries the fingerprint of a nested DreamBall (graph edge). A DreamBall that aggregates others looks like a hub with many `contains` assertions.
+- `derived-from` records inspirational ancestry without implying the current DreamBall is a mutable copy of the ancestor.
+- `revision` is the only way to tell two envelopes with the same `identity` + `genesis-hash` apart. Verifiers picking "the current state" MUST pick the highest-revision envelope whose signatures verify.
+
+### 4.2 `jelly.look` (evolving)
+
+**Status:** v1 is the simple asset-list shape below. v2 is actively being
+designed around form-independence — see [`docs/VISION.md` §4](VISION.md#4-form-independence-in-the-look-slot-in-progress)
+for the full rationale (shader-first layer, optional addressable base mesh,
+graticule refs, resolution declarations). v2 will land as *additive*
+assertions so v1 envelopes keep working.
+
+```
+200(
+  201(
+    {
+      "type":           "jelly.look",
+      "format-version": 1
+    }
+  )
+) [
+  "asset":           <jelly.asset envelope>,       ; repeatable — GLB, GLTF, splat, image, etc.
+  "preview":         <jelly.asset envelope>,       ; optional — low-res/thumb
+  "background":      "color:#0b1020",              ; or asset ref
+  [salted] 'note':   "hummingbird silhouette, neon sugar palette"
+
+  ; Reserved for v2 (ignored by v1 parsers; planned shape sketched only):
+  ; "shader":     <jelly.shader envelope>          ; material/shader graph
+  ; "base-mesh":  <jelly.mesh envelope>            ; addressable topology
+  ; "graticule":  <jelly.graticule envelope>       ; space-distribution map
+  ; "resolution": 8                                 ; declared quantisation level
+]
+```
+
+The philosophical reason the v2 slots exist: mesh+texture assets bind the
+visual identity to a specific topology, which breaks when the mesh is
+substituted or re-topologised. Shaders, addressable base meshes, and
+graticules each travel across topology changes, so a DreamBall's `look`
+survives re-rigging, re-meshing, and medium changes (splat ↔ mesh ↔ SDF).
+
+### 4.3 `jelly.feel`
+
+```
+200(
+  201(
+    {
+      "type":           "jelly.feel",
+      "format-version": 1
+    }
+  )
+) [
+  "personality":     "playful, quick, precise, occasionally snarky",
+  "voice":           "young, curious, fast cadence",
+  "values":          ["curiosity", "clarity", "kindness"],
+  "tempo":           "fast",
+  [salted] 'note':   "leans toward wit over warmth"
+]
+```
+
+### 4.4 `jelly.act`
+
+The executable layer. References an LLM model, carries a system prompt, lists skills, scripts, and tool affordances. All script bodies are either **embedded** (short) or **referenced by `jelly.asset`** (large).
+
+```
+200(
+  201(
+    {
+      "type":           "jelly.act",
+      "format-version": 1
+    }
+  )
+) [
+  "model":           "claude-opus-4-7",
+  "system-prompt":   "You are an aspect of curiosity...",
+  "skill":           <jelly.skill envelope>,        ; repeatable
+  "script":          <jelly.asset envelope>,        ; repeatable, when script body is large
+  "tool":            "web.search",                  ; named tool affordance, repeatable
+  [salted] 'note':   "avoid invoking shell tools without explicit user intent"
+]
+```
+
+`jelly.skill` is a small envelope (`name`, `trigger`, `body` or `asset-ref`, optional `requires` list). Spelled out in §4.7.
+
+### 4.5 `jelly.asset`
+
+Any binary or URL-addressable payload (3D, image, script text, JSON blob).
+
+```
+200(
+  201(
+    {
+      "type":           "jelly.asset",
+      "format-version": 1,
+      "media-type":     "model/gltf-binary",        ; RFC 6838 media type
+      "hash":           h'...32 bytes...'           ; Blake3 of the byte content
+    }
+  )
+) [
+  "url":             "https://cdn.example/dreams/abc.glb",   ; zero-or-more; resolvable locations
+  "embedded":        h'...raw bytes...',                     ; optional — inline payload
+  [salted] "size":   1048576,
+  [salted] 'note':   "low-poly day variant"
+]
+```
+
+An asset MUST have at least one of `url` or `embedded`. Consumers verify `hash` against whichever representation they fetch.
+
+**Splat media types** (v2 addition). When `media-type` matches one of the values below, renderers route the asset to a gaussian-splat pipeline (PlayCanvas in the reference implementation) instead of the default mesh/texture path:
+
+| Media type                                 | Format                                                       |
+|--------------------------------------------|--------------------------------------------------------------|
+| `application/vnd.playcanvas.gsplat+sog`    | SOG — SuperSplat Optimized Gaussian. **The ordered format** — sorted by spatial / morton index so the renderer can stream + draw progressively without a global sort. **Priority** for v2. |
+| `model/gsplat-sog`                         | Neutral alias for SOG                                        |
+| `model/gsplat-ply`                         | Compressed PLY (the community standard)                      |
+| `application/vnd.playcanvas.gsplat+ply`    | PlayCanvas compressed PLY alias                              |
+| `model/gsplat`                             | Plain PLY (non-compressed fallback)                          |
+
+Splats are the topology-free rendering mode — no mesh, no UVs, just spatial distribution of gaussian primitives. This is why `docs/VISION.md §4.4.5` privileges them as the most honest expression of the omnispherical-graticule idea. The reference renderer exposes them via the `splat` lens in the Svelte library. Future splat formats (`.splat`, `.ksplat`, `.spz`) land behind the same media-type registry as they gain PlayCanvas or independent-handler support.
+
+### 4.6 `jelly.key-bundle`
+
+Public-key bundle for a DreamBall's author/owner. Same shape as recrypt's `recrypt.public-key-bundle`, re-namespaced.
+
+```
+200(
+  201(
+    {
+      "type":           "jelly.key-bundle",
+      "format-version": 1,
+      "ed25519":        h'...32 bytes...',
+      "ml-dsa-87":      h'...~2592 bytes...'
+    }
+  )
+) [
+           "fingerprint": h'...32 bytes...',         ; Blake3(ed25519)
+  [salted] "created":     1(1712534400),
+  [salted] 'note':        "minted on kite-flyer.local"
+]
+```
+
+### 4.7 `jelly.skill`
+
+A single skill definition.
+
+```
+200(
+  201(
+    {
+      "type":           "jelly.skill",
+      "format-version": 1,
+      "name":           "answer-with-citation"
+    }
+  )
+) [
+  "trigger":         "when user asks a factual question",
+  "body":            "...prompt text...",            ; small bodies inline
+  "asset":           <jelly.asset envelope>,         ; large bodies referenced
+  "requires":        "web.search",                   ; tool dep, repeatable
+  [salted] 'note':   "tested 2026-04"
+]
+```
+
+---
+
+## 5. Lifecycle: Seed → Ball → Dragon
+
+### 5.1 DreamSeed
+
+A DreamSeed is a `jelly.dreamball` with:
+
+- `stage = "seed"`,
+- at least `identity` and `genesis-hash` populated,
+- any subset of `look` / `feel` / `act` slots (often just one),
+- dual signatures over whatever is present.
+
+The seed's `genesis-hash` becomes the container's permanent origin anchor for the rest of its life.
+
+### 5.2 DreamBall (fruiting/ongoing)
+
+Promotion is a **re-sign**, not a copy. Producers:
+
+1. Add/update assertions on the same `identity`/`genesis-hash` subject.
+2. Bump `revision`.
+3. Update `updated` (salted).
+4. Re-sign (Ed25519 + ML-DSA-87).
+
+Consumers pick the highest-revision envelope that verifies. Older revisions are historical, not garbage — they may be retained for provenance.
+
+**Containment, not forking.** To "remix" a DreamBall, create a _new_ DreamBall (new `identity`) whose `derived-from` assertion points to the source's fingerprint. The source is untouched; the new one has its own lifecycle.
+
+### 5.3 DragonBall (sealed)
+
+A DragonBall is a DreamBall that has been **compressed and optionally encrypted** for transport.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ JELLY magic (4B "JELY") | version (1B) | flags (1B)         │
+│ seal-type (1B) | reserved (1B)                              │
+│ envelope-length (u32 little-endian)                          │
+│ envelope-bytes: zstd( dCBOR( jelly.dreamball envelope ) )    │
+│ attachment-count (u16 little-endian)                         │
+│ [ attachment-length (u32) | attachment-bytes ] * count       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- **Magic:** ASCII `"JELY"` (0x4A 0x45 0x4C 0x59).
+- **Version byte:** `1`.
+- **Flags byte (bitfield):**
+
+  | Bit | Meaning                                     |
+  | --- | ------------------------------------------- |
+  | 0   | `envelope` is zstd-compressed               |
+  | 1   | `envelope` is encrypted (via recrypt KEM)   |
+  | 2   | One or more `attachment` slots are encrypted |
+  | 3–7 | reserved                                    |
+
+- **seal-type:**
+
+  | Value | Meaning                                                    |
+  | ----- | ---------------------------------------------------------- |
+  | `0`   | plain (CBOR envelope, possibly compressed)                 |
+  | `1`   | recrypt-wrapped (bytes decode as a `recrypt.encrypted-file` envelope wrapping the DreamBall CBOR) |
+
+- **Attachments:** optional raw bytes for large assets (GLB/GLTF/splats) whose hashes are referenced from `jelly.asset` envelopes inside the DreamBall. Attachments let a sealed DreamBall travel with its heavy visuals rather than depending on external URLs.
+
+Unsealing is the reverse: verify magic → check version → decompress → (optional) recrypt-decrypt → parse envelope → verify signatures → resolve attachment hashes.
+
+### 5.4 Stage transitions
+
+| From        | To           | What changes                                                 |
+| ----------- | ------------ | ------------------------------------------------------------ |
+| seed        | dreamball    | `stage` flips; `revision++`; usually more slots filled; re-sign |
+| dreamball   | dragonball   | Serialize → (zstd) → (encrypt) → wrap in sealed-file header; inner envelope unchanged |
+| dragonball  | dreamball    | Unseal as above; inner envelope identical to what was sealed |
+
+A DragonBall's inner envelope still says `stage = "dreamball"` — the dragon form is purely a transport wrapper. The `stage = "dragonball"` value exists for envelopes that are _born_ sealed (e.g., a sealed-only distribution artifact that never existed in open form).
+
+---
+
+## 6. Graph model
+
+DreamBalls form a directed graph:
+
+- **`contains`** edges: this DreamBall embeds/depends-on that one. Containment is transitive — a DreamBall containing a DreamBall that contains another effectively contains the grandchild. Cycles are forbidden.
+- **`derived-from`** edges: this DreamBall was inspired by that one. Not transitive. No effect on signature validation.
+
+The structure is **fractal** in the sense that any sub-DreamBall has the same shape as the whole — look/feel/act slots, signatures, optional further containment. A renderer written for the top-level DreamBall works unchanged on any descendant.
+
+The structure is **symmetric** in that all containment edges are the same kind — there is no distinction between "parent" and "primary" children. A hub DreamBall with ten `contains` assertions treats each child equally.
+
+---
+
+## 7. JSON export
+
+The JSON export is a **lossless rendering** of the CBOR envelope tree. Every CBOR field becomes a JSON field with the same name. Byte strings become base58-encoded strings prefixed with `"b58:"`. CBOR tag 1 timestamps become RFC 3339 strings.
+
+```json
+{
+  "type": "jelly.dreamball",
+  "format-version": 1,
+  "stage": "dreamball",
+  "identity": "b58:3xqJ...",
+  "genesis-hash": "b58:5tYn...",
+  "revision": 7,
+  "name": "Aspect of Curiosity",
+  "created": "2024-04-08T00:00:00Z",
+  "look":  { "type": "jelly.look",  "format-version": 1, "asset": [...] },
+  "feel":  { "type": "jelly.feel",  "format-version": 1, "personality": "..." },
+  "act":   { "type": "jelly.act",   "format-version": 1, "model": "claude-opus-4-7", "system-prompt": "..." },
+  "contains": ["b58:..."],
+  "signatures": [
+    { "alg": "ed25519",   "value": "b58:..." },
+    { "alg": "ml-dsa-87", "value": "b58:..." }
+  ]
+}
+```
+
+JSON import/export MUST round-trip to identical CBOR bytes when the JSON was produced by the canonical exporter. Hand-authored JSON going to CBOR is allowed but the reverse ("was this edited?") is out of scope.
+
+---
+
+## 8. Signature model
+
+Identical to recrypt (see [recrypt wire-protocol §4](../../recrypt/docs/wire-protocol.md#4-signature-model)):
+
+1. Producer constructs the envelope with subject + all non-signature assertions.
+2. Producer calls the library's `add_signatures(ed25519, ml-dsa-87)`; the library computes the signed digest and appends two `'signed'` assertions.
+3. Verifier counts signatures (must be exactly two, one of each algorithm), verifies both, rejects on any failure.
+
+Signatures cover the subject digest plus every non-elided assertion's digest at signing time. Eliding a salted assertion after signing is valid.
+
+---
+
+## 9. Versioning
+
+Each envelope carries `format-version` in its subject. Additive changes (new assertion predicates) do not bump the version. New subject fields or removed subject fields do. See [recrypt wire-protocol §10](../../recrypt/docs/wire-protocol.md#10-versioning-and-evolution).
+
+Current version floor: `1` for every domain type.
+
+---
+
+## 10. Interop with recrypt
+
+- **Key bundles are compatible.** A `jelly.key-bundle` and a `recrypt.public-key-bundle` use identical key encoding. Tooling that already has a recrypt identity can sign DreamBalls with the same keypair.
+- **Sealing uses recrypt.** DragonBalls with `seal-type = 1` are plain recrypt encrypted-file envelopes whose plaintext payload is the DreamBall envelope bytes. Recrypt's proxy-recryption story applies unchanged — a sealed DreamBall can be shared with new recipients by asking recrypt's recryption proxy to rewrap the KEM.
+- **Storage is compatible.** Content-addressed storage (Blake3 of the envelope bytes) lets DreamBalls live in recrypt's blob store with no protocol collision.
+
+---
+
+## 11. Open questions
+
+1. **CBOR tag registration.** `jelly.asset-ref` and `jelly.dreamball-ref` need real tag numbers. Coordinate with recrypt's private-use tag registration.
+2. **Attachment deduplication.** When a nested DreamBall and its parent both reference the same asset, DragonBall format currently stores the attachment twice. Consider a per-file asset table indexed by Blake3.
+3. **Graph cycle detection.** Producers must not create containment cycles; do we enforce at encode time, verify time, or both?
+4. **Large system prompts.** Should the wire format cap inline string lengths and force spill to `jelly.asset` past some threshold (e.g., 64 KiB) for parser predictability?
+5. **"Born-dragon" envelopes.** Is there a use for a DreamBall that never existed in open form? If so, `stage = "dragonball"` inside the inner envelope carries meaning; if not, drop that value and always use `"dreamball"` inside a sealed wrapper.
+
+---
+
+## 12. Protocol v2 — typed DreamBalls, memory, guilds, transmission
+
+**Version:** `format-version: 2` on every new envelope type introduced here. v1 envelopes continue to round-trip through v2 parsers unchanged.
+
+**Rationale:** v1 shipped one `jelly.dreamball` envelope treated as a monolith. v2 recognises that DreamBalls are **MTG-style categories with different effects** (creature ≠ artifact ≠ land); each type demands different slot surfaces and renderer behaviour. v2 also gives DreamBalls the slots they need to be agents (memory, knowledge, emotion, skills) and the keyspace-style grouping to transmit skills across bodies. See [`docs/VISION.md` §10](VISION.md#10-the-six-type-taxonomy-mtg-style) for the why.
+
+### 12.1 The six typed DreamBalls
+
+Every v2 DreamBall subject carries a `type` field selected from:
+
+| Subject `type` | Shape | Primary lens(es) |
+|---|---|---|
+| `jelly.dreamball.avatar` | look-heavy; minimal act | avatar, thumbnail |
+| `jelly.dreamball.agent`  | act-heavy; model + memory + KG + emotion + skills | knowledge-graph, emotional-state |
+| `jelly.dreamball.tool`   | single skill payload, transferable | thumbnail, flat |
+| `jelly.dreamball.relic`  | sealed inner envelope; reveals on unlock | omnispherical, flat |
+| `jelly.dreamball.field`  | omnispherical-grid parameters; ambient layer | omnispherical |
+| `jelly.dreamball.guild`  | members list + keyspace ref + per-slot policy | flat, knowledge-graph |
+
+The v1 bare `jelly.dreamball` value remains legal (untyped). Producers SHOULD migrate to one of the six typed values; consumers that see `jelly.dreamball` with no subtype MUST treat it as the Avatar variant (safest default).
+
+All six share the v1 subject fields (`format-version`, `stage`, `identity`, `genesis-hash`, `revision`) and add **zero load-bearing subject fields** — the difference between types lives in which *assertions* the consumer expects to find.
+
+#### 12.1.1 `jelly.dreamball.avatar`
+
+Populated assertion surface: `look`, `feel` (optional), `name`, `note`, optional `wearer` (a fingerprint indicating the current wearer — informational; not a security claim).
+
+Example:
+```
+200(
+  201({ "type": "jelly.dreamball.avatar", "format-version": 2,
+        "identity": h'…32…', "genesis-hash": h'…32…', "revision": 3,
+        "stage": "dreamball" })
+) [
+  "name":   "Hummingbird Hat",
+  "look":   <jelly.look envelope>,
+  "feel":   <jelly.feel envelope>,
+  [salted] "wearer": h'…32…',
+  'signed': ..., 'signed': ...
+]
+```
+
+#### 12.1.2 `jelly.dreamball.agent`
+
+Full act surface plus the four new v2 agent assertions:
+- `act` — v1-compatible skill + tool + model + prompt slot
+- `memory` — `jelly.memory` envelope (§12.3)
+- `knowledge-graph` — `jelly.knowledge-graph` envelope (§12.4)
+- `emotional-register` — `jelly.emotional-register` envelope (§12.5)
+- `interaction-set` — `jelly.interaction-set` envelope (§12.6), repeatable
+- `personality-master-prompt` — text (the top-level system prompt; distinct from per-skill prompts)
+- `secret` — `jelly.secret-ref` (§12.8), repeatable
+
+#### 12.1.3 `jelly.dreamball.tool`
+
+A transferable skill. Carries exactly one `skill` assertion (a `jelly.skill` envelope) and an optional `applicable-to` (list of DreamBall type names this Tool can attach to — defaults to `["jelly.dreamball.agent"]`).
+
+#### 12.1.4 `jelly.dreamball.relic`
+
+Wraps a sealed inner DreamBall. Subject adds `sealed-payload-hash` (Blake3 of the sealed inner envelope bytes) and `unlock-guild` (Guild fingerprint whose keyspace can unlock). Assertion `reveal-hint` is an optional short text shown to would-be unlockers. Attachment slot in the `.jelly` file carries the sealed bytes.
+
+#### 12.1.5 `jelly.dreamball.field`
+
+Assertion surface includes `omnispherical-grid` (§12.2), `ambient-palette` (hex colors or `jelly.asset` refs), and `dream-field-id` (a UUID grouping related fields).
+
+#### 12.1.6 `jelly.dreamball.guild`
+
+Members + policy container. Subject adds `guild-name` (display) and `keyspace-root-hash` (Blake3 of the keyspace root — the Guild fingerprint). Assertions: `member` (repeatable, each a fingerprint), `admin` (repeatable fingerprints of admins), `policy` (§12.7).
+
+### 12.2 `jelly.omnispherical-grid`
+
+The graticule that makes the dream-field renderable without committing to a mesh. See [`docs/VISION.md` §4](VISION.md#4-form-independence-in-the-look-slot-in-progress) for the optic-nerve / three-camera metaphor.
+
+```
+200(
+  201({ "type": "jelly.omnispherical-grid", "format-version": 2 })
+) [
+  "pole-north":   [0.0, 1.0, 0.0],                 ; v2 note: we DO allow floats for spatial coords
+  "pole-south":   [0.0, -1.0, 0.0],
+  "camera-ring":  [ {radius, tilt, fov}, ... ],    ; three cameras at minimum: origin-out, at-sphere, nested-out
+  "layer-depth":  3,                                ; onion layers
+  "resolution":   8,                                ; quantisation level (subdivision forward-only)
+  [salted] 'note': "day variant"
+]
+```
+
+**dCBOR float exception.** v1's no-floats rule is relaxed *only* for this envelope type. Coordinates and field values use CBOR `#7.25` half-floats (16-bit IEEE-754) where precision permits; `#7.26` single-floats otherwise. This is documented here so no other envelope introduces floats without a spec change.
+
+### 12.3 `jelly.memory`
+
+A directed graph of memory nodes with labeled edges. Edges are typed: at minimum `semantic`, `emotional`, `temporal`.
+
+```
+200(
+  201({ "type": "jelly.memory", "format-version": 2 })
+) [
+  "node":    <jelly.memory-node>,         ; repeatable
+  "edge":    <jelly.memory-edge>,         ; repeatable
+  [salted] "last-updated": 1(…),
+]
+```
+
+`jelly.memory-node` subject: `{ "type": "jelly.memory-node", "format-version": 2, "id": <u64> }`. Assertions include `content` (text or asset ref), `created`, `last-recalled`, and `lookups` (map of lookup-name → sort-key value, supporting the "emotional lookup table" use case).
+
+`jelly.memory-edge` subject: `{ "type": "jelly.memory-edge", "format-version": 2, "from": <u64>, "to": <u64>, "kind": "semantic"|"emotional"|"temporal"|... }`. Assertions include `strength` (0.0–1.0) and `label` (text).
+
+### 12.4 `jelly.knowledge-graph`
+
+Triple-shaped ambient knowledge. Each triple is `[subject, predicate, object]` with subject and predicate as short text strings and object as either text or a fingerprint reference.
+
+```
+200(
+  201({ "type": "jelly.knowledge-graph", "format-version": 2 })
+) [
+  "triple": ["curiosity", "inclines-toward", "new-things"],    ; repeatable
+  "triple": ["haiku", "requires", "5-7-5 syllables"],
+  [salted] "source": "hand-curated v0",
+]
+```
+
+### 12.5 `jelly.emotional-register`
+
+Current value of named emotional axes. Axes are open — producers declare the axes they use.
+
+```
+200(
+  201({ "type": "jelly.emotional-register", "format-version": 2 })
+) [
+  "axis": { "name": "curiosity",  "value": 0.82, "range": [0.0, 1.0] },
+  "axis": { "name": "warmth",     "value": 0.55, "range": [0.0, 1.0] },
+  "axis": { "name": "urgency",    "value": 0.10, "range": [0.0, 1.0] },
+  [salted] "observed-at": 1(…)
+]
+```
+
+Values are floats (exception noted in §12.2). Renderers use this to tint lenses (e.g., the emotional-state lens visualises axis values as radial intensity).
+
+### 12.6 `jelly.interaction-set`
+
+Captured interaction histories — what this DreamBall *has done / been part of*.
+
+```
+200(
+  201({ "type": "jelly.interaction-set", "format-version": 2,
+        "set-id": h'…16 bytes…' })
+) [
+  "interaction": <jelly.interaction>,    ; repeatable
+  [salted] "created": 1(…)
+]
+```
+
+`jelly.interaction` subject: `{ type, format-version, turn: u32, actor: fp, kind: "speak"|"listen"|"act"|"receive" }`. Assertions: `content` (text/asset), `timestamp`, `outcome` (optional short text).
+
+### 12.7 `jelly.guild-policy`
+
+Per-slot read/write permission policy. Attached to a Guild envelope as the `policy` assertion.
+
+```
+200(
+  201({ "type": "jelly.guild-policy", "format-version": 2 })
+) [
+  "public":           "look",              ; repeatable — slot names readable by anyone
+  "public":           "thumbnail",
+  "guild-only":       "memory",            ; repeatable — slot names readable only by guild members
+  "guild-only":       "knowledge-graph",
+  "guild-only":       "emotional-register",
+  "guild-only":       "interaction-set",
+  "admin-only":       "secret",            ; repeatable — only guild admins
+  [salted] 'note':    "default v2 policy"
+]
+```
+
+A consumer rendering a DreamBall first checks `guild` assertion(s) on the target DreamBall, resolves each to a `jelly.dreamball.guild` envelope, reads the policy, and decides which assertions to expose to the current viewer identity.
+
+Policy resolution is additive — if multiple Guilds claim the DreamBall, the union of `public` + `guild-only` slots is readable by members of any claiming Guild; `admin-only` requires admin membership in at least one claiming Guild.
+
+### 12.8 `jelly.secret-ref`
+
+An indirection pointing at an out-of-band secret store. Critically, secrets are **not** embedded in the CBOR envelope — the envelope only carries a pointer, because secrets must live behind the Guild keyspace access path.
+
+```
+200(
+  201({ "type": "jelly.secret-ref", "format-version": 2,
+        "name": "wallet-signing-key",
+        "locator": "recrypt://…/wallets/abc..." })
+) [
+  [salted] "issued-by": h'…32…',
+  [salted] "description": "ETH mainnet signing key for the swap skill"
+]
+```
+
+The runtime requests the secret via the locator, presenting its fingerprint + Guild credentials; recrypt's proxy-recryption returns the plaintext only to authorised requesters. For v2, the locator path is mocked (see `TODO-CRYPTO` markers in the reference implementation); the envelope shape is real.
+
+### 12.9 `jelly.transmission`
+
+Auditable record of a Tool transferred to an Agent via a Guild. Producers emit this as the receipt of a successful `jelly transmit` call.
+
+```
+200(
+  201({ "type": "jelly.transmission", "format-version": 2,
+        "tool-fp":   h'…32…',    ; Blake3(Tool.identity)
+        "target-fp": h'…32…',    ; the Agent DreamBall being augmented
+        "via-guild": h'…32…' })
+) [
+  "tool-envelope":    <full jelly.dreamball.tool envelope>,   ; the Tool being transmitted, inlined
+  [salted] "sender-fp": h'…32…',
+  [salted] "transmitted-at": 1(…),
+  'signed': ..., 'signed': ...
+]
+```
+
+Upon receipt, the target Agent's custodian updates the Agent's `act.skill` (or the Tool is kept separate, referenced by fingerprint) and bumps the Agent's `revision`.
+
+### 12.10 Attachment layout in the .jelly bundle
+
+v2 adds two attachment slots beyond v1's freeform ordered list:
+
+```
+0: <sealed payload>   ; present only on Relics; bytes whose Blake3 = sealed-payload-hash
+1+: <user attachments>
+```
+
+The v1 bundle header (magic `JELY`, version, flags, seal-type, attachment-count) is unchanged. v2 producers SHOULD set the `version` byte to `2` in new DragonBall bundles so that v1 parsers reject them cleanly; v1 parsers reading a v2 bundle MUST emit "unsupported version" rather than silently misinterpret the attachment order.
+
+### 12.11 v1 → v2 migration
+
+- **Additive.** Every new envelope type is new. No v1 type gains or loses subject fields.
+- **Untagged `jelly.dreamball` is preserved.** v1 producers keep emitting it; v2 consumers treat it as Avatar.
+- **Golden-bytes lock extended.** `src/golden.zig` gains one additional fixture per new envelope type (§12.1 × 6 + §12.2–12.9 × 8 = 14 fixtures) pinning canonical byte output.
+- **No wire-breaking changes.** A v2 consumer reading a v1 envelope emits identical semantics to v1; a v1 consumer reading a v2 Avatar envelope loses only the new assertions it doesn't know about (they're additive).
+
+### 12.12 Open questions for v2
+
+- Should `jelly.memory` triples and edges be content-addressed by their hash so a memory can be shared across DreamBalls? Defer — v2 treats memory as private to its Agent.
+- Quorum signatures on Guild unlocks (m-of-n)? Currently any member can unlock; Vision tier.
+- Should `jelly.transmission` carry a *revocation* counterpart (a Tool previously transmitted can be withdrawn)? Defer — transmission is additive; revocation needs the real recrypt wire-up.

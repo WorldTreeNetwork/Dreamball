@@ -1,0 +1,20 @@
+.{
+    .name = .dreamball,
+    .version = "0.0.0",
+    .fingerprint = 0x2701c9ed2ff457cb,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zbor = .{
+            .url = "https://codeberg.org/r4gus/zbor/archive/0.21.0.tar.gz",
+            .hash = "zbor-0.21.0-kr-CoMd7AwAj1t5CJoR8CoYr9CLQCNwBTNZEYYE9SBk0",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "docs",
+        "tests",
+        "README.md",
+    },
+}
