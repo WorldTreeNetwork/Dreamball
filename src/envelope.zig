@@ -582,6 +582,508 @@ pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripErr
 }
 
 // ============================================================================
+// Full envelope decoder — reads subject + all assertions into a DreamBall
+// struct. Contrast with `decodeDreamBallSubject` above which only reads the
+// load-bearing subject fields (the lightweight hot path).
+//
+// Memory model: all owned allocations are made through the `arena`
+// argument. Callers are expected to pass an arena allocator and free
+// everything in one `arena.deinit()` after consuming the result.
+//
+// Scope note: v2 MVP fully decodes the top-level DreamBall, Look, Feel,
+// Act, Asset, and Skill envelopes. Memory / knowledge-graph /
+// emotional-register / interaction-set / guild-policy assertions are
+// captured as raw CBOR-envelope byte slices inside the parent's
+// `raw_assertions` field (not yet surfaced on the typed struct) —
+// consumers who need them today can walk the bytes themselves. Full
+// decode for those lands next.
+// ============================================================================
+
+const DecodeContext = struct {
+    arena: Allocator,
+    bytes: []const u8,
+};
+
+/// Walk a subject's CBOR map, decoding known keys into a DreamBall's
+/// subject fields. Sets `out.dreamball_type` on typed subjects.
+fn readSubjectMap(r: *cbor.Reader, out: *protocol.DreamBall) !void {
+    const map_len = try r.readMapHeader();
+    var i: u64 = 0;
+    while (i < map_len) : (i += 1) {
+        const key = try r.readText();
+        if (std.mem.eql(u8, key, "type")) {
+            const t = try r.readText();
+            if (!std.mem.eql(u8, t, DREAMBALL_TYPE)) {
+                out.dreamball_type = protocol.DreamBallType.fromWireString(t) orelse return error.UnknownType;
+            }
+        } else if (std.mem.eql(u8, key, "format-version")) {
+            const v = try r.readUint();
+            if (v != protocol.FORMAT_VERSION and v != protocol.FORMAT_VERSION_V2) return error.UnsupportedVersion;
+        } else if (std.mem.eql(u8, key, "stage")) {
+            const s = try r.readText();
+            out.stage = protocol.Stage.fromString(s) orelse return error.BadStage;
+        } else if (std.mem.eql(u8, key, "identity")) {
+            const b = try r.readBytes();
+            if (b.len != 32) return error.BadIdentity;
+            @memcpy(&out.identity, b);
+        } else if (std.mem.eql(u8, key, "genesis-hash")) {
+            const b = try r.readBytes();
+            if (b.len != 32) return error.BadGenesis;
+            @memcpy(&out.genesis_hash, b);
+        } else if (std.mem.eql(u8, key, "revision")) {
+            out.revision = @intCast(try r.readUint());
+        } else {
+            // Unknown subject keys are rejected — they are load-bearing.
+            return error.UnknownSubjectField;
+        }
+    }
+}
+
+fn decodeAssetFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Asset {
+    var r = cbor.Reader.init(env_bytes);
+    try r.expectTag(cbor.Tag.envelope);
+
+    // Envelope may be subject-only (tag 201) or array [subject, assertions...]
+    const save = r.cursor;
+    const head_byte = env_bytes[r.cursor];
+    const major: u3 = @intCast(head_byte >> 5);
+    var assertion_count: u64 = 0;
+    if (major == 4) {
+        const head = try r.readHead();
+        assertion_count = head.arg - 1;
+    } else {
+        r.cursor = save;
+    }
+
+    try r.expectTag(cbor.Tag.leaf);
+
+    var media_type: []const u8 = "";
+    var hash: [32]u8 = [_]u8{0} ** 32;
+    const subj_len = try r.readMapHeader();
+    var i: u64 = 0;
+    while (i < subj_len) : (i += 1) {
+        const key = try r.readText();
+        if (std.mem.eql(u8, key, "type")) {
+            _ = try r.readText();
+        } else if (std.mem.eql(u8, key, "format-version")) {
+            _ = try r.readUint();
+        } else if (std.mem.eql(u8, key, "media-type")) {
+            const v = try r.readText();
+            media_type = try arena.dupe(u8, v);
+        } else if (std.mem.eql(u8, key, "hash")) {
+            const v = try r.readBytes();
+            if (v.len != 32) return error.BadHash;
+            @memcpy(&hash, v);
+        } else return error.UnknownAssetField;
+    }
+
+    var urls: std.ArrayList([]const u8) = .empty;
+    var embedded: ?[]const u8 = null;
+    var size: ?u64 = null;
+    var note: ?[]const u8 = null;
+
+    var a_i: u64 = 0;
+    while (a_i < assertion_count) : (a_i += 1) {
+        const h = try r.readHead();
+        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
+        const pred = try r.readText();
+        if (std.mem.eql(u8, pred, "url")) {
+            const v = try r.readText();
+            try urls.append(arena, try arena.dupe(u8, v));
+        } else if (std.mem.eql(u8, pred, "embedded")) {
+            const v = try r.readBytes();
+            embedded = try arena.dupe(u8, v);
+        } else if (std.mem.eql(u8, pred, "size")) {
+            size = try r.readUint();
+        } else if (std.mem.eql(u8, pred, "note")) {
+            const v = try r.readText();
+            note = try arena.dupe(u8, v);
+        } else return error.UnknownAssetAssertion;
+    }
+
+    return .{
+        .media_type = media_type,
+        .hash = hash,
+        .urls = try urls.toOwnedSlice(arena),
+        .embedded = embedded,
+        .size = size,
+        .note = note,
+    };
+}
+
+fn decodeSkillFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Skill {
+    var r = cbor.Reader.init(env_bytes);
+    try r.expectTag(cbor.Tag.envelope);
+
+    const save = r.cursor;
+    const head_byte = env_bytes[r.cursor];
+    const major: u3 = @intCast(head_byte >> 5);
+    var assertion_count: u64 = 0;
+    if (major == 4) {
+        const head = try r.readHead();
+        assertion_count = head.arg - 1;
+    } else {
+        r.cursor = save;
+    }
+
+    try r.expectTag(cbor.Tag.leaf);
+
+    var name: []const u8 = "";
+    const subj_len = try r.readMapHeader();
+    var i: u64 = 0;
+    while (i < subj_len) : (i += 1) {
+        const key = try r.readText();
+        if (std.mem.eql(u8, key, "type")) {
+            _ = try r.readText();
+        } else if (std.mem.eql(u8, key, "format-version")) {
+            _ = try r.readUint();
+        } else if (std.mem.eql(u8, key, "name")) {
+            name = try arena.dupe(u8, try r.readText());
+        } else return error.UnknownSkillField;
+    }
+
+    var trigger: ?[]const u8 = null;
+    var body: ?[]const u8 = null;
+    var asset: ?protocol.Asset = null;
+    var requires: std.ArrayList([]const u8) = .empty;
+    var note: ?[]const u8 = null;
+
+    var a_i: u64 = 0;
+    while (a_i < assertion_count) : (a_i += 1) {
+        const h = try r.readHead();
+        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
+        const pred = try r.readText();
+        if (std.mem.eql(u8, pred, "trigger")) {
+            trigger = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "body")) {
+            body = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "asset")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            asset = try decodeAssetFromEnvelope(arena, sub);
+        } else if (std.mem.eql(u8, pred, "requires")) {
+            try requires.append(arena, try arena.dupe(u8, try r.readText()));
+        } else if (std.mem.eql(u8, pred, "note")) {
+            note = try arena.dupe(u8, try r.readText());
+        } else return error.UnknownSkillAssertion;
+    }
+
+    return .{
+        .name = name,
+        .trigger = trigger,
+        .body = body,
+        .asset = asset,
+        .requires = try requires.toOwnedSlice(arena),
+        .note = note,
+    };
+}
+
+fn decodeLookFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Look {
+    var r = cbor.Reader.init(env_bytes);
+    try r.expectTag(cbor.Tag.envelope);
+
+    const save = r.cursor;
+    const head_byte = env_bytes[r.cursor];
+    const major: u3 = @intCast(head_byte >> 5);
+    var assertion_count: u64 = 0;
+    if (major == 4) {
+        const head = try r.readHead();
+        assertion_count = head.arg - 1;
+    } else {
+        r.cursor = save;
+    }
+
+    try r.expectTag(cbor.Tag.leaf);
+    const subj_len = try r.readMapHeader();
+    var i: u64 = 0;
+    while (i < subj_len) : (i += 1) {
+        const key = try r.readText();
+        if (std.mem.eql(u8, key, "type")) {
+            _ = try r.readText();
+        } else if (std.mem.eql(u8, key, "format-version")) {
+            _ = try r.readUint();
+        } else return error.UnknownLookField;
+    }
+
+    var assets: std.ArrayList(protocol.Asset) = .empty;
+    var preview: ?protocol.Asset = null;
+    var background: ?[]const u8 = null;
+    var note: ?[]const u8 = null;
+
+    var a_i: u64 = 0;
+    while (a_i < assertion_count) : (a_i += 1) {
+        const h = try r.readHead();
+        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
+        const pred = try r.readText();
+        if (std.mem.eql(u8, pred, "asset")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            try assets.append(arena, try decodeAssetFromEnvelope(arena, sub));
+        } else if (std.mem.eql(u8, pred, "preview")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            preview = try decodeAssetFromEnvelope(arena, sub);
+        } else if (std.mem.eql(u8, pred, "background")) {
+            background = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "note")) {
+            note = try arena.dupe(u8, try r.readText());
+        } else return error.UnknownLookAssertion;
+    }
+
+    return .{
+        .assets = try assets.toOwnedSlice(arena),
+        .preview = preview,
+        .background = background,
+        .note = note,
+    };
+}
+
+fn decodeFeelFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Feel {
+    var r = cbor.Reader.init(env_bytes);
+    try r.expectTag(cbor.Tag.envelope);
+
+    const save = r.cursor;
+    const head_byte = env_bytes[r.cursor];
+    const major: u3 = @intCast(head_byte >> 5);
+    var assertion_count: u64 = 0;
+    if (major == 4) {
+        const head = try r.readHead();
+        assertion_count = head.arg - 1;
+    } else {
+        r.cursor = save;
+    }
+
+    try r.expectTag(cbor.Tag.leaf);
+    const subj_len = try r.readMapHeader();
+    var i: u64 = 0;
+    while (i < subj_len) : (i += 1) {
+        const key = try r.readText();
+        if (std.mem.eql(u8, key, "type")) {
+            _ = try r.readText();
+        } else if (std.mem.eql(u8, key, "format-version")) {
+            _ = try r.readUint();
+        } else return error.UnknownFeelField;
+    }
+
+    var personality: ?[]const u8 = null;
+    var voice: ?[]const u8 = null;
+    var values: std.ArrayList([]const u8) = .empty;
+    var tempo: ?[]const u8 = null;
+    var note: ?[]const u8 = null;
+
+    var a_i: u64 = 0;
+    while (a_i < assertion_count) : (a_i += 1) {
+        const h = try r.readHead();
+        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
+        const pred = try r.readText();
+        if (std.mem.eql(u8, pred, "personality")) {
+            personality = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "voice")) {
+            voice = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "value")) {
+            try values.append(arena, try arena.dupe(u8, try r.readText()));
+        } else if (std.mem.eql(u8, pred, "tempo")) {
+            tempo = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "note")) {
+            note = try arena.dupe(u8, try r.readText());
+        } else return error.UnknownFeelAssertion;
+    }
+
+    return .{
+        .personality = personality,
+        .voice = voice,
+        .values = try values.toOwnedSlice(arena),
+        .tempo = tempo,
+        .note = note,
+    };
+}
+
+fn decodeActFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Act {
+    var r = cbor.Reader.init(env_bytes);
+    try r.expectTag(cbor.Tag.envelope);
+
+    const save = r.cursor;
+    const head_byte = env_bytes[r.cursor];
+    const major: u3 = @intCast(head_byte >> 5);
+    var assertion_count: u64 = 0;
+    if (major == 4) {
+        const head = try r.readHead();
+        assertion_count = head.arg - 1;
+    } else {
+        r.cursor = save;
+    }
+
+    try r.expectTag(cbor.Tag.leaf);
+    const subj_len = try r.readMapHeader();
+    var i: u64 = 0;
+    while (i < subj_len) : (i += 1) {
+        const key = try r.readText();
+        if (std.mem.eql(u8, key, "type")) {
+            _ = try r.readText();
+        } else if (std.mem.eql(u8, key, "format-version")) {
+            _ = try r.readUint();
+        } else return error.UnknownActField;
+    }
+
+    var model: ?[]const u8 = null;
+    var system_prompt: ?[]const u8 = null;
+    var skills: std.ArrayList(protocol.Skill) = .empty;
+    var scripts: std.ArrayList(protocol.Asset) = .empty;
+    var tools: std.ArrayList([]const u8) = .empty;
+    var note: ?[]const u8 = null;
+
+    var a_i: u64 = 0;
+    while (a_i < assertion_count) : (a_i += 1) {
+        const h = try r.readHead();
+        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
+        const pred = try r.readText();
+        if (std.mem.eql(u8, pred, "model")) {
+            model = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "system-prompt")) {
+            system_prompt = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "skill")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            try skills.append(arena, try decodeSkillFromEnvelope(arena, sub));
+        } else if (std.mem.eql(u8, pred, "script")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            try scripts.append(arena, try decodeAssetFromEnvelope(arena, sub));
+        } else if (std.mem.eql(u8, pred, "tool")) {
+            try tools.append(arena, try arena.dupe(u8, try r.readText()));
+        } else if (std.mem.eql(u8, pred, "note")) {
+            note = try arena.dupe(u8, try r.readText());
+        } else return error.UnknownActAssertion;
+    }
+
+    return .{
+        .model = model,
+        .system_prompt = system_prompt,
+        .skills = try skills.toOwnedSlice(arena),
+        .scripts = try scripts.toOwnedSlice(arena),
+        .tools = try tools.toOwnedSlice(arena),
+        .note = note,
+    };
+}
+
+/// Full DreamBall decoder — subject + every assertion we know how to
+/// interpret. Unknown assertions are rejected (fail-loud).
+pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamBall {
+    var r = cbor.Reader.init(env_bytes);
+    try r.expectTag(cbor.Tag.envelope);
+
+    const save = r.cursor;
+    const head_byte = env_bytes[r.cursor];
+    const major: u3 = @intCast(head_byte >> 5);
+    var assertion_count: u64 = 0;
+    if (major == 4) {
+        const head = try r.readHead();
+        assertion_count = head.arg - 1;
+    } else {
+        r.cursor = save;
+    }
+
+    try r.expectTag(cbor.Tag.leaf);
+
+    var out = protocol.DreamBall{
+        .stage = .seed,
+        .identity = [_]u8{0} ** 32,
+        .genesis_hash = [_]u8{0} ** 32,
+    };
+    try readSubjectMap(&r, &out);
+
+    var name: ?[]const u8 = null;
+    var created: ?i64 = null;
+    var updated: ?i64 = null;
+    var note: ?[]const u8 = null;
+    var contains: std.ArrayList(Fingerprint) = .empty;
+    var derived_from: std.ArrayList(Fingerprint) = .empty;
+    var guilds: std.ArrayList(Fingerprint) = .empty;
+    var sigs: std.ArrayList(protocol.Signature) = .empty;
+
+    var a_i: u64 = 0;
+    while (a_i < assertion_count) : (a_i += 1) {
+        const h = try r.readHead();
+        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
+        const pred = try r.readText();
+        if (std.mem.eql(u8, pred, "name")) {
+            name = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "note")) {
+            note = try arena.dupe(u8, try r.readText());
+        } else if (std.mem.eql(u8, pred, "created")) {
+            try r.expectTag(cbor.Tag.epoch_time);
+            created = @intCast(try r.readUint());
+        } else if (std.mem.eql(u8, pred, "updated")) {
+            try r.expectTag(cbor.Tag.epoch_time);
+            updated = @intCast(try r.readUint());
+        } else if (std.mem.eql(u8, pred, "contains")) {
+            const b = try r.readBytes();
+            if (b.len != 32) return error.BadFingerprint;
+            var fp: Fingerprint = undefined;
+            @memcpy(&fp.bytes, b);
+            try contains.append(arena, fp);
+        } else if (std.mem.eql(u8, pred, "derived-from")) {
+            const b = try r.readBytes();
+            if (b.len != 32) return error.BadFingerprint;
+            var fp: Fingerprint = undefined;
+            @memcpy(&fp.bytes, b);
+            try derived_from.append(arena, fp);
+        } else if (std.mem.eql(u8, pred, "guild")) {
+            const b = try r.readBytes();
+            if (b.len != 32) return error.BadFingerprint;
+            var fp: Fingerprint = undefined;
+            @memcpy(&fp.bytes, b);
+            try guilds.append(arena, fp);
+        } else if (std.mem.eql(u8, pred, "signed")) {
+            const sh = try r.readHead();
+            if (sh.major != 4 or sh.arg != 2) return error.BadAssertion;
+            const alg = try r.readText();
+            const val = try r.readBytes();
+            try sigs.append(arena, .{
+                .alg = try arena.dupe(u8, alg),
+                .value = try arena.dupe(u8, val),
+            });
+        } else if (std.mem.eql(u8, pred, "look")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            out.look = try decodeLookFromEnvelope(arena, sub);
+        } else if (std.mem.eql(u8, pred, "feel")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            out.feel = try decodeFeelFromEnvelope(arena, sub);
+        } else if (std.mem.eql(u8, pred, "act")) {
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            const sub = env_bytes[r.cursor .. r.cursor + len];
+            r.cursor += len;
+            out.act = try decodeActFromEnvelope(arena, sub);
+        } else {
+            // Skip unknown assertions by walking past the object — keeps us
+            // forward-compatible with v2.x envelopes that add new slots.
+            const len = itemLen(env_bytes, r.cursor) catch return error.Truncated;
+            r.cursor += len;
+        }
+    }
+
+    out.name = name;
+    out.created = created;
+    out.updated = updated;
+    out.note = note;
+    out.contains = try contains.toOwnedSlice(arena);
+    out.derived_from = try derived_from.toOwnedSlice(arena);
+    out.guilds = try guilds.toOwnedSlice(arena);
+    out.signatures = try sigs.toOwnedSlice(arena);
+
+    return out;
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -671,6 +1173,94 @@ test "stripSignatures recovers the canonical unsigned bytes" {
     try std.testing.expectEqualStrings("ed25519", stripped.signatures[0].alg);
     try std.testing.expectEqualStrings("ml-dsa-87", stripped.signatures[1].alg);
     try std.testing.expectEqualSlices(u8, &ed_sig, stripped.signatures[0].value);
+}
+
+test "decodeDreamBall full round-trip — populated envelope" {
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const urls = [_][]const u8{"https://cdn.example/a.glb"};
+    const assets = [_]protocol.Asset{.{
+        .media_type = "model/gltf-binary",
+        .hash = [_]u8{0xAA} ** 32,
+        .urls = &urls,
+    }};
+    const look = protocol.Look{ .assets = &assets, .background = "color:#123" };
+
+    const values = [_][]const u8{ "curiosity", "clarity" };
+    const feel = protocol.Feel{
+        .personality = "playful",
+        .voice = "quick",
+        .values = &values,
+    };
+
+    const skills = [_]protocol.Skill{
+        .{ .name = "haiku", .trigger = "when asked for a poem" },
+    };
+    const tools = [_][]const u8{"web.search"};
+    const act = protocol.Act{
+        .model = "claude-opus-4-7",
+        .system_prompt = "You are curiosity.",
+        .skills = &skills,
+        .tools = &tools,
+    };
+
+    const contains = [_]Fingerprint{.{ .bytes = [_]u8{0xCC} ** 32 }};
+    const guilds = [_]Fingerprint{.{ .bytes = [_]u8{0xDD} ** 32 }};
+    const ed_sig = [_]u8{0x11} ** protocol.ED25519_SIGNATURE_LEN;
+
+    const sigs = [_]protocol.Signature{
+        .{ .alg = "ed25519", .value = &ed_sig },
+    };
+
+    const db = protocol.DreamBall{
+        .stage = .dreamball,
+        .dreamball_type = .agent,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 7,
+        .name = "Aspect of Curiosity",
+        .created = 1712534400,
+        .updated = 1713000000,
+        .note = "first fruition",
+        .look = look,
+        .feel = feel,
+        .act = act,
+        .contains = &contains,
+        .guilds = &guilds,
+        .signatures = &sigs,
+    };
+
+    const bytes = try encodeDreamBall(gpa, db);
+    defer gpa.free(bytes);
+
+    const decoded = try decodeDreamBall(arena, bytes);
+
+    try std.testing.expectEqual(protocol.DreamBallType.agent, decoded.dreamball_type.?);
+    try std.testing.expectEqual(db.stage, decoded.stage);
+    try std.testing.expectEqual(db.revision, decoded.revision);
+    try std.testing.expectEqualSlices(u8, &db.identity, &decoded.identity);
+    try std.testing.expectEqualSlices(u8, "Aspect of Curiosity", decoded.name.?);
+    try std.testing.expectEqual(@as(i64, 1712534400), decoded.created.?);
+    try std.testing.expectEqual(@as(i64, 1713000000), decoded.updated.?);
+    try std.testing.expect(decoded.look != null);
+    try std.testing.expectEqualStrings("color:#123", decoded.look.?.background.?);
+    try std.testing.expectEqual(@as(usize, 1), decoded.look.?.assets.len);
+    try std.testing.expectEqualStrings("model/gltf-binary", decoded.look.?.assets[0].media_type);
+    try std.testing.expect(decoded.feel != null);
+    try std.testing.expectEqualStrings("playful", decoded.feel.?.personality.?);
+    try std.testing.expectEqual(@as(usize, 2), decoded.feel.?.values.len);
+    try std.testing.expect(decoded.act != null);
+    try std.testing.expectEqualStrings("claude-opus-4-7", decoded.act.?.model.?);
+    try std.testing.expectEqual(@as(usize, 1), decoded.act.?.skills.len);
+    try std.testing.expectEqualStrings("haiku", decoded.act.?.skills[0].name);
+    try std.testing.expectEqual(@as(usize, 1), decoded.act.?.tools.len);
+    try std.testing.expectEqual(@as(usize, 1), decoded.contains.len);
+    try std.testing.expectEqual(@as(usize, 1), decoded.guilds.len);
+    try std.testing.expectEqual(@as(usize, 1), decoded.signatures.len);
+    try std.testing.expectEqualStrings("ed25519", decoded.signatures[0].alg);
 }
 
 test "populated round-trip — envelope with all slots + signatures" {
