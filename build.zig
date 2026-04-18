@@ -68,4 +68,30 @@ pub fn build(b: *std.Build) void {
     const schemagen_run = b.addRunArtifact(schemagen_exe);
     const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts");
     schemagen_step.dependOn(&schemagen_run.step);
+
+    // jelly-wasm — WASM build of the parser for browser consumption.
+    // Separate module because freestanding-wasm drops std.Io / std.crypto.random,
+    // so we skip linking signer.zig / io.zig. See tools/jelly-wasm/main.zig.
+    const wasm_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .freestanding,
+    });
+    const wasm_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm_main.zig"),
+        .target = wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    const wasm_exe = b.addExecutable(.{
+        .name = "jelly",
+        .root_module = wasm_mod,
+    });
+    wasm_exe.entry = .disabled;
+    wasm_exe.rdynamic = true;
+    // Install the produced jelly.wasm into src/lib/wasm/ so the Svelte lib
+    // can import it via Vite's asset pipeline.
+    const wasm_install = b.addInstallArtifact(wasm_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../src/lib/wasm" } },
+    });
+    const wasm_step = b.step("wasm", "Build jelly.wasm for the Svelte lib");
+    wasm_step.dependOn(&wasm_install.step);
 }

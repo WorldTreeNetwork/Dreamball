@@ -1,0 +1,193 @@
+//! jelly-wasm — WASM-compiled entry point for parsing .jelly files in the
+//! browser. Single source of truth: reuses the same Zig code paths that
+//! the CLI uses, so web + CLI can never drift.
+//!
+//! Contract with the JS loader:
+//!   - The WASM module exposes `alloc`, `reset`, and `parseJelly`.
+//!   - `alloc(size)` returns a pointer in linear memory; JS copies input
+//!     bytes there.
+//!   - `parseJelly(ptr, len)` consumes those bytes and writes a JSON
+//!     result elsewhere in linear memory, returning a packed
+//!     (result_ptr << 32) | result_len. 0 means parse failure — JS can
+//!     call `resultErr` for a short diagnostic string.
+//!   - `reset()` rewinds the bump allocator so the next parse starts fresh.
+//!
+//! Design notes:
+//!   - 16 MB static linear-memory buffer is enough for any realistic
+//!     DreamBall (the biggest envelopes we've seen are ~5 KB; sealed
+//!     relic bundles with a 3D splat attachment can reach a few MB).
+//!     Callers with bigger inputs can bump the constant and rebuild.
+//!   - We intentionally do NOT link signer.zig or io.zig into the WASM
+//!     module — those use std.Io / std.crypto.random which don't exist
+//!     on wasm32-freestanding. Verification + signing stay CLI-side; the
+//!     WASM module is **parse-only** for v2. Real Ed25519 verify in the
+//!     browser lands when we compile that into a second WASM module (or
+//!     pick up a pure-Zig Ed25519 impl that tolerates freestanding).
+
+const std = @import("std");
+
+const protocol = @import("protocol.zig");
+const envelope = @import("envelope.zig");
+const sealing = @import("sealing.zig");
+const json_mod = @import("json.zig");
+
+const BUFFER_SIZE: usize = 16 * 1024 * 1024;
+var buffer: [BUFFER_SIZE]u8 = undefined;
+var fba_state: std.heap.FixedBufferAllocator = std.heap.FixedBufferAllocator.init(&buffer);
+
+var last_err: [256]u8 = undefined;
+var last_err_len: u32 = 0;
+
+fn setErr(comptime fmt: []const u8, args: anytype) void {
+    const slice = std.fmt.bufPrint(&last_err, fmt, args) catch {
+        const msg = "jelly-wasm: unknown error";
+        @memcpy(last_err[0..msg.len], msg);
+        last_err_len = msg.len;
+        return;
+    };
+    last_err_len = @intCast(slice.len);
+}
+
+export fn alloc(size: u32) u32 {
+    const slice = fba_state.allocator().alloc(u8, size) catch return 0;
+    return @intCast(@intFromPtr(slice.ptr));
+}
+
+export fn reset() void {
+    fba_state.reset();
+    last_err_len = 0;
+}
+
+/// Parse the `.jelly` bytes at `input_ptr[0..input_len]`. On success,
+/// returns a packed u64 = (result_ptr << 32) | result_len pointing at
+/// the JSON rendering of the DreamBall. On failure, returns 0 and sets
+/// the last-error buffer (readable via `resultErrPtr`/`resultErrLen`).
+export fn parseJelly(input_ptr: u32, input_len: u32) u64 {
+    const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
+    const alloc_ = fba_state.allocator();
+
+    // Format detection: "JELY" magic → sealed wrapper; 0xD8 0xC8 → bare envelope;
+    // '{' → canonical JSON (pass-through); anything else → error.
+    var envelope_bytes: []const u8 = input_bytes;
+    var sealed_attachments_count: usize = 0;
+
+    if (input_bytes.len >= 4 and std.mem.eql(u8, input_bytes[0..4], "JELY")) {
+        const parsed = sealing.readSealedFile(alloc_, input_bytes) catch |e| {
+            setErr("sealed-file parse failed: {t}", .{e});
+            return 0;
+        };
+        envelope_bytes = parsed.envelope;
+        sealed_attachments_count = parsed.attachments.len;
+        // Don't deinit parsed — its slices point into input_bytes and
+        // we need envelope_bytes to stay valid.
+    } else if (input_bytes.len >= 2 and input_bytes[0] == 0xD8 and input_bytes[1] == 0xC8) {
+        // Bare tag-200 envelope — use as-is.
+    } else if (input_bytes.len >= 1 and input_bytes[0] == '{') {
+        // Canonical JSON — echo it back (the user already has the target shape).
+        return pack(input_bytes);
+    } else {
+        setErr("unknown .jelly format; expected JELY magic, CBOR tag 200, or JSON object", .{});
+        return 0;
+    }
+
+    // Full decode — subject + every assertion into a typed DreamBall struct.
+    const db = envelope.decodeDreamBall(alloc_, envelope_bytes) catch |e| {
+        setErr("decodeDreamBall failed: {t}", .{e});
+        return 0;
+    };
+
+    // Canonical JSON render. Reuses the CLI's code path — guaranteed
+    // byte-identical between Zig CLI and WASM for any given input.
+    const json_bytes = json_mod.writeDreamBall(alloc_, db) catch |e| {
+        setErr("writeDreamBall failed: {t}", .{e});
+        return 0;
+    };
+
+    return pack(json_bytes);
+}
+
+fn pack(bytes: []const u8) u64 {
+    const p: u64 = @intFromPtr(bytes.ptr);
+    const l: u64 = bytes.len;
+    return (p << 32) | (l & 0xFFFFFFFF);
+}
+
+export fn resultErrPtr() u32 {
+    return @intCast(@intFromPtr(&last_err[0]));
+}
+
+export fn resultErrLen() u32 {
+    return last_err_len;
+}
+
+/// In-browser Ed25519 verification.
+///
+/// Reconstructs the canonical unsigned bytes via `stripSignatures`, reads
+/// the envelope's `identity` (Ed25519 public key), then verifies every
+/// ed25519 `'signed'` assertion against that key. Returns:
+///   2  — envelope parsed OK and all Ed25519 signatures verified
+///   1  — envelope parsed but no Ed25519 signature present (warning)
+///   0  — verification failed (signature mismatch, tampered bytes, etc.)
+///   -1 / 0xFFFFFFFF — parse error (use resultErr for diagnostic)
+///
+/// ML-DSA-87 signatures are *acknowledged* but not verified here — that
+/// requires a pure-Zig liboqs (not yet available on freestanding-wasm).
+/// Real ML-DSA verification stays CLI-side until then.
+export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
+    const Ed25519 = std.crypto.sign.Ed25519;
+    const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
+    const alloc_ = fba_state.allocator();
+
+    // Peel sealed wrapper if present.
+    var envelope_bytes: []const u8 = input_bytes;
+    if (input_bytes.len >= 4 and std.mem.eql(u8, input_bytes[0..4], "JELY")) {
+        const parsed = sealing.readSealedFile(alloc_, input_bytes) catch |e| {
+            setErr("sealed parse failed: {t}", .{e});
+            return -1;
+        };
+        envelope_bytes = parsed.envelope;
+    } else if (input_bytes.len >= 2 and input_bytes[0] == 0xD8 and input_bytes[1] == 0xC8) {
+        // bare envelope, use as-is
+    } else {
+        setErr("verify: input is not a .jelly envelope (expected JELY or tag 200)", .{});
+        return -1;
+    }
+
+    // Reconstruct unsigned bytes + collect signatures.
+    const stripped = envelope.stripSignatures(alloc_, envelope_bytes) catch |e| {
+        setErr("stripSignatures failed: {t}", .{e});
+        return -1;
+    };
+
+    // Need the Ed25519 public key from the subject.
+    const db = envelope.decodeDreamBallSubject(envelope_bytes) catch |e| {
+        setErr("subject decode failed: {t}", .{e});
+        return -1;
+    };
+
+    const pk = Ed25519.PublicKey.fromBytes(db.identity) catch {
+        setErr("identity is not a valid Ed25519 public key", .{});
+        return -1;
+    };
+
+    var have_ed = false;
+    for (stripped.signatures) |sig| {
+        if (std.mem.eql(u8, sig.alg, "ed25519")) {
+            if (sig.value.len != Ed25519.Signature.encoded_length) {
+                setErr("malformed Ed25519 signature length", .{});
+                return 0;
+            }
+            var sig_arr: [Ed25519.Signature.encoded_length]u8 = undefined;
+            @memcpy(&sig_arr, sig.value);
+            const sig_obj = Ed25519.Signature.fromBytes(sig_arr);
+            sig_obj.verify(stripped.unsigned, pk) catch {
+                setErr("Ed25519 signature verification failed", .{});
+                return 0;
+            };
+            have_ed = true;
+        }
+        // ML-DSA and other algs are parsed but not verified here.
+    }
+
+    return if (have_ed) 2 else 1;
+}

@@ -26,6 +26,45 @@ export {
 	type SplatMediaType
 } from './splat/media-types.js';
 
+export {
+	parseJelly,
+	parseJellyToJson,
+	parseJellyUnvalidated,
+	safeParseJelly,
+	verifyJelly,
+	VERIFY_OK,
+	VERIFY_NO_ED25519,
+	VERIFY_FAILED,
+	VERIFY_PARSE_ERROR,
+	type VerifyResult
+} from './wasm/loader.js';
+
+export {
+	DreamBallSchema,
+	DreamBallAvatarSchema,
+	DreamBallAgentSchema,
+	DreamBallToolSchema,
+	DreamBallRelicSchema,
+	DreamBallFieldSchema,
+	DreamBallGuildSchema,
+	DreamBallUntypedSchema,
+	SignatureSchema,
+	AssetSchema,
+	LookSchema,
+	FeelSchema,
+	ActSchema,
+	SkillSchema,
+	MemorySchema,
+	KnowledgeGraphSchema,
+	EmotionalRegisterSchema,
+	GuildPolicySchema,
+	OmnisphericalGridSchema,
+	parseDreamBall,
+	safeParseDreamBall,
+	type DreamBallValidated,
+	type ParseResult
+} from './generated/schemas.js';
+
 export { ALL_LENSES, type LensName } from './lenses/lens-types.js';
 
 export { MockBackend, mockBall } from './backend/MockBackend.js';
