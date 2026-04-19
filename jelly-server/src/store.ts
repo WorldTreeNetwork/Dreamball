@@ -1,23 +1,35 @@
 /**
- * Content-addressed filesystem store for DreamBalls and secret keys.
+ * Content-addressed filesystem store for DreamBall envelopes + secret keys.
  *
  * Layout:
- *   data/dreamballs/<fingerprint>.jelly  — JSON-encoded DreamBall (readable)
- *   data/keys/<fingerprint>.key          — base58 secret key, mode 0600
+ *   data/dreamballs/<fingerprint>.jelly       — RAW CBOR envelope bytes (authoritative)
+ *   data/dreamballs/<fingerprint>.jelly.json  — JSON rendering (convenience, recomputable)
+ *   data/keys/<fingerprint>.key               — 64 raw bytes, mode 0600
  *
- * Fingerprint is the base58 encoding of the identity field extracted from
- * the DreamBall JSON (the "identity" field is already a "b58:..." string;
- * we strip the prefix to use as a filesystem-safe filename).
+ * Why store both CBOR and JSON: CBOR is authoritative (the bytes that were
+ * signed). JSON is a cheap cache so `GET /dreamballs/:fp` doesn't have to
+ * re-parse through WASM every request. If the JSON cache is missing we
+ * rebuild it from CBOR on demand.
+ *
+ * Fingerprint is the base58 of the identity bytes (same filename format as
+ * the CLI uses).
  */
 
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, chmodSync } from 'fs';
+import {
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  existsSync,
+  mkdirSync,
+  chmodSync
+} from 'fs';
 import { resolve, join } from 'path';
 
 const DATA_DIR = resolve(import.meta.dir, '../data');
 const DREAMBALL_DIR = join(DATA_DIR, 'dreamballs');
 const KEY_DIR = join(DATA_DIR, 'keys');
 
-function ensureDirs() {
+function ensureDirs(): void {
   for (const dir of [DREAMBALL_DIR, KEY_DIR]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
@@ -25,32 +37,31 @@ function ensureDirs() {
 
 ensureDirs();
 
-export interface DreamBallRecord {
-  fingerprint: string;
-  dreamball: Record<string, unknown>;
-  created_at: string;
-}
-
-/** Derive a filesystem fingerprint from a DreamBall's identity field. */
+/** Derive the filesystem fingerprint from a parsed DreamBall JSON. */
 export function fingerprintFrom(dreamball: Record<string, unknown>): string {
   const identity = dreamball['identity'];
   if (typeof identity !== 'string') throw new Error('DreamBall missing identity field');
-  // identity is "b58:..." — strip prefix for use as filename
   return identity.startsWith('b58:') ? identity.slice(4) : identity;
 }
 
-/** Store a DreamBall. Returns the fingerprint. */
-export function storeDreamBall(dreamball: Record<string, unknown>): string {
+/** Store a DreamBall — writes both the raw CBOR bytes (.jelly) and the
+ *  parsed JSON cache (.jelly.json). Returns the fingerprint. */
+export function storeDreamBall(
+  envelopeBytes: Uint8Array,
+  dreamball: Record<string, unknown>
+): string {
   const fp = fingerprintFrom(dreamball);
-  const path = join(DREAMBALL_DIR, `${fp}.jelly`);
-  writeFileSync(path, JSON.stringify(dreamball, null, 2), { encoding: 'utf-8' });
+  const cborPath = join(DREAMBALL_DIR, `${fp}.jelly`);
+  const jsonPath = join(DREAMBALL_DIR, `${fp}.jelly.json`);
+  writeFileSync(cborPath, envelopeBytes);
+  writeFileSync(jsonPath, JSON.stringify(dreamball, null, 2), 'utf-8');
   return fp;
 }
 
-/** Store a secret key (0600 permissions). */
-export function storeSecretKey(fingerprint: string, secretKeyB58: string): void {
+/** Store the 64-byte Ed25519 secret key. Mode 0600. */
+export function storeSecretKey(fingerprint: string, secretBytes: Uint8Array): void {
   const path = join(KEY_DIR, `${fingerprint}.key`);
-  writeFileSync(path, secretKeyB58, { encoding: 'utf-8', mode: 0o600 });
+  writeFileSync(path, secretBytes, { mode: 0o600 });
   try {
     chmodSync(path, 0o600);
   } catch {
@@ -58,27 +69,43 @@ export function storeSecretKey(fingerprint: string, secretKeyB58: string): void 
   }
 }
 
-/** Load a DreamBall by fingerprint. Returns null if not found. */
-export function loadDreamBall(fingerprint: string): Record<string, unknown> | null {
-  const path = join(DREAMBALL_DIR, `${fingerprint}.jelly`);
+/** Read the raw 64-byte secret back by fingerprint. Null if missing. */
+export function loadSecretKey(fingerprint: string): Uint8Array | null {
+  const path = join(KEY_DIR, `${fingerprint}.key`);
   if (!existsSync(path)) return null;
-  const text = readFileSync(path, 'utf-8');
+  return new Uint8Array(readFileSync(path));
+}
+
+/** Load a DreamBall's parsed JSON. Null if not found. */
+export function loadDreamBall(fingerprint: string): Record<string, unknown> | null {
+  const jsonPath = join(DREAMBALL_DIR, `${fingerprint}.jelly.json`);
+  if (!existsSync(jsonPath)) return null;
+  const text = readFileSync(jsonPath, 'utf-8');
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-/** List all stored DreamBalls. */
-export function listDreamBalls(): Array<{ fingerprint: string; dreamball: Record<string, unknown> }> {
+/** Load the raw CBOR envelope bytes by fingerprint. */
+export function loadEnvelopeBytes(fingerprint: string): Uint8Array | null {
+  const cborPath = join(DREAMBALL_DIR, `${fingerprint}.jelly`);
+  if (!existsSync(cborPath)) return null;
+  return new Uint8Array(readFileSync(cborPath));
+}
+
+/** List every stored DreamBall (parsed JSON form). */
+export function listDreamBalls(): Array<{
+  fingerprint: string;
+  dreamball: Record<string, unknown>;
+}> {
   if (!existsSync(DREAMBALL_DIR)) return [];
   return readdirSync(DREAMBALL_DIR)
-    .filter((f) => f.endsWith('.jelly'))
+    .filter((f) => f.endsWith('.jelly.json'))
     .map((f) => {
-      const fp = f.slice(0, -6); // strip .jelly
+      const fp = f.slice(0, -'.jelly.json'.length);
       const text = readFileSync(join(DREAMBALL_DIR, f), 'utf-8');
       return { fingerprint: fp, dreamball: JSON.parse(text) as Record<string, unknown> };
     });
 }
 
-/** Check if a fingerprint exists in the store. */
 export function hasDreamBall(fingerprint: string): boolean {
   return existsSync(join(DREAMBALL_DIR, `${fingerprint}.jelly`));
 }

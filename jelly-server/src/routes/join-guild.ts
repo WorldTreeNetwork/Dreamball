@@ -1,48 +1,69 @@
 /**
- * POST /dreamballs/:fp/join-guild — Add a guild membership to a DreamBall and re-sign.
+ * POST /dreamballs/:fp/join-guild — Add a guild membership to a DreamBall
+ * and re-sign. Requires the DreamBall's secret key.
+ *
+ * Contract with wasm_main.zig#joinGuildWasm:
+ *   joinGuildWasm(envPtr, envLen, guildEnvPtr, guildEnvLen,
+ *                 secretPtr, secretLen, updated)
+ *                 -> packed u64 (new envelope bytes)
  */
 
 import Elysia, { t } from 'elysia';
-import { loadDreamBall, storeDreamBall } from '../store.js';
-import { getWasm, readPackedString, writeString } from '../wasm.js';
+import { loadEnvelopeBytes, storeDreamBall } from '../store.js';
+import {
+  getWasm,
+  readPackedBytes,
+  parseEnvelopeToJson,
+  writeBytes,
+  base58Decode
+} from '../wasm.js';
 
 export const joinGuildRoute = new Elysia().post(
   '/dreamballs/:fp/join-guild',
   async ({ params, body, set }) => {
-    const db = loadDreamBall(params.fp);
-    if (!db) {
+    const envBytes = loadEnvelopeBytes(params.fp);
+    if (!envBytes) {
       set.status = 404;
-      return { error: 'not found', fingerprint: params.fp };
+      return { error: 'dreamball not found', fingerprint: params.fp };
     }
 
-    // Load the guild to get its identity
-    const guild = loadDreamBall(body.guild_fp);
-    if (!guild) {
+    const guildBytes = loadEnvelopeBytes(body.guild_fp);
+    if (!guildBytes) {
       set.status = 404;
       return { error: 'guild not found', fingerprint: body.guild_fp };
     }
 
-    const { secret_key_b58 } = body;
+    const secretBytes = base58Decode(body.secret_key_b58);
+    if (secretBytes.length !== 64) {
+      set.status = 400;
+      return { error: 'secret_key_b58 must decode to 64 bytes' };
+    }
 
     const wasm = await getWasm();
     wasm.reset();
 
-    const input = JSON.stringify({
-      dreamball_json: JSON.stringify(db),
-      guild_json: JSON.stringify(guild),
-      secret_key_b58
-    });
+    const [envPtr, envLen] = writeBytes(wasm, envBytes);
+    const [guildPtr, guildLen] = writeBytes(wasm, guildBytes);
+    const [secretPtr, secretLen] = writeBytes(wasm, secretBytes);
 
-    const [ptr, len] = writeString(wasm, input);
-    const packed = wasm.joinGuildWasm(ptr, len);
-    const resultJson = readPackedString(wasm, packed);
+    const updatedSecs = BigInt(Math.floor(Date.now() / 1000));
+    const packed = wasm.joinGuildWasm(
+      envPtr,
+      envLen,
+      guildPtr,
+      guildLen,
+      secretPtr,
+      secretLen,
+      updatedSecs
+    );
+    const newEnvelopeBytes = readPackedBytes(wasm, packed);
 
-    const updated = JSON.parse(resultJson) as Record<string, unknown>;
-    storeDreamBall(updated);
+    wasm.reset();
+    const updated = parseEnvelopeToJson(wasm, newEnvelopeBytes);
+    storeDreamBall(newEnvelopeBytes, updated);
 
-    // Explicit guard: never return secret_key_b58
-    const { secret_key_b58: _stripped, ...safe } = updated as Record<string, unknown> & { secret_key_b58?: string };
-    void _stripped;
+    const safe = { ...updated };
+    delete (safe as Record<string, unknown>)['secret_key_b58'];
     return safe;
   },
   {
@@ -52,8 +73,9 @@ export const joinGuildRoute = new Elysia().post(
       secret_key_b58: t.String()
     }),
     detail: {
-      summary: 'Join a guild',
-      description: 'Appends a guild assertion to the DreamBall and re-signs. Requires the secret key.'
+      summary: 'Join a Guild',
+      description:
+        'Appends a Guild membership assertion to the DreamBall and re-signs. Requires the secret key.'
     }
   }
 );
