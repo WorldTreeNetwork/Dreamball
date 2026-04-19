@@ -494,6 +494,53 @@ Guild A → Guild B → agent, so a skill authored in one community can
 propagate across federated communities via proxy-recryption. v2 leaves
 that hop stubbed; the transmission envelope's shape already supports it.
 
+## 14. One binary, two runtimes — the WASM core
+
+> Added 2026-04-19 with the v2.1 jelly-server + browser-verify work.
+
+A design principle that emerged from shipping v2.1: **the Zig protocol
+core is compiled once to `jelly.wasm` and executed identically in
+Bun-server and in the browser**. Host-provided randomness flows through
+a single `env.getRandomBytes` import; nothing else is host-specific.
+
+This is surprisingly clarifying. Traditional architectures carve the
+protocol into server-side (trusted, holds keys) and client-side (thin,
+deserialises server responses). We don't. The browser can mint, grow,
+verify, and validate on exactly the same code paths as the server — and
+by "the same code," we mean *the same bytes* — because there is only one
+compiled artifact.
+
+What this buys us:
+
+- **Impossible drift.** A bug fixed in the Zig core propagates to browser
+  and server in one rebuild. No parallel TypeScript CBOR parser exists to
+  fall out of sync.
+- **Offline-first by default.** Any operation that doesn't need the
+  network (mint, parse, verify with Ed25519, grow, join-guild) works in
+  a browser with no server. `jelly-server` is an accelerator, not a
+  requirement.
+- **Trust symmetry.** The server's cryptographic guarantees are *the same*
+  as the browser's — they run the same Ed25519 verifier on the same
+  envelope bytes. When `jelly-server` claims "this envelope verifies,"
+  the browser can independently re-verify without trusting the server.
+  This is unusual; most systems require trusting the server's claims.
+- **Minimal host seam.** One imported function (`getRandomBytes`). Swap
+  hosts (Deno, Cloudflare Workers, a custom runtime) and everything
+  still works so long as that one import is supplied.
+
+What this *costs*:
+
+- **Blocking I/O stays out of WASM.** File reads, HTTP fetches, and
+  ML-DSA delegation (which requires a network hop to `recrypt-server`)
+  live in the host. The protocol core stays pure.
+- **WASM binary size is a real budget.** Currently 109 KB; the plan caps
+  at 150 KB. Additional features must earn their bytes.
+
+The design decision is locked in ADR-1 of the v2.1 plan. The practical
+evidence that it works is in `src/lib/wasm/write-ops.test.ts` and
+`scripts/spike-wasm-env.ts` — a single WASM export used identically
+from Bun tests and the Svelte lib's loader.
+
 ## 9. How this doc evolves
 
 Every time implementation work reveals a new principle or reshapes an
