@@ -18,6 +18,10 @@ zig-pkg/
 # OMC
 .omc/
 
+# jelly-server runtime data (generated; contains secret keys — never commit)
+jelly-server/data/
+jelly-server/node_modules/
+
 # OS
 .DS_Store
 Thumbs.db
