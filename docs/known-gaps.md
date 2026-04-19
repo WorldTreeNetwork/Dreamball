@@ -81,6 +81,64 @@ before prod` markers make the mistake visible in review.
 
 ---
 
+### 6. Phase D — Real ML-DSA-87 + recrypt guild keyspaces (cross-repo sprint)
+
+**State.** Phase D of the v2.1 plan (real post-quantum signing + real
+proxy-recryption for Guild keyspaces) is gated on recrypt-server changes
+that live in a sibling repository (`/Users/dukejones/work/Identikey/recrypt`).
+The Dreamball side is ready to consume these endpoints; the recrypt side
+must expose them first.
+
+**Required recrypt-server changes.**
+
+1. **`POST /sign/ml-dsa`** — signs arbitrary bytes with a caller-supplied
+   ML-DSA-87 secret key. Body: `{ secret_key: base58, message: base58 }`.
+   Response: `{ signature: base58 }` (~4627 bytes as base58). Uses the
+   existing `oqs` crate already wired into `recrypt-core`.
+
+2. **`POST /verify/ml-dsa`** (optional, for browser verify delegation) —
+   inverse: `{ public_key, message, signature }` → `{ ok, reason? }`.
+
+3. **Keyspace endpoints for Guild scoping** — recrypt-server already has
+   `routes/keyspaces.rs`. Confirm it exposes:
+   - `POST /keyspaces` create-new returning a root keyspace handle.
+   - `POST /keyspaces/:id/members` add member with a recryption key.
+   - `POST /recrypt` server-side recryption under a keyspace scope.
+
+**Required Dreamball wire-up (all scaffolded — flip on when recrypt ready).**
+
+- `jelly-server/src/mldsa-client.ts` — HTTP client hitting the two
+  recrypt endpoints. Stub exists; wire real calls when `RECRYPT_SERVER_URL`
+  is set at server boot.
+- `jelly-server` mint route — two-hop signing: WASM Ed25519, then HTTP
+  ML-DSA. Stub exists; flip to real when the endpoint is available.
+- `jelly` CLI — gain `--ml-dsa-server <url>` flag. Not yet implemented
+  on the CLI; trivial once the HTTP contract is frozen.
+- `seal-relic --for-guild` — call `POST /recrypt` with the Guild's
+  keyspace ID instead of storing plaintext. Stub exists with a
+  `TODO-CRYPTO` marker.
+- `unlock` — request recrypted payload from the server, decrypt locally
+  with the member's key. Requires a secure member-key custody story (out
+  of scope for v2.1 — keys stay as local files for now).
+
+**Dreamball's e2e cryptography test (`tests/e2e-cryptography.sh`)** is
+already written; it runs in "mock mode" by default and flips to "real
+mode" when `RECRYPT_SERVER_URL` is set. The assertions in real mode
+should become live once the recrypt endpoints exist.
+
+**Path forward.**
+1. Add `POST /sign/ml-dsa` to recrypt-server (1-2 hrs, Rust changes in
+   sibling repo).
+2. Wire `jelly-server` two-hop signing (1 hr).
+3. Add `--ml-dsa-server` flag to the Zig CLI (1 hr).
+4. Confirm `tests/e2e-cryptography.sh` passes in real mode.
+5. Keyspace-scoped seal/unlock is a separate mini-sprint after that.
+
+Tracked as **Phase D** of
+`.omc/plans/2026-04-19-jelly-server-storybook-mldsa-recrypt.md`.
+
+---
+
 ## Resolved in v2.1
 
 These gaps existed before v2.1 and have now closed:
