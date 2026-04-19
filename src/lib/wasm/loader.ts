@@ -92,7 +92,17 @@ async function getModule(): Promise<WebAssembly.Module> {
 
 async function instantiate(): Promise<WasmExports> {
 	const mod = await getModule();
-	const inst = await WebAssembly.instantiate(mod, {});
+	// Mutable reference so the env import can see the instance's memory
+	// once it's constructed (circular dep: env.getRandomBytes writes into
+	// inst.exports.memory, but we need env to instantiate inst).
+	let inst!: WebAssembly.Instance;
+	const env = {
+		getRandomBytes(ptr: number, len: number) {
+			const mem = (inst.exports.memory as WebAssembly.Memory).buffer;
+			crypto.getRandomValues(new Uint8Array(mem, ptr, len));
+		}
+	};
+	inst = await WebAssembly.instantiate(mod, { env });
 	return inst.exports as unknown as WasmExports;
 }
 

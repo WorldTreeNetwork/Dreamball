@@ -49,7 +49,13 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     try buf.writeByte('{');
 
     try writeKey(&buf, "type");
-    try buf.writeAll("\"jelly.dreamball\"");
+    try buf.writeByte('"');
+    if (db.dreamball_type) |t| {
+        try buf.writeAll(t.toWireString());
+    } else {
+        try buf.writeAll("jelly.dreamball");
+    }
+    try buf.writeByte('"');
     try buf.writeByte(',');
 
     try writeKey(&buf, "format-version");
@@ -113,6 +119,17 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
         try buf.writeByte(',');
         try writeKey(&buf, "act");
         try writeAct(allocator, &buf, a);
+    }
+
+    if (db.guilds.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(&buf, "guild");
+        try buf.writeByte('[');
+        for (db.guilds, 0..) |fp, i| {
+            if (i > 0) try buf.writeByte(',');
+            try writeB58(allocator, &buf, &fp.bytes);
+        }
+        try buf.writeByte(']');
     }
 
     if (db.contains.len > 0) {

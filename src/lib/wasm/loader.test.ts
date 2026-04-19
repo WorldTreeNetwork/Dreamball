@@ -10,7 +10,14 @@ async function buildInstance() {
 	const wasmPath = resolve(__dirname, 'jelly.wasm');
 	const bytes = readFileSync(wasmPath);
 	const mod = await WebAssembly.compile(bytes);
-	const inst = await WebAssembly.instantiate(mod, {});
+	let inst!: WebAssembly.Instance;
+	const env = {
+		getRandomBytes(ptr: number, len: number) {
+			const mem = (inst.exports.memory as WebAssembly.Memory).buffer;
+			crypto.getRandomValues(new Uint8Array(mem, ptr, len));
+		}
+	};
+	inst = await WebAssembly.instantiate(mod, { env });
 	return inst.exports as unknown as {
 		memory: WebAssembly.Memory;
 		alloc: (n: number) => number;

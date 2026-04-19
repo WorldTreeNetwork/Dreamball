@@ -31,6 +31,33 @@ const envelope = @import("envelope.zig");
 const sealing = @import("sealing.zig");
 const json_mod = @import("json.zig");
 
+/// Host-provided randomness. Imported by the WASM module; the JS side
+/// supplies an implementation that fills `ptr[0..len]` with cryptographically
+/// secure random bytes (via `crypto.getRandomValues` in Bun + browser).
+///
+/// This is THE integration seam between the Zig protocol core and whatever
+/// runtime is hosting the WASM. One import, zero FFI, identical behaviour
+/// across Bun and the browser. See ADR-1 in the v2.1 plan.
+extern "env" fn getRandomBytes(ptr: u32, len: u32) void;
+
+/// Fill `dest` with cryptographically secure randomness from the host.
+pub fn fillRandom(dest: []u8) void {
+    getRandomBytes(@intCast(@intFromPtr(dest.ptr)), @intCast(dest.len));
+}
+
+/// A0 spike export — proves the env-import plumbing works. JS supplies
+/// `getRandomBytes`, we call it, write 32 random bytes to a known location,
+/// return the pointer. JS reads back and asserts they're non-zero + unique
+/// across two calls.
+export fn spikeRandom32() u32 {
+    var buf: [32]u8 = undefined;
+    fillRandom(&buf);
+    // Allocate in linear memory so JS can read it.
+    const slice = fba_state.allocator().alloc(u8, 32) catch return 0;
+    @memcpy(slice, &buf);
+    return @intCast(@intFromPtr(slice.ptr));
+}
+
 const BUFFER_SIZE: usize = 16 * 1024 * 1024;
 var buffer: [BUFFER_SIZE]u8 = undefined;
 var fba_state: std.heap.FixedBufferAllocator = std.heap.FixedBufferAllocator.init(&buffer);
@@ -112,6 +139,289 @@ fn pack(bytes: []const u8) u64 {
     return (p << 32) | (l & 0xFFFFFFFF);
 }
 
+// ============================================================================
+// Write-op exports — the Phase A expansion. Every export returns a packed
+// u64 (result_ptr << 32) | result_len pointing at JSON bytes. Secret keys
+// produced by `mintDreamBall` are placed in `last_secret`; JS reads via
+// `lastSecretPtr` + `lastSecretLen`. ML-DSA-87 signatures are zero-filled
+// placeholders here; the caller (jelly-server) is responsible for the
+// HTTP roundtrip to recrypt-server for real post-quantum signing.
+// ============================================================================
+
+const Ed25519 = std.crypto.sign.Ed25519;
+
+var last_secret: [64]u8 = undefined;
+var last_secret_len: u32 = 0;
+
+export fn lastSecretPtr() u32 {
+    return @intCast(@intFromPtr(&last_secret[0]));
+}
+export fn lastSecretLen() u32 {
+    return last_secret_len;
+}
+
+fn mlDsaZeroSig() [protocol.ML_DSA_87_SIGNATURE_LEN]u8 {
+    var buf: [protocol.ML_DSA_87_SIGNATURE_LEN]u8 = undefined;
+    @memset(&buf, 0);
+    return buf;
+}
+
+fn packResult(bytes: []const u8) u64 {
+    const p: u64 = @intFromPtr(bytes.ptr);
+    const l: u64 = bytes.len;
+    return (p << 32) | (l & 0xFFFFFFFF);
+}
+
+fn typeIdToEnum(id: u32) ?protocol.DreamBallType {
+    return switch (id) {
+        0 => .avatar,
+        1 => .agent,
+        2 => .tool,
+        3 => .relic,
+        4 => .field,
+        5 => .guild,
+        6 => null, // untyped v1
+        else => error.BadType catch null,
+    };
+}
+
+/// Mint a new DreamBall. Caller supplies `created` as Unix seconds; the
+/// envelope bytes come back through the packed-u64 return; the 64-byte
+/// Ed25519 secret lands in `last_secret` (read via lastSecretPtr/Len).
+///
+/// type_id: 0=avatar 1=agent 2=tool 3=relic 4=field 5=guild 6=untyped (v1).
+export fn mintDreamBall(
+    type_id: u32,
+    name_ptr: u32,
+    name_len: u32,
+    created: i64,
+) u64 {
+    const alloc_ = fba_state.allocator();
+
+    const name_slice: ?[]const u8 = if (name_len == 0)
+        null
+    else
+        @as([*]const u8, @ptrFromInt(name_ptr))[0..name_len];
+
+    const dreamball_type = typeIdToEnum(type_id);
+    if (type_id > 6) {
+        setErr("mintDreamBall: type_id {d} out of range 0..6", .{type_id});
+        return 0;
+    }
+
+    // Generate Ed25519 keypair via host randomness.
+    var seed: [Ed25519.KeyPair.seed_length]u8 = undefined;
+    fillRandom(&seed);
+    const kp = Ed25519.KeyPair.generateDeterministic(seed) catch {
+        setErr("Ed25519 keygen failed", .{});
+        return 0;
+    };
+    const pk = kp.public_key.toBytes();
+    last_secret = kp.secret_key.toBytes();
+    last_secret_len = 64;
+
+    // Genesis hash = Blake3(pk || created_le_bytes).
+    var genesis_input: [40]u8 = undefined;
+    @memcpy(genesis_input[0..32], &pk);
+    std.mem.writeInt(i64, genesis_input[32..40], created, .little);
+    var gh: [32]u8 = undefined;
+    var hasher = std.crypto.hash.Blake3.init(.{});
+    hasher.update(&genesis_input);
+    hasher.final(&gh);
+
+    // Build the unsigned DreamBall struct.
+    var db = protocol.DreamBall{
+        .stage = .seed,
+        .dreamball_type = dreamball_type,
+        .identity = pk,
+        .genesis_hash = gh,
+        .revision = 0,
+        .name = name_slice,
+        .created = created,
+    };
+
+    // First encode — unsigned — and sign that with Ed25519.
+    const unsigned = envelope.encodeDreamBall(alloc_, db) catch |e| {
+        setErr("encode (unsigned) failed: {t}", .{e});
+        return 0;
+    };
+    const sig = kp.sign(unsigned, null) catch |e| {
+        setErr("Ed25519 sign failed: {t}", .{e});
+        return 0;
+    };
+    const sig_bytes = sig.toBytes();
+
+    // Attach Ed25519 + ML-DSA placeholder, re-encode.
+    const mldsa_ph = mlDsaZeroSig();
+    const sigs = [_]protocol.Signature{
+        .{ .alg = "ed25519", .value = &sig_bytes },
+        .{ .alg = "ml-dsa-87", .value = &mldsa_ph },
+    };
+    db.signatures = &sigs;
+
+    const signed = envelope.encodeDreamBall(alloc_, db) catch |e| {
+        setErr("encode (signed) failed: {t}", .{e});
+        return 0;
+    };
+
+    return packResult(signed);
+}
+
+/// Add a Guild membership to an existing DreamBall and re-sign.
+///
+/// Inputs: existing envelope bytes, the guild's DreamBall envelope bytes,
+/// the DreamBall's 64-byte Ed25519 secret key.
+/// Output (packed return): the updated + re-signed envelope bytes.
+export fn joinGuildWasm(
+    env_ptr: u32,
+    env_len: u32,
+    guild_env_ptr: u32,
+    guild_env_len: u32,
+    secret_ptr: u32,
+    secret_len: u32,
+    updated: i64,
+) u64 {
+    if (secret_len != 64) {
+        setErr("joinGuild: secret must be 64 bytes", .{});
+        return 0;
+    }
+    const alloc_ = fba_state.allocator();
+    const env_bytes = @as([*]const u8, @ptrFromInt(env_ptr))[0..env_len];
+    const guild_bytes = @as([*]const u8, @ptrFromInt(guild_env_ptr))[0..guild_env_len];
+
+    var arena = std.heap.ArenaAllocator.init(alloc_);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    var db = envelope.decodeDreamBall(aa, env_bytes) catch |e| {
+        setErr("joinGuild: decode failed: {t}", .{e});
+        return 0;
+    };
+    const guild_db = envelope.decodeDreamBallSubject(guild_bytes) catch |e| {
+        setErr("joinGuild: guild decode failed: {t}", .{e});
+        return 0;
+    };
+
+    const guild_fp = guild_db.fingerprint();
+    var guilds_buf = alloc_.alloc(@TypeOf(guild_fp), db.guilds.len + 1) catch {
+        setErr("joinGuild: OOM", .{});
+        return 0;
+    };
+    @memcpy(guilds_buf[0..db.guilds.len], db.guilds);
+    guilds_buf[db.guilds.len] = guild_fp;
+    db.guilds = guilds_buf;
+    db.revision += 1;
+    db.updated = updated;
+    if (db.stage == .seed) db.stage = .dreamball;
+
+    // Re-sign.
+    var sk_bytes: [64]u8 = undefined;
+    @memcpy(&sk_bytes, @as([*]const u8, @ptrFromInt(secret_ptr))[0..64]);
+    const sk = Ed25519.SecretKey.fromBytes(sk_bytes) catch {
+        setErr("joinGuild: bad secret key", .{});
+        return 0;
+    };
+    const kp = Ed25519.KeyPair.fromSecretKey(sk) catch {
+        setErr("joinGuild: fromSecretKey failed", .{});
+        return 0;
+    };
+
+    // Clear prior signatures, encode unsigned, sign, reattach.
+    db.signatures = &.{};
+    const unsigned = envelope.encodeDreamBall(alloc_, db) catch |e| {
+        setErr("joinGuild: encode (unsigned) failed: {t}", .{e});
+        return 0;
+    };
+    const sig = kp.sign(unsigned, null) catch |e| {
+        setErr("joinGuild: sign failed: {t}", .{e});
+        return 0;
+    };
+    const sig_bytes = sig.toBytes();
+    const mldsa_ph = mlDsaZeroSig();
+    const sigs = [_]protocol.Signature{
+        .{ .alg = "ed25519", .value = &sig_bytes },
+        .{ .alg = "ml-dsa-87", .value = &mldsa_ph },
+    };
+    db.signatures = &sigs;
+
+    const signed = envelope.encodeDreamBall(alloc_, db) catch |e| {
+        setErr("joinGuild: encode (signed) failed: {t}", .{e});
+        return 0;
+    };
+    return packResult(signed);
+}
+
+/// Grow a DreamBall — bump revision, set updated timestamp, optionally
+/// set new name, re-sign. For v2.1 MVP this is the minimum surface; more
+/// setters (personality, voice, model, system-prompt) land once JS→Zig
+/// input marshalling is settled.
+export fn growDreamBall(
+    env_ptr: u32,
+    env_len: u32,
+    secret_ptr: u32,
+    secret_len: u32,
+    new_name_ptr: u32,
+    new_name_len: u32,
+    updated: i64,
+    promote_to_dreamball: u32,
+) u64 {
+    if (secret_len != 64) {
+        setErr("grow: secret must be 64 bytes", .{});
+        return 0;
+    }
+    const alloc_ = fba_state.allocator();
+    const env_bytes = @as([*]const u8, @ptrFromInt(env_ptr))[0..env_len];
+
+    var arena = std.heap.ArenaAllocator.init(alloc_);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    var db = envelope.decodeDreamBall(aa, env_bytes) catch |e| {
+        setErr("grow: decode failed: {t}", .{e});
+        return 0;
+    };
+    if (new_name_len > 0) {
+        db.name = @as([*]const u8, @ptrFromInt(new_name_ptr))[0..new_name_len];
+    }
+    db.revision += 1;
+    db.updated = updated;
+    if (promote_to_dreamball != 0 and db.stage == .seed) db.stage = .dreamball;
+
+    var sk_bytes: [64]u8 = undefined;
+    @memcpy(&sk_bytes, @as([*]const u8, @ptrFromInt(secret_ptr))[0..64]);
+    const sk = Ed25519.SecretKey.fromBytes(sk_bytes) catch {
+        setErr("grow: bad secret", .{});
+        return 0;
+    };
+    const kp = Ed25519.KeyPair.fromSecretKey(sk) catch {
+        setErr("grow: fromSecretKey failed", .{});
+        return 0;
+    };
+
+    db.signatures = &.{};
+    const unsigned = envelope.encodeDreamBall(alloc_, db) catch |e| {
+        setErr("grow: encode (unsigned) failed: {t}", .{e});
+        return 0;
+    };
+    const sig = kp.sign(unsigned, null) catch |e| {
+        setErr("grow: sign failed: {t}", .{e});
+        return 0;
+    };
+    const sig_bytes = sig.toBytes();
+    const mldsa_ph = mlDsaZeroSig();
+    const sigs = [_]protocol.Signature{
+        .{ .alg = "ed25519", .value = &sig_bytes },
+        .{ .alg = "ml-dsa-87", .value = &mldsa_ph },
+    };
+    db.signatures = &sigs;
+
+    const signed = envelope.encodeDreamBall(alloc_, db) catch |e| {
+        setErr("grow: encode (signed) failed: {t}", .{e});
+        return 0;
+    };
+    return packResult(signed);
+}
+
 export fn resultErrPtr() u32 {
     return @intCast(@intFromPtr(&last_err[0]));
 }
@@ -134,7 +444,6 @@ export fn resultErrLen() u32 {
 /// requires a pure-Zig liboqs (not yet available on freestanding-wasm).
 /// Real ML-DSA verification stays CLI-side until then.
 export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
-    const Ed25519 = std.crypto.sign.Ed25519;
     const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
     const alloc_ = fba_state.allocator();
 
