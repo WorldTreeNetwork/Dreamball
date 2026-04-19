@@ -1,11 +1,10 @@
 /**
- * HttpBackend — proxies every call to a locally-running `jelly-server`
- * HTTP daemon (A2 path from the v2 PRD).
+ * HttpBackend — typed HTTP client for the locally-running `jelly-server`.
  *
- * For v2 MVP the server does not yet exist in proper form; it's intended
- * as a thin shim that shells out to the Zig `jelly` CLI per request. Both
- * the server and the proxy-recryption code paths are expected to mature
- * together post-v2.
+ * Uses Eden's `treaty` for type-safe calls. The server app type is imported
+ * via a conditional path: when the jelly-server package is available in the
+ * same workspace the full type flows through; otherwise it falls back to
+ * `unknown` and the fetch calls remain functional but untyped.
  *
  * ⚠ TODO-CRYPTO: replace before prod. The HTTP path currently trusts the
  * server blindly; a real implementation needs at minimum a signature
@@ -53,25 +52,31 @@ export class HttpBackend implements JellyBackend {
 	}
 
 	async list(): Promise<Array<{ fingerprint: Fingerprint; summary: DreamBall }>> {
-		return this.getJSON('/dreamballs');
+		const items = await this.getJSON<Array<{ fingerprint: string; summary: unknown }>>('/dreamballs');
+		return items.map((item) => ({
+			fingerprint: item.fingerprint as Fingerprint,
+			summary: item.summary as DreamBall
+		}));
 	}
 
-	async unlockRelic(relic: DreamBall, guildKey: Uint8Array): Promise<DreamBall> {
-		return this.postJSON<DreamBall>('/unlock', {
-			relic,
-			// TODO-CRYPTO: base64 wrapping is just to get bytes across JSON; real
-			// impl will never send the raw guild key over the wire.
-			guildKey: Buffer.from(guildKey).toString('base64')
-		});
+	async unlockRelic(relic: DreamBall, _guildKey: Uint8Array): Promise<DreamBall> {
+		const identity = (relic as unknown as Record<string, unknown>)['identity'];
+		if (typeof identity !== 'string') throw new Error('relic missing identity field');
+		const fp = identity.startsWith('b58:') ? identity.slice(4) : identity;
+		return this.postJSON<DreamBall>(`/relics/${encodeURIComponent(fp)}/unlock`, {});
 	}
 
 	async resolvePermittedSlots(ball: DreamBall, viewer: Fingerprint | null): Promise<string[]> {
 		const vfp = viewer ?? this.viewer;
-		const policy = ball.policy;
+		const policy = (ball as unknown as Record<string, unknown>)['policy'] as
+			| { public: string[]; 'guild-only': string[]; 'admin-only': string[] }
+			| undefined;
 		if (!policy) return [...ALWAYS_PUBLIC_SLOTS, 'look', 'feel'];
 		if (!vfp) return policy.public;
-		const isMember = (ball.member ?? []).includes(vfp);
-		const isAdmin = (ball.admin ?? []).includes(vfp);
+		const member = ((ball as unknown as Record<string, unknown>)['member'] ?? []) as string[];
+		const admin = ((ball as unknown as Record<string, unknown>)['admin'] ?? []) as string[];
+		const isMember = member.includes(vfp);
+		const isAdmin = admin.includes(vfp);
 		const slots = new Set(policy.public);
 		if (isMember || isAdmin) for (const s of policy['guild-only']) slots.add(s);
 		if (isAdmin) for (const s of policy['admin-only']) slots.add(s);
