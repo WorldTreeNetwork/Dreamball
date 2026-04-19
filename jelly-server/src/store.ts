@@ -24,8 +24,11 @@ import {
   chmodSync
 } from 'fs';
 import { resolve, join } from 'path';
+import { moduleDir } from './paths.js';
 
-const DATA_DIR = resolve(import.meta.dir, '../data');
+const DATA_DIR =
+  process.env.JELLY_SERVER_DATA_DIR ??
+  resolve(moduleDir(import.meta.url, import.meta.dir), '../data');
 const DREAMBALL_DIR = join(DATA_DIR, 'dreamballs');
 const KEY_DIR = join(DATA_DIR, 'keys');
 

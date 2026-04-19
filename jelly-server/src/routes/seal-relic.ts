@@ -9,8 +9,9 @@ import { resolve } from 'path';
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
 import { storeDreamBall } from '../store.js';
 import { randomBytes } from 'crypto';
+import { moduleDir } from '../paths.js';
 
-const REPO_ROOT = resolve(import.meta.dir, '../../../');
+const REPO_ROOT = resolve(moduleDir(import.meta.url, import.meta.dir), '../../../');
 const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/jelly');
 
 export const sealRelicRoute = new Elysia().post(

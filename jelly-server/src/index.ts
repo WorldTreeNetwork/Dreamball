@@ -122,17 +122,28 @@ export const app = new Elysia()
 // Start server (skipped when imported in tests)
 // ---------------------------------------------------------------------------
 
+// Listen guard: skip explicitly, OR when the runtime doesn't support
+// `.listen()` (e.g. Vitest's worker uses Elysia's WebStandard adapter
+// which only exposes `.fetch()`). We try/catch both to keep this file
+// importable everywhere without an env-var contract that ESM hoisting
+// can defeat.
 if (process.env.JELLY_SERVER_NO_LISTEN !== '1') {
-  app.listen(PORT, () => {
-    process.stdout.write(
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        event: 'server_start',
-        port: PORT,
-        swagger: `http://localhost:${PORT}/swagger`,
-        mcp: `http://localhost:${PORT}/.well-known/mcp`
-      }) + '\n'
-    );
-  });
+  try {
+    app.listen(PORT, () => {
+      process.stdout.write(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: 'server_start',
+          port: PORT,
+          swagger: `http://localhost:${PORT}/swagger`,
+          mcp: `http://localhost:${PORT}/.well-known/mcp`
+        }) + '\n'
+      );
+    });
+  } catch {
+    // WebStandard runtimes (Vitest worker, Cloudflare Workers, etc.) don't
+    // support .listen — consumers of this module will use app.handle()
+    // directly. Non-fatal.
+  }
 }
 

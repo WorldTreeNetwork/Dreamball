@@ -9,6 +9,7 @@
 
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { moduleDir } from './paths.js';
 
 export interface WasmExports {
   memory: WebAssembly.Memory;
@@ -42,7 +43,7 @@ export interface WasmExports {
   resultErrLen: () => number;
 }
 
-const WASM_PATH = resolve(import.meta.dir, '../../src/lib/wasm/jelly.wasm');
+const WASM_PATH = resolve(moduleDir(import.meta.url, import.meta.dir), '../../src/lib/wasm/jelly.wasm');
 
 let cachedInstance: WasmExports | null = null;
 let initPromise: Promise<WasmExports> | null = null;

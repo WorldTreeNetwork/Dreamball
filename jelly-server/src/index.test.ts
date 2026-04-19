@@ -8,15 +8,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, rmSync } from 'fs';
 import { resolve } from 'path';
+import { moduleDir } from './paths.js';
+
+const HERE = moduleDir(import.meta.url, import.meta.dir);
 
 // Set env before importing app to skip auto-listen
 process.env.JELLY_SERVER_NO_LISTEN = '1';
 // Use a test-specific data dir to avoid polluting real data
-process.env.JELLY_SERVER_DATA_DIR = resolve(import.meta.dir, '../data-test');
+process.env.JELLY_SERVER_DATA_DIR = resolve(HERE, '../data-test');
 
 import { app } from './index.js';
 
-const DATA_TEST_DIR = resolve(import.meta.dir, '../data-test');
+const DATA_TEST_DIR = resolve(HERE, '../data-test');
 
 beforeAll(() => {
   // Ensure clean test data dir
