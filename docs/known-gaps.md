@@ -81,13 +81,29 @@ before prod` markers make the mistake visible in review.
 
 ---
 
-### 6. Phase D — Real ML-DSA-87 + recrypt guild keyspaces (cross-repo sprint)
+### 6. Phase D — Real ML-DSA-87 + recrypt guild keyspaces (partial)
 
-**State.** Phase D of the v2.1 plan (real post-quantum signing + real
-proxy-recryption for Guild keyspaces) is gated on recrypt-server changes
-that live in a sibling repository (`/Users/dukejones/work/Identikey/recrypt`).
-The Dreamball side is ready to consume these endpoints; the recrypt side
-must expose them first.
+**State (updated 2026-04-19).** The recrypt-server side of Phase D is
+**done** — `POST /sign/ml-dsa` and `POST /verify/ml-dsa` exist in
+`recrypt/recrypt-server/src/routes/signing.rs` (commit `d97060e`).
+They delegate to `recrypt-ffi::liboqs::{pq_sign, pq_verify}` which use
+the `oqs` crate. Sign+verify roundtrip test passes.
+
+The Dreamball side still needs to wire these in:
+
+  1. `jelly-server/src/mldsa-client.ts` — HTTP client calling the two
+     recrypt endpoints. Not yet written.
+  2. `jelly-server` mint route — do the two-hop WASM-Ed25519 +
+     HTTP-ML-DSA signing when `RECRYPT_SERVER_URL` is set. Currently
+     ML-DSA stays as the zero-filled placeholder.
+  3. `jelly` CLI — add `--ml-dsa-server <url>` flag.
+  4. `tests/e2e-cryptography.sh` — the real-mode assertions (guarded by
+     `$MODE == real`) flip on when the above is wired.
+
+Guild keyspace proxy-recryption (the harder half of Phase D) remains
+future work — `recrypt-server` already has keyspace endpoints
+(`/keyspaces`, `/recryption/share`), but integrating them into
+`seal-relic` and `transmit` is a separate mini-sprint.
 
 **Required recrypt-server changes.**
 
