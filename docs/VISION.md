@@ -39,7 +39,7 @@ because they map real-world development:
 The lifecycle is **additive and revisional**, not a fork-and-merge dance. Two
 people collaborating on the same aspect share *the same container* and bump
 the revision together — like a shared Google Drive document, not a Git branch
-tree. The graph edges are _containment_ (`contains`) and _inspiration_
+tree. The graph connections are _containment_ (`contains`) and _inspiration_
 (`derived-from`), never _ancestry-of-copy_.
 
 This matters because it resists the instinct to treat every change as a new
@@ -50,7 +50,7 @@ it (making a new identity) is a deliberate act, not the default.
 
 ## 3. The graph is symmetric and fractal
 
-DreamBalls nest. A DreamBall can contain other DreamBalls (`contains` edges),
+DreamBalls nest. A DreamBall can contain other DreamBalls (`contains` connections),
 and every contained DreamBall has the **same shape** as its parent — the same
 three axes, the same signature structure, the same optional further
 containment. This gives us two properties:
@@ -203,7 +203,7 @@ Concretely, inside `jelly.look`, we reserve space for:
   getting
 
 v1 of the protocol keeps the simpler `asset` list for compatibility. v2 will
-introduce these richer slots as additive assertions, so v1 DreamBalls keep
+introduce these richer slots as additive attributes, so v1 DreamBalls keep
 working and v2 producers can layer form-independent `look` on top.
 
 ### 4.6 Open engineering questions
@@ -228,7 +228,7 @@ combining and remixing aspects the community publishes.
 
 This has implications:
 
-- **Every containment edge is a composition hypothesis.** "This DreamBall
+- **Every containment connection is a composition hypothesis.** "This DreamBall
   includes that one" is a claim that the two fit together meaningfully.
 - **Derivation without ancestry.** `derived-from` records that a DreamBall
   drew inspiration from another, but does not imply they share any
@@ -320,9 +320,9 @@ Two design implications flow from taking the MTG analogy seriously:
    sense for it (see `docs/PROTOCOL.md §12.1`).
 2. **Types compose, they don't inherit.** A DreamBall isn't "an agent
    extending an avatar"; it's an agent *containing* an avatar via the
-   graph edge that already exists in v1 (`contains`). An agent may have
+   graph connection that already exists in v1 (`contains`). An agent may have
    its own avatar; an avatar may be worn by an agent. The `contains` and
-   `derived-from` edges carry the compositional semantics we already
+   `derived-from` connections carry the compositional semantics we already
    defined in v1 — v2 just teaches the renderer to honour them.
 
 ### 10.1 The "jelly bean" metaphor
@@ -398,7 +398,7 @@ this policy explicit: slot-level read/write permissions keyed to Guild
 membership.
 
 Practically: when rendering a DreamBall the consumer first looks at the
-`guild` assertion(s), resolves each to its policy, and filters the slot
+`guild` attribute(s), resolves each to its policy, and filters the slot
 surface for the current viewer identity. An observer sees only
 `public` slots; a Guild member sees `public` + `guild-only`; an admin
 sees everything including `admin-only` (secrets, for instance).
@@ -573,8 +573,8 @@ spatial metaphor, not decoration around a conventional database. The
 topology *is* the meaning-carrying structure.
 
 Containment provides the cold backbone (inherited from §3's fractal
-symmetry); the palace composition adds **warm edges** (§15.5) on top.
-A room inside a palace uses the same `contains` edge that any
+symmetry); the palace composition adds **warm connections** (§15.5) on top.
+A room inside a palace uses the same `contains` connection that any
 DreamBall inside any DreamBall uses. The palace never needs a
 special-purpose nesting primitive.
 
@@ -699,7 +699,7 @@ renderer walks it to decide what's nested where. Containment is
 what makes the palace a palace at all.
 
 **Aqueducts are the warm substrate on top.** An aqueduct is a
-directed, typed, weighted edge between two DreamBalls, carrying
+directed, typed, weighted connection between two DreamBalls, carrying
 Vril in one of a handful of `kind`s: `gaze` (the wayfarer's
 attention flowed here), `visit` (they physically went), `transmit`
 (a skill or observation flowed), `inscribe` (writing flowed),
@@ -707,7 +707,7 @@ attention flowed here), `visit` (they physically went), `transmit`
 energetic relationship with no walkable correspondence).
 
 The electrical vocabulary (resistance, capacitance, conductance,
-phase) is not decorative. It buys the palace two things cold edges
+phase) is not decorative. It buys the palace two things cold connections
 can't: **diagnostics** (a high-capacitance, low-conductance room is
 where a wayfarer *holds* something but doesn't yet *release* it —
 a debuggable property of the topology, not a vibe) and **renderer
@@ -740,7 +740,7 @@ the emotional register's trajectory.
 Rooms rearrange themselves based on what's being used. A Room of
 Requirement behaviour is default, not exceptional. Two viewers of
 the same palace may see different layouts simultaneously — the
-`jelly.layout` assertion is a rendering hint, not a security claim,
+`jelly.layout` attribute is a rendering hint, not a security claim,
 and multiple layouts can coexist. Spatial relationships are
 metaphor; the palace is not bound by physics.
 

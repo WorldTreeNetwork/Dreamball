@@ -35,16 +35,34 @@ The lifecycle has three named stages:
 
 ---
 
+## 1.2 Terminology (our vocabulary vs. Gordian's)
+
+This spec and the Memory Palace docs (VISION §15, `products/memory-palace/prd.md`) use a plainer vocabulary than the upstream Gordian Envelopes / recrypt literature. The underlying CBOR bytes are identical; only the prose terms differ.
+
+| Gordian / recrypt term | Our term | What it is |
+|---|---|---|
+| `envelope` | **node** | a DreamBall or any of its nested sub-structures |
+| `subject` | **core** | the node-intrinsic data inside CBOR tag `#6.201`; what the node *is* |
+| `assertion` | **attribute** | a labeled outbound connection from the core; what the node *says* |
+| `predicate` | **label** | the attribute's key — the word that locates its meaning in the schema |
+| `object` (terminal) | **value** | a terminal datum at the end of an attribute |
+| `object` (envelope) | **connected node** | a nested node at the end of an attribute |
+| `edge` (graph term) | **connection** | same shape; plainer word |
+
+In one sentence: **a DreamBall is a node; its core defines what it is; its attributes are labeled connections to values or to other nodes.**
+
+This vocabulary is used consistently throughout the Dreamball spec (PROTOCOL, VISION, ARCHITECTURE, and all product PRDs). The translation table exists for readers coming from the upstream Gordian / recrypt literature; our own docs no longer use the original terms except when citing upstream directly (e.g., the CBOR tag `#6.201` definition in §3).
+
 ## 2. Design conventions (inherited from recrypt)
 
 The protocol reuses recrypt's wire conventions verbatim, except where noted:
 
 1. **CBOR wire format, dCBOR-style determinism.** Map keys sorted canonically, smallest integer encoding, no floats in protocol fields, no indefinite-length items, tagged timestamps (`#6.1`), tagged envelopes (`#6.200`) and leaves (`#6.201`). See [recrypt wire-protocol §2.1](../../recrypt/docs/wire-protocol.md#21-dcbor).
-2. **Envelope = subject + assertions.** Load-bearing anchors (`type`, `format-version`, identity key, content hashes) go in the subject. Mutable, elidable, descriptive metadata goes in assertions.
-3. **Dual signatures, both required.** Every signed DreamBall carries exactly one Ed25519 and one ML-DSA-87 `'signed'` assertion. A verifier that sees only one MUST reject.
-4. **Salted assertions for low-entropy elidable fields** (timestamps, small enums, templated strings). See [recrypt wire-protocol §6](../../recrypt/docs/wire-protocol.md#6-salting-policy).
+2. **Envelope = core + attributes.** Load-bearing anchors (`type`, `format-version`, identity key, content hashes) go in the core. Mutable, elidable, descriptive metadata goes in attributes.
+3. **Dual signatures, both required.** Every signed DreamBall carries exactly one Ed25519 and one ML-DSA-87 `'signed'` attribute. A verifier that sees only one MUST reject.
+4. **Salted attributes for low-entropy elidable fields** (timestamps, small enums, templated strings). See [recrypt wire-protocol §6](../../recrypt/docs/wire-protocol.md#6-salting-policy).
 5. **Fingerprint = `Blake3(Ed25519 public key)`**, 32 bytes, base58 for display.
-6. **`format-version` in every subject.** Parsers reject unknown versions before reading further.
+6. **`format-version` in every core.** Parsers reject unknown versions before reading further.
 7. **Three interchange formats**, same bytes underneath:
 
 | Format      | Extension    | Primary use                        |
@@ -62,7 +80,7 @@ The CBOR bytes are authoritative. JSON and armor are wrappings of the same seman
 | Tag      | Role                                   | Owner                |
 | -------- | -------------------------------------- | -------------------- |
 | `#6.200` | Envelope                               | Blockchain Commons   |
-| `#6.201` | Leaf (dCBOR-encoded subject)           | Blockchain Commons   |
+| `#6.201` | Leaf (dCBOR-encoded core)              | Blockchain Commons (upstream name: "subject") |
 | `#6.1`   | Epoch time (RFC 8949)                  | IETF                 |
 | `#6.???` | `jelly.asset-ref` (content-addressed)  | TBD — private-use until registered |
 | `#6.???` | `jelly.dreamball-ref` (fingerprint)    | TBD — private-use until registered |
@@ -77,7 +95,7 @@ The primary envelope — represents a single DreamBall at any stage of its lifec
 
 ```
 200(                                              ; envelope
-  201(                                            ; leaf subject
+  201(                                            ; leaf core
     {
       "type":           "jelly.dreamball",
       "format-version": 1,
@@ -107,7 +125,7 @@ The primary envelope — represents a single DreamBall at any stage of its lifec
 ]
 ```
 
-**Subject fields** (all load-bearing):
+**Core fields** (all load-bearing):
 
 | Field            | Type     | Meaning                                          |
 | ---------------- | -------- | ------------------------------------------------ |
@@ -119,10 +137,10 @@ The primary envelope — represents a single DreamBall at any stage of its lifec
 
 `identity` and `genesis-hash` together uniquely name the DreamBall across its entire lifetime. Updates bump `revision` and re-sign; they do not change these two fields.
 
-**Assertions of note:**
+**Attributes of note:**
 
 - `look` / `feel` / `act` are **nested envelopes**, each defined below. They may be elided (replaced with their digest) when transporting a "pointer only" view of the DreamBall.
-- `contains` carries the fingerprint of a nested DreamBall (graph edge). A DreamBall that aggregates others looks like a hub with many `contains` assertions.
+- `contains` carries the fingerprint of a nested DreamBall (graph connection). A DreamBall that aggregates others looks like a hub with many `contains` attributes.
 - `derived-from` records inspirational ancestry without implying the current DreamBall is a mutable copy of the ancestor.
 - `revision` is the only way to tell two envelopes with the same `identity` + `genesis-hash` apart. Verifiers picking "the current state" MUST pick the highest-revision envelope whose signatures verify.
 
@@ -132,7 +150,7 @@ The primary envelope — represents a single DreamBall at any stage of its lifec
 designed around form-independence — see [`docs/VISION.md` §4](VISION.md#4-form-independence-in-the-look-slot-in-progress)
 for the full rationale (shader-first layer, optional addressable base mesh,
 graticule refs, resolution declarations). v2 will land as *additive*
-assertions so v1 envelopes keep working.
+attributes so v1 envelopes keep working.
 
 ```
 200(
@@ -303,14 +321,14 @@ The seed's `genesis-hash` becomes the container's permanent origin anchor for th
 
 Promotion is a **re-sign**, not a copy. Producers:
 
-1. Add/update assertions on the same `identity`/`genesis-hash` subject.
+1. Add/update attributes on the same `identity`/`genesis-hash` core.
 2. Bump `revision`.
 3. Update `updated` (salted).
 4. Re-sign (Ed25519 + ML-DSA-87).
 
 Consumers pick the highest-revision envelope that verifies. Older revisions are historical, not garbage — they may be retained for provenance.
 
-**Containment, not forking.** To "remix" a DreamBall, create a _new_ DreamBall (new `identity`) whose `derived-from` assertion points to the source's fingerprint. The source is untouched; the new one has its own lifecycle.
+**Containment, not forking.** To "remix" a DreamBall, create a _new_ DreamBall (new `identity`) whose `derived-from` attribute points to the source's fingerprint. The source is untouched; the new one has its own lifecycle.
 
 ### 5.3 DragonBall (sealed)
 
@@ -365,12 +383,12 @@ A DragonBall's inner envelope still says `stage = "dreamball"` — the dragon fo
 
 DreamBalls form a directed graph:
 
-- **`contains`** edges: this DreamBall embeds/depends-on that one. Containment is transitive — a DreamBall containing a DreamBall that contains another effectively contains the grandchild. Cycles are forbidden.
-- **`derived-from`** edges: this DreamBall was inspired by that one. Not transitive. No effect on signature validation.
+- **`contains`** connections: this DreamBall embeds/depends-on that one. Containment is transitive — a DreamBall containing a DreamBall that contains another effectively contains the grandchild. Cycles are forbidden.
+- **`derived-from`** connections: this DreamBall was inspired by that one. Not transitive. No effect on signature validation.
 
 The structure is **fractal** in the sense that any sub-DreamBall has the same shape as the whole — look/feel/act slots, signatures, optional further containment. A renderer written for the top-level DreamBall works unchanged on any descendant.
 
-The structure is **symmetric** in that all containment edges are the same kind — there is no distinction between "parent" and "primary" children. A hub DreamBall with ten `contains` assertions treats each child equally.
+The structure is **symmetric** in that all containment connections are the same kind — there is no distinction between "parent" and "primary" children. A hub DreamBall with ten `contains` attributes treats each child equally.
 
 ---
 
@@ -407,17 +425,17 @@ JSON import/export MUST round-trip to identical CBOR bytes when the JSON was pro
 
 Identical to recrypt (see [recrypt wire-protocol §4](../../recrypt/docs/wire-protocol.md#4-signature-model)):
 
-1. Producer constructs the envelope with subject + all non-signature assertions.
-2. Producer calls the library's `add_signatures(ed25519, ml-dsa-87)`; the library computes the signed digest and appends two `'signed'` assertions.
+1. Producer constructs the envelope with core + all non-signature attributes.
+2. Producer calls the library's `add_signatures(ed25519, ml-dsa-87)`; the library computes the signed digest and appends two `'signed'` attributes.
 3. Verifier counts signatures (must be exactly two, one of each algorithm), verifies both, rejects on any failure.
 
-Signatures cover the subject digest plus every non-elided assertion's digest at signing time. Eliding a salted assertion after signing is valid.
+Signatures cover the core digest plus every non-elided attribute's digest at signing time. Eliding a salted attribute after signing is valid.
 
 ---
 
 ## 9. Versioning
 
-Each envelope carries `format-version` in its subject. Additive changes (new assertion predicates) do not bump the version. New subject fields or removed subject fields do. See [recrypt wire-protocol §10](../../recrypt/docs/wire-protocol.md#10-versioning-and-evolution).
+Each envelope carries `format-version` in its core. Additive changes (new attribute labels) do not bump the version. New core fields or removed core fields do. See [recrypt wire-protocol §10](../../recrypt/docs/wire-protocol.md#10-versioning-and-evolution).
 
 Current version floor: `1` for every domain type.
 
@@ -449,9 +467,9 @@ Current version floor: `1` for every domain type.
 
 ### 12.1 The six typed DreamBalls
 
-Every v2 DreamBall subject carries a `type` field selected from:
+Every v2 DreamBall core carries a `type` field selected from:
 
-| Subject `type` | Shape | Primary lens(es) |
+| Core `type` | Shape | Primary lens(es) |
 |---|---|---|
 | `jelly.dreamball.avatar` | look-heavy; minimal act | avatar, thumbnail |
 | `jelly.dreamball.agent`  | act-heavy; model + memory + KG + emotion + skills | knowledge-graph, emotional-state |
@@ -462,11 +480,11 @@ Every v2 DreamBall subject carries a `type` field selected from:
 
 The v1 bare `jelly.dreamball` value remains legal (untyped). Producers SHOULD migrate to one of the six typed values; consumers that see `jelly.dreamball` with no subtype MUST treat it as the Avatar variant (safest default).
 
-All six share the v1 subject fields (`format-version`, `stage`, `identity`, `genesis-hash`, `revision`) and add **zero load-bearing subject fields** — the difference between types lives in which *assertions* the consumer expects to find.
+All six share the v1 core fields (`format-version`, `stage`, `identity`, `genesis-hash`, `revision`) and add **zero load-bearing core fields** — the difference between types lives in which *attributes* the consumer expects to find.
 
 #### 12.1.1 `jelly.dreamball.avatar`
 
-Populated assertion surface: `look`, `feel` (optional), `name`, `note`, optional `wearer` (a fingerprint indicating the current wearer — informational; not a security claim).
+Populated attribute surface: `look`, `feel` (optional), `name`, `note`, optional `wearer` (a fingerprint indicating the current wearer — informational; not a security claim).
 
 Example:
 ```
@@ -485,7 +503,7 @@ Example:
 
 #### 12.1.2 `jelly.dreamball.agent`
 
-Full act surface plus the four new v2 agent assertions:
+Full act surface plus the four new v2 agent attributes:
 - `act` — v1-compatible skill + tool + model + prompt slot
 - `memory` — `jelly.memory` envelope (§12.3)
 - `knowledge-graph` — `jelly.knowledge-graph` envelope (§12.4)
@@ -496,19 +514,19 @@ Full act surface plus the four new v2 agent assertions:
 
 #### 12.1.3 `jelly.dreamball.tool`
 
-A transferable skill. Carries exactly one `skill` assertion (a `jelly.skill` envelope) and an optional `applicable-to` (list of DreamBall type names this Tool can attach to — defaults to `["jelly.dreamball.agent"]`).
+A transferable skill. Carries exactly one `skill` attribute (a `jelly.skill` envelope) and an optional `applicable-to` (list of DreamBall type names this Tool can attach to — defaults to `["jelly.dreamball.agent"]`).
 
 #### 12.1.4 `jelly.dreamball.relic`
 
-Wraps a sealed inner DreamBall. Subject adds `sealed-payload-hash` (Blake3 of the sealed inner envelope bytes) and `unlock-guild` (Guild fingerprint whose keyspace can unlock). Assertion `reveal-hint` is an optional short text shown to would-be unlockers. Attachment slot in the `.jelly` file carries the sealed bytes.
+Wraps a sealed inner DreamBall. Core adds `sealed-payload-hash` (Blake3 of the sealed inner envelope bytes) and `unlock-guild` (Guild fingerprint whose keyspace can unlock). Attribute `reveal-hint` is an optional short text shown to would-be unlockers. Attachment slot in the `.jelly` file carries the sealed bytes.
 
 #### 12.1.5 `jelly.dreamball.field`
 
-Assertion surface includes `omnispherical-grid` (§12.2), `ambient-palette` (hex colors or `jelly.asset` refs), and `dream-field-id` (a UUID grouping related fields).
+Attribute surface includes `omnispherical-grid` (§12.2), `ambient-palette` (hex colors or `jelly.asset` refs), and `dream-field-id` (a UUID grouping related fields).
 
 #### 12.1.6 `jelly.dreamball.guild`
 
-Members + policy container. Subject adds `guild-name` (display) and `keyspace-root-hash` (Blake3 of the keyspace root — the Guild fingerprint). Assertions: `member` (repeatable, each a fingerprint), `admin` (repeatable fingerprints of admins), `policy` (§12.7).
+Members + policy container. Core adds `guild-name` (display) and `keyspace-root-hash` (Blake3 of the keyspace root — the Guild fingerprint). Attributes: `member` (repeatable, each a fingerprint), `admin` (repeatable fingerprints of admins), `policy` (§12.7).
 
 ### 12.2 `jelly.omnispherical-grid`
 
@@ -531,25 +549,25 @@ The graticule that makes the dream-field renderable without committing to a mesh
 
 ### 12.3 `jelly.memory`
 
-A directed graph of memory nodes with labeled edges. Edges are typed: at minimum `semantic`, `emotional`, `temporal`.
+A directed graph of memory nodes with labeled connections. Connections are typed: at minimum `semantic`, `emotional`, `temporal`.
 
 ```
 200(
   201({ "type": "jelly.memory", "format-version": 2 })
 ) [
   "node":    <jelly.memory-node>,         ; repeatable
-  "edge":    <jelly.memory-edge>,         ; repeatable
+  "connection": <jelly.memory-connection>,      ; repeatable
   [salted] "last-updated": 1(…),
 ]
 ```
 
-`jelly.memory-node` subject: `{ "type": "jelly.memory-node", "format-version": 2, "id": <u64> }`. Assertions include `content` (text or asset ref), `created`, `last-recalled`, and `lookups` (map of lookup-name → sort-key value, supporting the "emotional lookup table" use case).
+`jelly.memory-node` core: `{ "type": "jelly.memory-node", "format-version": 2, "id": <u64> }`. Attributes include `content` (text or asset ref), `created`, `last-recalled`, and `lookups` (map of lookup-name → sort-key value, supporting the "emotional lookup table" use case).
 
-`jelly.memory-edge` subject: `{ "type": "jelly.memory-edge", "format-version": 2, "from": <u64>, "to": <u64>, "kind": "semantic"|"emotional"|"temporal"|... }`. Assertions include `strength` (0.0–1.0) and `label` (text).
+`jelly.memory-connection` core: `{ "type": "jelly.memory-connection", "format-version": 2, "from": <u64>, "to": <u64>, "kind": "semantic"|"emotional"|"temporal"|... }`. Attributes include `strength` (0.0–1.0) and `label` (text).
 
 ### 12.4 `jelly.knowledge-graph`
 
-Triple-shaped ambient knowledge. Each triple is `[subject, predicate, object]` with subject and predicate as short text strings and object as either text or a fingerprint reference.
+Triple-shaped ambient knowledge. Each triple is `[from, label, to]` — `from` and `label` are short text strings; `to` is either a text value or a fingerprint reference. (This replaces the RDF "subject, predicate, object" naming; the data model is the same, the words match our vocabulary.)
 
 ```
 200(
@@ -592,11 +610,11 @@ Captured interaction histories — what this DreamBall *has done / been part of*
 ]
 ```
 
-`jelly.interaction` subject: `{ type, format-version, turn: u32, actor: fp, kind: "speak"|"listen"|"act"|"receive" }`. Assertions: `content` (text/asset), `timestamp`, `outcome` (optional short text).
+`jelly.interaction` core: `{ type, format-version, turn: u32, actor: fp, kind: "speak"|"listen"|"act"|"receive" }`. Attributes: `content` (text/asset), `timestamp`, `outcome` (optional short text).
 
 ### 12.7 `jelly.guild-policy`
 
-Per-slot read/write permission policy. Attached to a Guild envelope as the `policy` assertion.
+Per-slot read/write permission policy. Attached to a Guild envelope as the `policy` attribute.
 
 ```
 200(
@@ -613,7 +631,7 @@ Per-slot read/write permission policy. Attached to a Guild envelope as the `poli
 ]
 ```
 
-A consumer rendering a DreamBall first checks `guild` assertion(s) on the target DreamBall, resolves each to a `jelly.dreamball.guild` envelope, reads the policy, and decides which assertions to expose to the current viewer identity.
+A consumer rendering a DreamBall first checks `guild` attribute(s) on the target DreamBall, resolves each to a `jelly.dreamball.guild` envelope, reads the policy, and decides which attributes to expose to the current viewer identity.
 
 Policy resolution is additive — if multiple Guilds claim the DreamBall, the union of `public` + `guild-only` slots is readable by members of any claiming Guild; `admin-only` requires admin membership in at least one claiming Guild.
 
@@ -667,14 +685,14 @@ The v1 bundle header (magic `JELY`, version, flags, seal-type, attachment-count)
 
 ### 12.11 v1 → v2 migration
 
-- **Additive.** Every new envelope type is new. No v1 type gains or loses subject fields.
+- **Additive.** Every new envelope type is new. No v1 type gains or loses core fields.
 - **Untagged `jelly.dreamball` is preserved.** v1 producers keep emitting it; v2 consumers treat it as Avatar.
 - **Golden-bytes lock extended.** `src/golden.zig` gains one additional fixture per new envelope type (§12.1 × 6 + §12.2–12.9 × 8 = 14 fixtures) pinning canonical byte output.
-- **No wire-breaking changes.** A v2 consumer reading a v1 envelope emits identical semantics to v1; a v1 consumer reading a v2 Avatar envelope loses only the new assertions it doesn't know about (they're additive).
+- **No wire-breaking changes.** A v2 consumer reading a v1 envelope emits identical semantics to v1; a v1 consumer reading a v2 Avatar envelope loses only the new attributes it doesn't know about (they're additive).
 
 ### 12.12 Open questions for v2
 
-- Should `jelly.memory` triples and edges be content-addressed by their hash so a memory can be shared across DreamBalls? Defer — v2 treats memory as private to its Agent.
+- Should `jelly.memory` triples and connections be content-addressed by their hash so a memory can be shared across DreamBalls? Defer — v2 treats memory as private to its Agent.
 - Quorum signatures on Guild unlocks (m-of-n)? Currently any member can unlock; Vision tier.
 - Should `jelly.transmission` carry a *revocation* counterpart (a Tool previously transmitted can be withdrawn)? Defer — transmission is additive; revocation needs the real recrypt wire-up.
 
@@ -683,19 +701,19 @@ The v1 bundle header (magic `JELY`, version, flags, seal-type, attachment-count)
 ## 13. Memory Palace composition — auxiliary envelopes
 
 **Status:** Draft v1 — 2026-04-20.
-**Scope:** One optional subject field on `jelly.dreamball.field`,
+**Scope:** One optional core field on `jelly.dreamball.field`,
 plus nine auxiliary envelope types introduced by the Memory Palace
 composition (see [`docs/products/memory-palace/prd.md`](products/memory-palace/prd.md)
 for the product spec and [`docs/VISION.md §15`](VISION.md#15-the-memory-palace-the-first-composition)
 for the descriptive rationale).
 **Rationale:** The palace is a *specific composition* of the v2
 primitives, not a new protocol. Every envelope here is additive; v2
-parsers without palace support see these as unknown assertions and
-skip. No existing envelope gains or loses subject fields.
+parsers without palace support see these as unknown attributes and
+skip. No existing envelope gains or loses core fields.
 
-### 13.1 The `field-kind` assertion
+### 13.1 The `field-kind` attribute
 
-`jelly.dreamball.field` (§12.1.5) gains **one optional assertion**:
+`jelly.dreamball.field` (§12.1.5) gains **one optional attribute**:
 
 ```
 "field-kind": "palace" | "room" | "ambient" | <open-enum>
@@ -703,23 +721,23 @@ skip. No existing envelope gains or loses subject fields.
 
 | Value | Meaning |
 |---|---|
-| `"palace"` | A Memory Palace root. MUST carry a `jelly.mythos` assertion (§13.8). Renderer routes to the `palace` lens. |
+| `"palace"` | A Memory Palace root. MUST carry a `jelly.mythos` attribute (§13.8). Renderer routes to the `palace` lens. |
 | `"room"` | A contained room inside a palace. Rendered only when the parent palace is the active Field. |
 | `"ambient"` | The dream-field meaning from VISION §4.4.5 — environmental context for non-palace compositions. |
 | *absent* | The v2 default. Behaves exactly as specified in §12.1.5. |
 
-**Why an assertion, not a subject field.** v2 §12.1 codified the
+**Why an attribute, not a core field.** v2 §12.1 codified the
 rule that "the difference between [Field variants] lives in
-*assertions*." `field-kind` follows that pattern: elidable,
+*attributes*." `field-kind` follows that pattern: elidable,
 salt-friendly, additive without bumping `format-version`. Rendering
-engines route on the assertion exactly as they would on a subject
+engines route on the attribute exactly as they would on a core
 field. A Field with an unrecognised `field-kind` value MUST be
-treated as if the assertion were absent; no other envelope types
+treated as if the attribute were absent; no other envelope types
 are affected.
 
 ### 13.2 `jelly.layout`
 
-A Room or Palace Field carries a `layout` assertion that records
+A Room or Palace Field carries a `layout` attribute that records
 where its children sit in its local coordinate frame. The layout is
 a **rendering hint**, not a security claim — multiple layouts can
 coexist (the palace shifts; see PRD J5 and VISION §15.7).
@@ -755,20 +773,20 @@ resolution is PRD FR68, Vision).
         "palace-fp": h'…32…'                 ; 1:1 identity anchor — which palace this timeline belongs to
   })
 ) [
-  "head-hash":    h'…32…',                   ; Blake3 of the latest jelly.action envelope — assertion, updated on every append
+  "head-hash":    h'…32…',                   ; Blake3 of the latest jelly.action envelope — attribute, updated on every append
   "action":       <jelly.action envelope>,   ; repeatable, ordered by parent-hash chain
   [salted] 'note': "genesis timeline"
 ]
 ```
 
-`head-hash` lives in an assertion, not the subject, because it is
-the timeline's current *state*, not its *identity*. The subject
+`head-hash` lives in an attribute, not the core, because it is
+the timeline's current *state*, not its *identity*. The core
 stays stable across the timeline's entire life: `palace-fp` binds
 the timeline to exactly one palace. Re-signing on append is still
-required, but the subject digest does not churn — the Merkle tree
-over assertions is what changes.
+required, but the core digest does not churn — the Merkle tree
+over attributes is what changes.
 
-`jelly.action` subject:
+`jelly.action` core:
 ```
 {
   "type":           "jelly.action",
@@ -778,7 +796,7 @@ over assertions is what changes.
   "actor":          h'…32…'                    ; fingerprint of the signer
 }
 ```
-Assertions: `timestamp` (CBOR tag 1), `subject-fp` (what the action
+Attributes: `timestamp` (CBOR tag 1), `target-fp` (what the action
 was performed on, if any), free-form per-kind payload, dual
 signatures.
 
@@ -799,7 +817,7 @@ document.
 
 ### 13.4 `jelly.aqueduct`
 
-A directed, typed, weighted edge carrying **Vril** (see VISION §15.3).
+A directed, typed, weighted connection carrying **Vril** (see VISION §15.3).
 The electrical-style fields are **load-bearing** — both the renderer
 (particle speed, glow density, pulse phase) and the oracle
 (diagnostic reasoning) consume them. Aqueducts sit *on top of* the
@@ -837,7 +855,7 @@ palace MAY be instructed to reset-and-reflow (discard all stored
 `conductance` values and re-iterate) without loss of correctness.
 See PRD §5.4 for the rationale.
 
-`kind = "ley-line"` denotes a purely energetic edge with no
+`kind = "ley-line"` denotes a purely energetic connection with no
 walkable correspondence — rendered as a ghostly underlay beneath
 the walkable palace geometry.
 
@@ -874,7 +892,7 @@ policy, typically weighted by social-graph distance.
 200(
   201({ "type": "jelly.trust-observation", "format-version": 2,
         "observer": h'…32…',    ; signer
-        "subject":  h'…32…'     ; about whom
+        "about":    h'…32…'     ; about whom (fingerprint of the party being observed)
   })
 ) [
   "axis":        { "name": "careful",  "value": 0.78, "range": [0.0, 1.0] },
@@ -942,7 +960,7 @@ The keystone. See VISION §15.2 for the *why*. Wire:
 **Two kinds of chain.** A DreamBall MAY have:
 
 - A **canonical chain** — signed by the DreamBall's custodian(s),
-  embedded as a `jelly.mythos` assertion directly on the DreamBall
+  embedded as a `jelly.mythos` attribute directly on the DreamBall
   envelope, `about` absent. Load-bearing on identity. A
   `jelly.dreamball.field` with `field-kind: "palace"` MUST carry at
   least the genesis canonical mythos.
@@ -959,7 +977,7 @@ appear only on poetic links. Mixing (e.g., a canonical link with
 `about` present, or a poetic link with `discovered-in`) is a
 protocol error and rejected at verify time.
 
-**Subject fields** are both load-bearing:
+**Core fields** are both load-bearing:
 
 | Field | Type | Rule |
 |---|---|---|
@@ -986,7 +1004,7 @@ protocol error and rejected at verify time.
   they are independent envelopes under their author's keypair.
 - Divergence beyond synthesis: a visitor whose poetic chain has
   drifted too far from the canonical chain MAY fork by minting a
-  new DreamBall with a `derived-from` edge (v1 primitive) and a
+  new DreamBall with a `derived-from` connection (v1 primitive) and a
   fresh genesis canonical mythos. No new protocol support needed.
 
 ### 13.9 `jelly.archiform`
@@ -1033,10 +1051,10 @@ v2 specifies.
 `src/golden.zig` gains **thirteen new fixtures**. The fixtures pin
 canonical byte output for:
 
-1. `jelly.dreamball.field` with `field-kind: "palace"` assertion
+1. `jelly.dreamball.field` with `field-kind: "palace"` attribute
    (minimal).
 2. `jelly.layout` with two placements.
-3. `jelly.timeline` with `head-hash` assertion set.
+3. `jelly.timeline` with `head-hash` attribute set.
 4. `jelly.action` single-parent variant.
 5. `jelly.action` multi-parent variant.
 6. `jelly.aqueduct` with all numeric fields populated.
@@ -1045,16 +1063,16 @@ canonical byte output for:
 9. `jelly.inscription` with embedded markdown asset.
 10. `jelly.mythos` canonical genesis.
 11. `jelly.mythos` canonical successor with `synthesizes`.
-12. `jelly.mythos` poetic (with `about` assertion).
+12. `jelly.mythos` poetic (with `about` attribute).
 13. `jelly.archiform` with `parent-form` set.
 
 ### 13.12 Migration
 
 - **Fully additive.** Every introduction here is new. No v1 or v2
-  envelope gains or loses subject fields.
+  envelope gains or loses core fields.
 - **Version number unchanged.** All new envelopes carry
   `format-version: 2`.
-- **v2 consumers without palace support.** Unknown assertions on a
+- **v2 consumers without palace support.** Unknown attributes on a
   known envelope skip silently, preserving §9's versioning rule. A
   v2 consumer rendering a palace-flavoured Field without palace
   support sees a plain v2 Field and renders via the existing
@@ -1067,7 +1085,7 @@ Summary of protocol-shape-affecting ones:
 
 1. **CRDT merge semantics for the timeline DAG.** Multi-writer
    merges are Vision (PRD FR68). A decision there may reshape
-   `jelly.action`'s subject.
+   `jelly.action`'s core.
 2. **Mythos quorum on Guild-owned palaces.** PRD FR60g Vision.
    Default today is any-admin.
 3. **Archiform registry federation.** Community-defined archiforms

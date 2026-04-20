@@ -208,7 +208,7 @@ Returns a **generated** JSON document containing:
 - Every HTTP route's path, method, Valibot schema (serialised as JSON
   Schema), example request/response.
 - The DreamBall type taxonomy (six v2 types + untyped v1) with each
-  type's populated assertion surface.
+  type's populated attribute surface.
 - Every WASM export signature (`mintDreamBall`, `growDreamBall`,
   `joinGuildWasm`, `parseJelly`, `verifyJelly`, ...) with their
   parameter + return shape.
@@ -250,7 +250,7 @@ Dreamball/
 │   ├── protocol.zig             # v1 domain types + DreamBallType enum
 │   ├── protocol_v2.zig          # v2 aux types (Memory/KG/ER/Guild/Relic/...)
 │   ├── cbor.zig                 # dCBOR encoder/decoder
-│   ├── envelope.zig             # Subject/assertion framing + decoders
+│   ├── envelope.zig             # Core/attribute framing + decoders
 │   ├── envelope_v2.zig          # v2-type envelope encoders
 │   ├── signer.zig               # Ed25519 signing (CLI/non-WASM)
 │   ├── sealing.zig              # DragonBall file wrapper

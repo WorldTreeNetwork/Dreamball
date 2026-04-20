@@ -52,19 +52,19 @@ A wearer loads an Avatar DreamBall in their browser tab and hits "wear". Their c
 
 FR1. [MVP] The system shall bump `format-version` to `2` in every new envelope type introduced this sprint and keep `format-version: 1` working for v1-shaped envelopes.
 
-FR2. [MVP] The system shall define six typed DreamBall classes: `jelly.dreamball.avatar`, `jelly.dreamball.agent`, `jelly.dreamball.tool`, `jelly.dreamball.relic`, `jelly.dreamball.field`, `jelly.dreamball.guild` — each expressed as a `type` value in the subject map.
+FR2. [MVP] The system shall define six typed DreamBall classes: `jelly.dreamball.avatar`, `jelly.dreamball.agent`, `jelly.dreamball.tool`, `jelly.dreamball.relic`, `jelly.dreamball.field`, `jelly.dreamball.guild` — each expressed as a `type` value in the core.
 
-FR3. [MVP] The system shall define a `jelly.memory` envelope (directed-graph memory store with labeled edges including at least `semantic`, `emotional`, `temporal`) and include it as an optional assertion on Agent-type DreamBalls.
+FR3. [MVP] The system shall define a `jelly.memory` envelope (directed-graph memory store with labeled connections including at least `semantic`, `emotional`, `temporal`) and include it as an optional attribute on Agent-type DreamBalls.
 
-FR4. [MVP] The system shall define a `jelly.knowledge-graph` envelope (ambient knowledge, triple-shaped) and include it as an optional assertion on Agent-type DreamBalls.
+FR4. [MVP] The system shall define a `jelly.knowledge-graph` envelope (ambient knowledge, triple-shaped) and include it as an optional attribute on Agent-type DreamBalls.
 
-FR5. [MVP] The system shall define a `jelly.emotional-register` envelope (named emotional axes with current values in a normalized range) and include it as an optional assertion on Agent-type DreamBalls.
+FR5. [MVP] The system shall define a `jelly.emotional-register` envelope (named emotional axes with current values in a normalized range) and include it as an optional attribute on Agent-type DreamBalls.
 
-FR6. [MVP] The system shall define a `jelly.interaction-set` envelope (captured interaction histories) and include it as an optional assertion on Agent-type DreamBalls.
+FR6. [MVP] The system shall define a `jelly.interaction-set` envelope (captured interaction histories) and include it as an optional attribute on Agent-type DreamBalls.
 
 FR7. [MVP] The system shall define `jelly.guild` as a first-class envelope that carries a Guild fingerprint, a members list (fingerprints), a keyspace reference (recrypt-compatible), and a permission policy per slot (which members can read/write which slots).
 
-FR8. [MVP] The system shall allow a DreamBall of any type to declare Guild membership via a `guild` assertion whose value is a Guild fingerprint; membership grants delegated access per the Guild's policy.
+FR8. [MVP] The system shall allow a DreamBall of any type to declare Guild membership via a `guild` attribute whose value is a Guild fingerprint; membership grants delegated access per the Guild's policy.
 
 FR9. [MVP] The system shall define a `jelly.relic` envelope that wraps a sealed DreamBall payload plus unlock metadata (which Guild's keyspace can unlock, a reveal-hint string, a sealed-until timestamp).
 
@@ -84,7 +84,7 @@ FR15. [MVP] The system shall accept `--type=<avatar|agent|tool|relic|field|guild
 
 FR16. [MVP] The system shall add a `transmit <tool.jelly> --to=<fp> --via-guild=<fp> --out=<transmission.jelly>` command that produces a `jelly.transmission` record.
 
-FR17. [MVP] The system shall add a `join-guild <dreamball.jelly> --guild=<guild.jelly> --key=<keyfile>` command that appends a Guild membership assertion and re-signs the DreamBall.
+FR17. [MVP] The system shall add a `join-guild <dreamball.jelly> --guild=<guild.jelly> --key=<keyfile>` command that appends a Guild membership attribute and re-signs the DreamBall.
 
 FR18. [MVP] The system shall add a `seal-relic <inner.jelly> --for-guild=<guild.jelly> --out=<sealed.jelly>` command that wraps a DreamBall inside a `jelly.relic` envelope using mocked encryption with a clear `TODO-CRYPTO` marker.
 
