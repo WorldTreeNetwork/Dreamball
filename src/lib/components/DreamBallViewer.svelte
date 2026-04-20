@@ -19,6 +19,7 @@
 	import PhoneLens from '../lenses/PhoneLens.svelte';
 	import SplatLens from '../lenses/SplatLens.svelte';
 	import { isSplatAsset } from '../splat/media-types.js';
+	import { untrack } from 'svelte';
 
 	interface Props {
 		ball: DreamBall;
@@ -34,7 +35,7 @@
 	let { ball, lens = 'thumbnail', viewer = null, backend = null, preferGpu = false }: Props = $props();
 	$effect(() => void preferGpu);
 
-	let filteredBall: DreamBall = $state(ball);
+	let filteredBall: DreamBall = $state(untrack(() => ball));
 
 	// If the caller asks for the `avatar` lens but the primary look asset is
 	// a gaussian splat, auto-upgrade to the `splat` lens. Splats are the
