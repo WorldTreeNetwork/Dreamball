@@ -773,52 +773,23 @@ Graph and vectors are coupled only by fingerprint. LadybugDB never
 holds CBOR; the CAS never holds queryable structure. Drop the vector
 index and the palace still works, it just loses resonance.
 
-**Why LadybugDB over Kuzu.** The upstream Kuzu repo was archived on
-2025-10-10 (final release v0.11.3) following Kùzu Inc.'s acquisition
-by Apple. LadybugDB is the actively maintained community fork — 9
-releases Nov 2025–Apr 2026, one-for-one API and storage-format
-compatibility with Kuzu v0.11.3, MIT license, ex-Facebook Dragon
-engineer leading, packages on npm / crates.io / PyPI / Maven Central,
-and an active WASM build with OPFS support. Migration from the
-original `kuzu` dependency is a package rename. See
-`docs/research/graph-db-options/synthesis.md` for the full decision
-record, fork comparison, and the rejected alternatives
-(DuckDB+duckpgq, CozoDB, Oxigraph, SurrealDB, and others).
+**Why LadybugDB.** The research behind this pick is in
+`docs/research/graph-db-options/synthesis.md` (along with the
+rejected candidates). The short version: LadybugDB is a sustained
+MIT-licensed community fork of Kuzu v0.11.3 — 9 releases
+Nov 2025 – Apr 2026, ex-Facebook Dragon lead, packages on every
+registry, active WASM build with OPFS, and a first-class disk-HNSW
+vector index.
 
-### 6.2.1 Fallback strategy
+### 6.2.1 Swap boundary
 
-The Memory Palace uses LadybugDB as its primary graph+vector store
-(§6.2). Two fallbacks exist for scenarios in which LadybugDB becomes
-unsustainable — a funding collapse at Ladybug Memory, a storage-
-format divergence that breaks reads, a blocking incompatibility with
-Bun's Node-API shim, or a regulatory change. Neither is active; both
-are documented so that a future migration is not a research problem.
-
-**Plan B — DuckDB 1.5.x + duckpgq + VSS, server-side.** DuckDB is
-production-grade and provides a clean SQL/PGQ property-graph view
-over ordinary tables; VSS gives in-memory HNSW. Limitations:
-`duckpgq` is a CWI research extension explicitly labelled "WIP",
-lacks `ALL PATHS` Kleene closure (timeline parent-hash walks must
-fall back to recursive CTEs in standard SQL), and neither duckpgq
-nor VSS ships in the stable DuckDB-WASM extension list as of 1.5.x.
-Plan B is a server-only posture; browser clients would fall back to
-either core DuckDB-WASM without the graph-query layer, or the
-commodity vector branch (Plan C).
-
-**Plan C — Frozen Kuzu v0.11.3 vendored.** Pin `kuzudb/kuzu@v0.11.3`
-as a submodule or vendored directory. The final Kuzu release bundles
-all extensions (`algo`, `fts`, `json`, `vector`), uses the
-CIDR-2023-documented engine, and ships with known-working
-Node-API bindings. Viable for 18–24 months of rebuild-from-CAS
-workloads with security-patch risk only. Insurance, not a plan.
-
-A thin wrapper module `src/memory-palace/store.ts` re-exports a
-narrow subset of `@ladybugdb/core` so that a future swap (to frozen
-Kuzu, DuckDB, or a commodity-vector sidecar like `usearch` /
-`sqlite-vec`) changes one file rather than the palace ingestion and
-resonance code paths. The `VectorIndex` interface exposed by that
-wrapper keeps the separate-vector-store branch implementable without
-re-architecting §6.3.
+All LadybugDB access funnels through a thin wrapper module
+`src/memory-palace/store.ts`. The wrapper re-exports a narrow
+subset of `@ladybugdb/core` plus a `VectorIndex` interface, so that
+the palace ingestion and resonance code paths never import
+`@ladybugdb/core` directly. If LadybugDB ever stops being the right
+pick, we re-open the graph-DB research (see §12 references) and
+swap one file, not the whole codebase. No pre-committed Plan B.
 
 ### 6.2.2 Architectural convergence — NextGraph
 
@@ -1047,13 +1018,10 @@ FR79. [Vision] The renderer shall surface shared-palace resonance
 
 FR80. [MVP] The system shall embed **LadybugDB** (`@ladybugdb/core`;
 Rust crate `lbug`; storage files `.lbug`) as the palace's primary
-graph store. LadybugDB is the actively maintained MIT-licensed fork
-of Kuzu v0.11.3 (upstream archived 2025-10-10); storage format is
-drop-in compatible with the final Kuzu release, and frozen Kuzu
-v0.11.3 remains a vendor-and-freeze fallback per §6.2.1.
-Containment connections, aqueducts, timeline connections, and knowledge-graph
-triples are all mirrored into LadybugDB on every state change. CAS
-remains the source of truth; LadybugDB is the queryable index.
+graph store. Containment connections, aqueducts, timeline
+connections, and knowledge-graph triples are all mirrored into
+LadybugDB on every state change. CAS remains the source of truth;
+LadybugDB is the queryable index.
 
 FR81. [MVP] The system shall use **LadybugDB's bundled `vector`
 extension** (disk-HNSW, SIMD-accelerated via `simsimd`,
@@ -1203,29 +1171,33 @@ discipline.
   `src/memory-palace/store.ts` retains a swap point for
   `usearch` / `sqlite-vec` if the primary store ever changes. See
   `docs/research/graph-db-options/synthesis.md`.
-- ~~**Kuzu fork tracking.**~~ **Resolved (2026-04-20)**: upstream
-  Kuzu was archived 2025-10-10 (Apple acqui-hire per Feb 2026 EU
-  DMA filings). Primary is **LadybugDB** — the actively maintained
-  MIT fork (9 releases Nov 2025–Apr 2026, ex-Facebook Dragon lead).
-  Plan B is DuckDB+duckpgq+VSS server-side; Plan C is frozen Kuzu
-  v0.11.3 vendored. See §6.2.1 and
-  `docs/research/graph-db-options/synthesis.md`.
-- **Bun + `@ladybugdb/core` napi compatibility.** The LadybugDB
-  Node.js binding ships prebuilt C++ binaries via Node-API; Bun's
-  napi shim is mostly compatible but not certified on this package.
-  30-minute Phase-0 smoke test: `bun add @ladybugdb/core &&
-  bun -e "require('@ladybugdb/core')"` and run a trivial query. If
-  it fails, fall back to `@ladybugdb/wasm-core` (no napi) in both
-  Bun and browser contexts.
+- ~~**Graph-DB selection.**~~ **Resolved (2026-04-20)**: LadybugDB
+  (§6.2). Full decision record in
+  `docs/research/graph-db-options/synthesis.md` and ADR
+  `docs/decisions/2026-04-21-ladybugdb-selection.md`.
+- ~~**Bun + `@ladybugdb/core` napi compatibility.**~~ **Pass with
+  known mitigations (2026-04-21).** Smoke test under Bun v1.3.3
+  (macOS arm64, `@ladybugdb/core` v0.15.3, `STORAGE_VERSION 40`)
+  confirms that `require('@ladybugdb/core')` loads, `Database` /
+  `Connection` constructors succeed, `RETURN 1 AS x;` returns
+  `[{x:1}]`, a `CREATE NODE TABLE` + insert + `MATCH` round-trips
+  data, and storage files persist across processes. Exit code 0.
+  On *natural* exit Bun panics with a segfault during the atexit
+  napi finalizer walk over still-open handles. The crash is fully
+  suppressed by **either** calling `process.exit(0)` at the end of
+  `main()` **or** explicitly closing every handle
+  (`await qr.close(); await conn.close(); await db.close();`)
+  before the function returns. Node v24.6.0 has no crash in either
+  mode. The wrapper `src/memory-palace/store.ts` will encode
+  explicit `close()` into the API surface (see ADR). The CLI
+  additionally calls `process.exit(0)` belt-and-braces. Reproducer
+  and full analysis in
+  `docs/decisions/2026-04-21-ladybugdb-selection.md`.
 - **LadybugDB funding runway.** "Ladybug Memory" (sponsor entity) is
   opaque — enterprise support contracts exist but no public funding
   round. Monitor quarterly; if release cadence slows for >2 months
-  without explanation, re-evaluate against Plan B / Plan C.
-- **LadybugDB storage format cross-compatibility with Kuzu v0.11.3.**
-  The vendor-and-freeze fallback (Plan C) assumes LadybugDB v0.15.x
-  writes `.lbug` files that Kuzu v0.11.3 can still read (or
-  vice-versa). 30-minute Phase-0 check to confirm before the freeze
-  option is load-bearing.
+  without explanation, re-open the graph-DB research (§12
+  references) and swap the wrapper (§6.2.1).
 - **CRDT merge strategy for shared rooms.** Layout conflicts ("two
   scribes moved the same item") want either LWW-per-item or
   last-signer-wins-with-notice. Default: LWW-per-item with the loser
@@ -1279,30 +1251,25 @@ discipline.
   semantics match theirs, where we diverge deliberately, and where
   we diverge accidentally (and should reconsider).
 
-- **Wire-format code sync to match the terminology rename.** The
-  2026-04-20 terminology rename
-  (`docs/decisions/2026-04-20-terminology-rename.md`) updated the
-  docs tree (docs are now source-of-truth) but the Zig protocol
-  core, generated TypeScript, golden fixtures, CLI, Svelte
-  renderer, and `jelly-server` still use the pre-rename identifiers.
-  Before any Memory Palace implementation work, a Phase 0
-  mechanical pass must propagate the rename into code:
-  - `src/protocol.zig`, `src/protocol_v2.zig` — envelope type
-    names (`jelly.memory-edge` → `jelly.memory-connection`) and
-    core field names (`subject-fp` → `target-fp`, trust-observation
-    `subject` → `about`).
-  - `src/envelope.zig`, `src/envelope_v2.zig` — CBOR field keys
-    (`"edge"` → `"connection"`, `"subject"` → `"about"`).
-  - `jelly.knowledge-graph` triple shape change: `[subject,
-    predicate, object]` → `[from, label, to]`.
-  - `tools/schema-gen/main.zig` + `src/lib/generated/` — regenerate.
-  - `src/golden.zig` — rebaseline all v2 fixtures that touched
-    renamed identifiers, plus the palace §13.11 fixture set.
-  - `src/cli/` — CLI argument `<subject-fp>` → `<observed-fp>`.
-  - `jelly-server/` — HTTP route and Eden-typed client fields.
-  This is mechanical, but non-trivial due to the golden-bytes lock
-  — every rebaseline should land in one atomic commit with a
-  pointer to the ADR.
+- ~~**Wire-format code sync to match the terminology rename.**~~
+  **Complete (2026-04-21).** Commit `7b0fec8` landed the
+  wire-format bulk (`jelly.memory-edge` →
+  `jelly.memory-connection`, CBOR key `"edge"` → `"connection"`,
+  triple field names `{from, label, to}`, golden fixture
+  rebaseline, regenerated TypeScript). The 2026-04-21 follow-up
+  swept the residue: `assertion_count` → `attribute_count` in the
+  v2 encoders, `MalformedAssertion` → `MalformedAttribute`, CLI
+  help text (`join-guild` summary), `commonSubject` →
+  `commonCore` in the generated Valibot schemas, `shared_core_fields`
+  in the MCP-server manifest, and doc-comments/test-names through
+  `src/`. `src/envelope.zig` keeps Blockchain-Commons CBOR
+  vocabulary (subject / assertion / predicate / object) at the
+  encoder layer — flagged with a header note; every consumer of
+  that module uses the Dreamball data-model words (node / core /
+  attribute / label / value). All gates green (zig build test,
+  zig build smoke, bun run check, bun run test:unit). See
+  `docs/decisions/2026-04-20-terminology-rename.md` for the
+  completed sync list.
 
 ---
 
@@ -1394,11 +1361,11 @@ own circulation.
   proxy-recryption are already tracked; palace surfaces them as a
   concrete consumer but does not resolve them.
 - `docs/research/graph-db-options/synthesis.md` — decision record
-  for the LadybugDB selection (§6.2), the Plan B / Plan C fallbacks
-  (§6.2.1), and the NextGraph architectural-convergence note
-  (§6.2.2). Points to per-candidate findings under
-  `docs/research/graph-db-options/hypotheses/` for anyone who asks
-  "why not Kuzu / DuckDB / Cozo / SurrealDB / NextGraph?"
+  for the LadybugDB selection (§6.2) and the NextGraph
+  architectural-convergence note (§6.2.2). Points to per-candidate
+  findings under `docs/research/graph-db-options/hypotheses/` for
+  anyone who asks "why not X?" If LadybugDB is ever re-opened
+  (§6.2.1 swap boundary), start here.
 
 ---
 
@@ -1421,3 +1388,29 @@ own circulation.
   architectural convergence with NextGraph for anyone working on
   FR68 / §6.4. Full decision record in
   `docs/research/graph-db-options/synthesis.md`.
+- 2026-04-21 — Phase 0 step 1 (LadybugDB + Bun napi smoke test)
+  executed. `@ladybugdb/core` v0.15.3 runs correctly under Bun
+  v1.3.3 on macOS arm64: queries succeed, data round-trips,
+  storage persists, exit code 0. On natural exit, Bun panics in
+  its atexit napi finalizer walk — but the crash is fully
+  suppressed by either calling `process.exit(0)` or explicitly
+  closing every handle (`qr.close`, `conn.close`, `db.close`)
+  before return. Node v24.6.0 has no crash either way. The
+  Memory Palace wrapper (`src/memory-palace/store.ts`) will
+  encode explicit `close()` into its API; the CLI calls
+  `process.exit(0)` belt-and-braces. §9 open-question entry
+  closed. ADR: `docs/decisions/2026-04-21-ladybugdb-selection.md`.
+- 2026-04-21 — Cut the pre-committed graph-DB fallback plans.
+  §6.2.1 no longer documents Plan B (DuckDB+duckpgq+VSS) or
+  Plan C (frozen Kuzu v0.11.3 vendored); the section now
+  describes only the swap boundary
+  (`src/memory-palace/store.ts`). Kuzu is dead — there is no
+  value in pre-building infrastructure to resurrect it as
+  insurance. If LadybugDB ever stops being the right pick, we
+  re-open the graph-DB research
+  (`docs/research/graph-db-options/synthesis.md`) rather than
+  executing a pre-decided fallback. Corresponding Phase 0 spike
+  items (frozen-Kuzu vendor prep, DuckDB reference, `.lbug`↔`.kz`
+  cross-read) cut from the ADR. FR80 and §9 simplified to match.
+  Research archive under `docs/research/graph-db-options/` kept
+  unchanged as the historical record.

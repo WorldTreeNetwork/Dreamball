@@ -36,7 +36,7 @@ pub const commands: []const Command = &.{
     .{ .name = "unseal", .summary = "unwrap a DragonBall back to envelope bytes", .run = cmd_unseal.run },
     .{ .name = "export-json", .summary = "write a canonical .jelly.json", .run = cmd_export_json.run },
     .{ .name = "import-json", .summary = "read canonical .jelly.json back into CBOR", .run = cmd_import_json.run },
-    .{ .name = "join-guild", .summary = "add a Guild membership assertion and re-sign", .run = cmd_join_guild.run },
+    .{ .name = "join-guild", .summary = "add a Guild membership attribute and re-sign", .run = cmd_join_guild.run },
     .{ .name = "transmit", .summary = "transmit a Tool to a target Agent via a Guild", .run = cmd_transmit.run },
     .{ .name = "seal-relic", .summary = "wrap a DreamBall into a sealed Relic (MOCKED crypto)", .run = cmd_seal_relic.run },
     .{ .name = "unlock", .summary = "unlock a sealed Relic (MOCKED crypto)", .run = cmd_unlock.run },

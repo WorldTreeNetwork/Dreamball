@@ -7,7 +7,7 @@
  * uncompressed (ReleaseSmall) for the v2 surface — gzips well below
  * 15 KB.
  *
- * Caveat (v2 MVP scope): the Zig parser currently decodes the subject
+ * Caveat (v2 MVP scope): the Zig parser currently decodes the core
  * + signatures. Nested look / feel / act / memory / knowledge-graph /
  * emotional-register / interaction-set / guild-policy / etc. round-trip
  * as `__cborTag` wrappers inside the JSON until the full envelope

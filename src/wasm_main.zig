@@ -117,7 +117,7 @@ export fn parseJelly(input_ptr: u32, input_len: u32) u64 {
         return 0;
     }
 
-    // Full decode — subject + every assertion into a typed DreamBall struct.
+    // Full decode — core + every attribute into a typed DreamBall struct.
     const db = envelope.decodeDreamBall(alloc_, envelope_bytes) catch |e| {
         setErr("decodeDreamBall failed: {t}", .{e});
         return 0;
@@ -434,7 +434,7 @@ export fn resultErrLen() u32 {
 ///
 /// Reconstructs the canonical unsigned bytes via `stripSignatures`, reads
 /// the envelope's `identity` (Ed25519 public key), then verifies every
-/// ed25519 `'signed'` assertion against that key. Returns:
+/// ed25519 `'signed'` attribute against that key. Returns:
 ///   2  — envelope parsed OK and all Ed25519 signatures verified
 ///   1  — envelope parsed but no Ed25519 signature present (warning)
 ///   0  — verification failed (signature mismatch, tampered bytes, etc.)
@@ -468,9 +468,9 @@ export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
         return -1;
     };
 
-    // Need the Ed25519 public key from the subject.
+    // Need the Ed25519 public key from the core.
     const db = envelope.decodeDreamBallSubject(envelope_bytes) catch |e| {
-        setErr("subject decode failed: {t}", .{e});
+        setErr("core decode failed: {t}", .{e});
         return -1;
     };
 

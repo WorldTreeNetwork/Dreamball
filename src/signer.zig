@@ -218,7 +218,7 @@ test "hybrid keys mint → encode → sign → decode → verify round-trip" {
     const signed = try envelope.encodeDreamBall(allocator, db);
     defer allocator.free(signed);
 
-    // 2. Decode subject — identity_pq must round-trip.
+    // 2. Decode core — identity_pq must round-trip.
     const decoded = try envelope.decodeDreamBallSubject(signed);
     try std.testing.expect(decoded.identity_pq != null);
     try std.testing.expectEqualSlices(u8, &keys.mldsa_public, &decoded.identity_pq.?);

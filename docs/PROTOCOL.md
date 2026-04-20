@@ -59,7 +59,7 @@ The protocol reuses recrypt's wire conventions verbatim, except where noted:
 
 1. **CBOR wire format, dCBOR-style determinism.** Map keys sorted canonically, smallest integer encoding, no floats in protocol fields, no indefinite-length items, tagged timestamps (`#6.1`), tagged envelopes (`#6.200`) and leaves (`#6.201`). See [recrypt wire-protocol §2.1](../../recrypt/docs/wire-protocol.md#21-dcbor).
 2. **Envelope = core + attributes.** Load-bearing anchors (`type`, `format-version`, identity key, content hashes) go in the core. Mutable, elidable, descriptive metadata goes in attributes.
-3. **Dual signatures, both required.** Every signed DreamBall carries exactly one Ed25519 and one ML-DSA-87 `'signed'` attribute. A verifier that sees only one MUST reject.
+3. **Hybrid signatures, "all present must verify."** A signed DreamBall carries one or more `'signed'` attributes. A verifier MUST check every attached signature against the appropriate verification key (Ed25519 against `identity`; ML-DSA-87 against `identity-pq`) and reject on any failure, but there is no minimum count. Ed25519-only nodes are valid — useful for lower-stakes artifacts where classical-only is acceptable, or for ephemeral wrappers like `jelly.relic` whose identity has no persisted PQ key. Nodes that include `identity-pq` in the core and an ML-DSA-87 `'signed'` attribute get full hybrid strength. This is a deliberate deviation from recrypt's stricter "both required" rule; recrypt is expected to relax to match.
 4. **Salted attributes for low-entropy elidable fields** (timestamps, small enums, templated strings). See [recrypt wire-protocol §6](../../recrypt/docs/wire-protocol.md#6-salting-policy).
 5. **Fingerprint = `Blake3(Ed25519 public key)`**, 32 bytes, base58 for display.
 6. **`format-version` in every core.** Parsers reject unknown versions before reading further.
@@ -423,13 +423,15 @@ JSON import/export MUST round-trip to identical CBOR bytes when the JSON was pro
 
 ## 8. Signature model
 
-Identical to recrypt (see [recrypt wire-protocol §4](../../recrypt/docs/wire-protocol.md#4-signature-model)):
+Follows recrypt's shape (see [recrypt wire-protocol §4](../../recrypt/docs/wire-protocol.md#4-signature-model)) with the policy relaxation described in §2.3:
 
-1. Producer constructs the envelope with core + all non-signature attributes.
-2. Producer calls the library's `add_signatures(ed25519, ml-dsa-87)`; the library computes the signed digest and appends two `'signed'` attributes.
-3. Verifier counts signatures (must be exactly two, one of each algorithm), verifies both, rejects on any failure.
+1. Producer constructs the node with core + all non-signature attributes. A hybrid producer also sets `identity-pq` in the core (2592-byte ML-DSA-87 public key) and bumps `format-version` to the appropriate v3 line.
+2. Producer signs the canonical unsigned bytes with every key they hold and appends one `'signed'` attribute per algorithm. An Ed25519-only producer appends one attribute; a hybrid producer appends two.
+3. Verifier iterates every `'signed'` attribute, identifies the algorithm (`ed25519` or `ml-dsa-87`), looks up the verification key (`identity` for Ed25519, `identity-pq` for ML-DSA-87), and checks the signature against the stripped-canonical unsigned bytes. Reject on any failure. An ML-DSA-87 attribute on a node whose core lacks `identity-pq` is a verification error — there is no key to check against.
 
 Signatures cover the core digest plus every non-elided attribute's digest at signing time. Eliding a salted attribute after signing is valid.
+
+**No minimum signature count.** A node with zero `'signed'` attributes is unsigned and MUST be treated as untrusted input. A node with one valid Ed25519 signature is a valid Ed25519-only node. A node with both a valid Ed25519 and a valid ML-DSA-87 signature is a valid hybrid node. The "hybrid strength" claim in application-layer UX reflects whether `identity-pq` + an ML-DSA-87 signature are both present.
 
 ---
 

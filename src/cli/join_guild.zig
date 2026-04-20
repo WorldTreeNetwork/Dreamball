@@ -1,5 +1,5 @@
 //! `jelly join-guild <dreamball.jelly> --guild=<guild.jelly> --key=<keyfile>`
-//! Appends a `guild` assertion (the Guild's fingerprint) to the DreamBall,
+//! Appends a `guild` attribute (the Guild's fingerprint) to the DreamBall,
 //! bumps revision, and re-signs with the provided Ed25519 secret.
 
 const std = @import("std");
@@ -25,7 +25,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         try io.writeAllStdout(
             \\jelly join-guild <dreamball.jelly> --guild <guild.jelly> --key <keyfile> [--out <path>]
             \\
-            \\Adds a Guild membership assertion to the DreamBall and re-signs.
+            \\Adds a Guild membership attribute to the DreamBall and re-signs.
             \\
         );
         return 0;

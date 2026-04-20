@@ -277,7 +277,7 @@ const tools: ToolSpec[] = [
 				{ tag: 'field', wire: 'jelly.dreamball.field', summary: 'omnispherical ambient layer' },
 				{ tag: 'guild', wire: 'jelly.dreamball.guild', summary: 'group with a recrypt-style keyspace' }
 			],
-			shared_subject_fields: ['type', 'format-version', 'stage', 'identity', 'genesis-hash', 'revision'],
+			shared_core_fields: ['type', 'format-version', 'stage', 'identity', 'genesis-hash', 'revision'],
 			agent_slots: [
 				'act',
 				'memory',

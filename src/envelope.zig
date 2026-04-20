@@ -1,4 +1,4 @@
-//! Gordian-Envelope–style framing for DreamBall types.
+//! Gordian-Envelope–style CBOR framing for DreamBall types.
 //!
 //! Envelope shape (simplified from bc-envelope):
 //!     tag 200( [ leaf_subject, [pred0, obj0], [pred1, obj1], ... ] )
@@ -9,6 +9,16 @@
 //! Predicates are sorted per dCBOR canonical ordering (shorter canonical
 //! encoding first, then lex over encoded-key bytes) so byte output is
 //! deterministic.
+//!
+//! Vocabulary note — this file is the Gordian-Envelope CBOR encoder,
+//! so the terms *envelope*, *subject*, *assertion*, *predicate*, and
+//! *object* here refer to Blockchain Commons' native CBOR-format
+//! vocabulary. They are intentionally preserved at this layer. The
+//! higher-level Dreamball data model uses *node*, *core*, *attribute*,
+//! *label*, and *value* (see
+//! `docs/decisions/2026-04-20-terminology-rename.md`), which is what
+//! every consumer of this file should use. Renamed user-facing
+//! identifiers: `MalformedAssertion` → `MalformedAttribute`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -502,7 +512,7 @@ pub const StripError = error{
     Truncated,
     UnsupportedType,
     NotEnvelope,
-    MalformedAssertion,
+    MalformedAttribute,
     OutOfMemory,
 };
 
@@ -524,7 +534,7 @@ pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripErr
     }
 
     const element_count: u64 = head.arg;
-    if (element_count == 0) return StripError.MalformedAssertion;
+    if (element_count == 0) return StripError.MalformedAttribute;
 
     // First element is the tag-201 subject leaf. Skip past it.
     const subject_start = r.cursor;
@@ -546,19 +556,19 @@ pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripErr
 
         // Expect the element to be a 2-array [predicate_text, object].
         var ar = cbor.Reader.init(bytes[elem_start..elem_end]);
-        const h = ar.readHead() catch return StripError.MalformedAssertion;
-        if (h.major != 4 or h.arg != 2) return StripError.MalformedAssertion;
+        const h = ar.readHead() catch return StripError.MalformedAttribute;
+        if (h.major != 4 or h.arg != 2) return StripError.MalformedAttribute;
 
         const pred_start_rel = ar.cursor;
-        const pred = ar.readText() catch return StripError.MalformedAssertion;
+        const pred = ar.readText() catch return StripError.MalformedAttribute;
         _ = pred_start_rel;
 
         if (std.mem.eql(u8, pred, "signed")) {
             // Object shape: [alg_text, value_bytes]. Parse to capture.
-            const obj_head = ar.readHead() catch return StripError.MalformedAssertion;
-            if (obj_head.major != 4 or obj_head.arg != 2) return StripError.MalformedAssertion;
-            const alg = ar.readText() catch return StripError.MalformedAssertion;
-            const val = ar.readBytes() catch return StripError.MalformedAssertion;
+            const obj_head = ar.readHead() catch return StripError.MalformedAttribute;
+            if (obj_head.major != 4 or obj_head.arg != 2) return StripError.MalformedAttribute;
+            const alg = ar.readText() catch return StripError.MalformedAttribute;
+            const val = ar.readBytes() catch return StripError.MalformedAttribute;
             try captured.append(allocator, .{ .alg = alg, .value = val });
             // Do NOT add to kept_ranges — this assertion is stripped.
         } else {

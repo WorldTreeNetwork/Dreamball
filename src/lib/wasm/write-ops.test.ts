@@ -197,7 +197,7 @@ describe('WASM write-ops', () => {
 		expect(wasm.verifyJelly(v2, env2.length)).toBe(2);
 	});
 
-	it('joinGuildWasm adds a guild assertion + re-verifies', () => {
+	it('joinGuildWasm adds a guild attribute + re-verifies', () => {
 		// Mint the member DreamBall.
 		wasm.reset();
 		const memberName = copyString(wasm, 'member');

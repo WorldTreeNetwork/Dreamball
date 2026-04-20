@@ -4,7 +4,7 @@
   emotional-register axes, personality-master-prompt (flat), phone, omnispherical (if grid present).
   Skipped: splat (base mock uses gltf, not sog), omnispherical (agent has no grid by default).
   Reviewer cares because agent is the richest DreamBall type and is the primary
-  subject of persona + knowledge rendering — all cognitive lenses must handle it cleanly.
+  focus of persona + knowledge rendering — all cognitive lenses must handle it cleanly.
 -->
 <script module lang="ts">
   import { defineMeta } from '@storybook/addon-svelte-csf';

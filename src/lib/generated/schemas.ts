@@ -197,10 +197,10 @@ export const SecretRefSchema = v.object({
 });
 
 // ========================================================================
-// DreamBall — common subject fields, then per-type variants
+// DreamBall — common core fields, then per-type variants
 // ========================================================================
 
-const commonSubject = {
+const commonCore = {
   stage: v.picklist(['seed', 'dreamball', 'dragonball']),
   identity: Base58Schema,
   'genesis-hash': Base58Schema,
@@ -218,7 +218,7 @@ const commonSubject = {
 
 /** v1 legacy shape — `jelly.dreamball` with no subtype suffix. */
 export const DreamBallUntypedSchema = v.object({
-  ...commonSubject,
+  ...commonCore,
   type: v.literal('jelly.dreamball'),
   look: v.optional(LookSchema),
   feel: v.optional(FeelSchema),
@@ -226,14 +226,14 @@ export const DreamBallUntypedSchema = v.object({
 });
 
 export const DreamBallAvatarSchema = v.object({
-  ...commonSubject,
+  ...commonCore,
   type: v.literal('jelly.dreamball.avatar'),
   look: v.optional(LookSchema),
   feel: v.optional(FeelSchema)
 });
 
 export const DreamBallAgentSchema = v.object({
-  ...commonSubject,
+  ...commonCore,
   type: v.literal('jelly.dreamball.agent'),
   look: v.optional(LookSchema),
   feel: v.optional(FeelSchema),
@@ -247,14 +247,14 @@ export const DreamBallAgentSchema = v.object({
 });
 
 export const DreamBallToolSchema = v.object({
-  ...commonSubject,
+  ...commonCore,
   type: v.literal('jelly.dreamball.tool'),
   skill: v.optional(SkillSchema),
   'applicable-to': v.optional(v.array(v.string()))
 });
 
 export const DreamBallRelicSchema = v.object({
-  ...commonSubject,
+  ...commonCore,
   type: v.literal('jelly.dreamball.relic'),
   'sealed-payload-hash': Base58Schema,
   'unlock-guild': Base58Schema,
@@ -263,7 +263,7 @@ export const DreamBallRelicSchema = v.object({
 });
 
 export const DreamBallFieldSchema = v.object({
-  ...commonSubject,
+  ...commonCore,
   type: v.literal('jelly.dreamball.field'),
   'omnispherical-grid': v.optional(OmnisphericalGridSchema),
   'ambient-palette': v.optional(v.array(v.string())),
@@ -271,7 +271,7 @@ export const DreamBallFieldSchema = v.object({
 });
 
 export const DreamBallGuildSchema = v.object({
-  ...commonSubject,
+  ...commonCore,
   type: v.literal('jelly.dreamball.guild'),
   'guild-name': v.optional(v.string()),
   'keyspace-root-hash': v.optional(Base58Schema),

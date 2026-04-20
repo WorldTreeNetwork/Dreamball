@@ -105,14 +105,39 @@ readers arriving from Gordian/recrypt upstream documentation. The
 table is reference-only; the Dreamball spec itself uses only the
 right column.
 
-**Code sync outstanding** — tracked as a Phase 0 item in
-`docs/products/memory-palace/prd.md §9 "Phase 0 must-reads"`. Before
-any Memory Palace implementation work, the Zig protocol core
-(`src/*.zig`), generated TypeScript (`src/lib/generated/`), golden
-fixtures (`src/golden.zig`), CLI (`src/cli/`), Svelte renderer
-(`src/lib/`), and `jelly-server/` must be updated to match. The
-rebaseline of golden fixtures should land in one atomic commit with
-a pointer back to this ADR.
+**Code sync — complete as of 2026-04-21.** The bulk landed in
+commit `7b0fec8` (wire-format identifiers — `jelly.memory-edge` →
+`jelly.memory-connection`, `"edge":` → `"connection":` CBOR key,
+triple-field rename on the typed surface, golden fixture
+rebaseline); the 2026-04-21 follow-up pass cleaned up the residue:
+
+- `src/envelope_v2.zig` — local `assertion_count` → `attribute_count`
+  across all four encoders; comments rewritten to use attribute /
+  label / value / core.
+- `src/envelope.zig` — public error `StripError.MalformedAssertion`
+  → `MalformedAttribute`; a doc-header block clarifies that the
+  rest of this file intentionally preserves Gordian-Envelope /
+  Blockchain-Commons vocabulary (subject, assertion, predicate,
+  object) because it implements the CBOR encoding of that format.
+  See the Preserved list below.
+- `src/protocol.zig`, `src/wasm_main.zig`, `src/signer.zig`,
+  `src/golden.zig` — doc-comments, error messages, and golden-bytes
+  test names updated to the new vocabulary.
+- `src/cli/dispatch.zig`, `src/cli/join_guild.zig` — CLI help text
+  now says "attribute" not "assertion".
+- `tools/schema-gen/main.zig` + regenerated `src/lib/generated/`
+  (schemas.ts, README.md) — embedded docstrings and the
+  `commonCore` (formerly `commonSubject`) schema-spread name.
+- `tools/mcp-server/server.ts` — `shared_core_fields` (formerly
+  `shared_subject_fields`) in the `/.well-known/mcp` surface.
+- `src/lib/wasm/loader.ts`, `src/lib/wasm/loader.test.ts`,
+  `src/stories/types/agent.stories.svelte` — comments and test
+  names updated.
+
+Validation: `zig build test`, `zig build smoke`, `bun run check`
+(1124 files, 0 errors), and `bun run test:unit` (32 files / 123
+tests) all pass. Golden Blake3 constants in `src/golden.zig` are
+unchanged — the rename did not alter any serialized bytes.
 
 **v1/v2 protocol tables** (PROTOCOL §4, §12) now read in the new
 vocabulary. The wire bytes are unchanged where field names were not

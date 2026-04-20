@@ -52,9 +52,9 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer gpa.free(in_bytes);
 
     var db = try dreamball.envelope.decodeDreamBallSubject(in_bytes);
-    // grow currently supports only subject + basic string assertions. Nested
+    // grow currently supports only core + basic string attributes. Nested
     // slot updates are restricted to personality/voice/model/system-prompt —
-    // we don't parse the prior assertion tree out of the input envelope yet.
+    // we don't parse the prior attribute tree out of the input node yet.
 
     if (parsed.get(2)) |stage_str| {
         db.stage = dreamball.Stage.fromString(stage_str) orelse {

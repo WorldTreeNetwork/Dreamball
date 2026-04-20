@@ -15,7 +15,7 @@ const Fingerprint = @import("fingerprint.zig").Fingerprint;
 
 // ============================================================================
 // jelly.guild (§12.1.6) — a typed DreamBall envelope with a guild payload
-// attached as auxiliary assertions.
+// attached as auxiliary attributes.
 // ============================================================================
 
 pub fn encodeGuild(
@@ -30,18 +30,18 @@ pub fn encodeGuild(
 
     try w.writeTag(cbor.Tag.envelope);
 
-    // Count assertions up front (members + admins + policy + signatures + guild-name + keyspace-root-hash).
-    var assertion_count: u64 = 2; // guild-name, keyspace-root-hash
-    if (guild.policy != null) assertion_count += 1;
-    for (guild.members) |_| assertion_count += 1;
+    // Count attributes up front (members + admins + policy + signatures + guild-name + keyspace-root-hash).
+    var attribute_count: u64 = 2; // guild-name, keyspace-root-hash
+    if (guild.policy != null) attribute_count += 1;
+    for (guild.members) |_| attribute_count += 1;
     for (guild.members) |m| if (m.is_admin) {
-        assertion_count += 1;
+        attribute_count += 1;
     };
-    for (signatures) |_| assertion_count += 1;
+    for (signatures) |_| attribute_count += 1;
 
-    try w.writeArrayHeader(1 + assertion_count);
+    try w.writeArrayHeader(1 + attribute_count);
 
-    // Subject: tag 201 { type, format-version, identity, genesis-hash }
+    // Core: tag 201 { type, format-version, identity, genesis-hash }
     try w.writeTag(cbor.Tag.leaf);
     try w.writeMapHeader(4);
     // dCBOR canonical ordering: sort keys by (len, lex)
@@ -55,9 +55,9 @@ pub fn encodeGuild(
     try w.writeText("format-version");
     try w.writeUint(protocol.FORMAT_VERSION_V2);
 
-    // Assertions as [pred, obj] 2-arrays. Emit in sorted predicate order.
+    // Attributes as [label, value] 2-arrays. Emit in sorted label order.
     // For determinism we emit: admin, member, policy, signed, guild-name, keyspace-root-hash.
-    // dCBOR ordering over those predicate lengths: "admin"(5), "member"(6), "policy"(6),
+    // dCBOR ordering over those label lengths: "admin"(5), "member"(6), "policy"(6),
     // "signed"(6), "guild-name"(10), "keyspace-root-hash"(18).
     for (guild.members) |m| if (m.is_admin) {
         try w.writeArrayHeader(2);
@@ -120,7 +120,7 @@ fn writePolicy(w: *cbor.Writer, p: v2.GuildPolicy) !void {
 
 // ============================================================================
 // jelly.dreamball.relic (§12.1.4) — a typed DreamBall that wraps a sealed
-// inner envelope. Subject carries `sealed-payload-hash` + `unlock-guild`.
+// inner node. Core carries `sealed-payload-hash` + `unlock-guild`.
 // ============================================================================
 
 pub fn encodeRelic(
@@ -136,15 +136,15 @@ pub fn encodeRelic(
 
     try w.writeTag(cbor.Tag.envelope);
 
-    var assertion_count: u64 = 0;
-    if (reveal_hint != null) assertion_count += 1;
-    if (relic.sealed_until != null) assertion_count += 1;
-    for (signatures) |_| assertion_count += 1;
+    var attribute_count: u64 = 0;
+    if (reveal_hint != null) attribute_count += 1;
+    if (relic.sealed_until != null) attribute_count += 1;
+    for (signatures) |_| attribute_count += 1;
 
-    try w.writeArrayHeader(1 + assertion_count);
+    try w.writeArrayHeader(1 + attribute_count);
 
     try w.writeTag(cbor.Tag.leaf);
-    // Subject: type, format-version, identity, genesis-hash, sealed-payload-hash, unlock-guild.
+    // Core: type, format-version, identity, genesis-hash, sealed-payload-hash, unlock-guild.
     // Keys sorted canonically: "type"(4), "identity"(8), "unlock-guild"(12), "genesis-hash"(12),
     //   "format-version"(14), "sealed-payload-hash"(19).
     // For equal-length keys, lex order breaks ties.
@@ -198,15 +198,15 @@ pub fn encodeTransmission(
 
     try w.writeTag(cbor.Tag.envelope);
 
-    var assertion_count: u64 = 1; // tool-envelope
-    if (t.sender_fp != null) assertion_count += 1;
-    if (t.transmitted_at != null) assertion_count += 1;
-    for (t.signatures) |_| assertion_count += 1;
+    var attribute_count: u64 = 1; // tool-envelope
+    if (t.sender_fp != null) attribute_count += 1;
+    if (t.transmitted_at != null) attribute_count += 1;
+    for (t.signatures) |_| attribute_count += 1;
 
-    try w.writeArrayHeader(1 + assertion_count);
+    try w.writeArrayHeader(1 + attribute_count);
 
     try w.writeTag(cbor.Tag.leaf);
-    // Subject keys: "type"(4), "tool-fp"(7), "target-fp"(9), "via-guild"(9),
+    // Core keys: "type"(4), "tool-fp"(7), "target-fp"(9), "via-guild"(9),
     //   "format-version"(14).
     try w.writeMapHeader(5);
     try w.writeText("type");
@@ -220,7 +220,7 @@ pub fn encodeTransmission(
     try w.writeText("format-version");
     try w.writeUint(protocol.FORMAT_VERSION_V2);
 
-    // Assertions in sorted order: "sender-fp"(9), "signed"(6), "tool-envelope"(13), "transmitted-at"(14).
+    // Attributes in sorted order: "sender-fp"(9), "signed"(6), "tool-envelope"(13), "transmitted-at"(14).
     // len-first ordering: "signed"(6) < "sender-fp"(9) < "tool-envelope"(13) < "transmitted-at"(14).
     for (t.signatures) |s| {
         try w.writeArrayHeader(2);
@@ -290,12 +290,12 @@ pub fn encodeMemory(allocator: Allocator, m: v2.Memory) ![]u8 {
 
 fn writeMemoryNode(w: *cbor.Writer, n: v2.MemoryNode) !void {
     try w.writeTag(cbor.Tag.envelope);
-    var assertion_count: u64 = 0;
-    if (n.content != null) assertion_count += 1;
-    assertion_count += n.lookups.len;
-    if (n.created != null) assertion_count += 1;
-    if (n.last_recalled != null) assertion_count += 1;
-    try w.writeArrayHeader(1 + assertion_count);
+    var attribute_count: u64 = 0;
+    if (n.content != null) attribute_count += 1;
+    attribute_count += n.lookups.len;
+    if (n.created != null) attribute_count += 1;
+    if (n.last_recalled != null) attribute_count += 1;
+    try w.writeArrayHeader(1 + attribute_count);
 
     try w.writeTag(cbor.Tag.leaf);
     try w.writeMapHeader(3);

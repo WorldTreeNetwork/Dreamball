@@ -515,10 +515,10 @@ const README_SRC =
     \\
     \\## Why types.ts uses string literals for `type` discriminants
     \\
-    \\The CBOR subject carries `type: "jelly.dreamball.avatar"` (etc.).
+    \\The CBOR core carries `type: "jelly.dreamball.avatar"` (etc.).
     \\Mirroring that as a string literal type in TypeScript means the
     \\compiler can narrow on `ball.type === 'jelly.dreamball.avatar'`
-    \\and give you the right assertion surface for that variant. The
+    \\and give you the right attribute surface for that variant. The
     \\short-tag form (`'avatar' | 'agent' | ...`) also appears as
     \\`DreamBallType` for CLI-adjacent UIs.
     \\
@@ -732,10 +732,10 @@ const SCHEMAS_SRC =
     \\});
     \\
     \\// ========================================================================
-    \\// DreamBall — common subject fields, then per-type variants
+    \\// DreamBall — common core fields, then per-type variants
     \\// ========================================================================
     \\
-    \\const commonSubject = {
+    \\const commonCore = {
     \\  stage: v.picklist(['seed', 'dreamball', 'dragonball']),
     \\  identity: Base58Schema,
     \\  'genesis-hash': Base58Schema,
@@ -753,7 +753,7 @@ const SCHEMAS_SRC =
     \\
     \\/** v1 legacy shape — `jelly.dreamball` with no subtype suffix. */
     \\export const DreamBallUntypedSchema = v.object({
-    \\  ...commonSubject,
+    \\  ...commonCore,
     \\  type: v.literal('jelly.dreamball'),
     \\  look: v.optional(LookSchema),
     \\  feel: v.optional(FeelSchema),
@@ -761,14 +761,14 @@ const SCHEMAS_SRC =
     \\});
     \\
     \\export const DreamBallAvatarSchema = v.object({
-    \\  ...commonSubject,
+    \\  ...commonCore,
     \\  type: v.literal('jelly.dreamball.avatar'),
     \\  look: v.optional(LookSchema),
     \\  feel: v.optional(FeelSchema)
     \\});
     \\
     \\export const DreamBallAgentSchema = v.object({
-    \\  ...commonSubject,
+    \\  ...commonCore,
     \\  type: v.literal('jelly.dreamball.agent'),
     \\  look: v.optional(LookSchema),
     \\  feel: v.optional(FeelSchema),
@@ -782,14 +782,14 @@ const SCHEMAS_SRC =
     \\});
     \\
     \\export const DreamBallToolSchema = v.object({
-    \\  ...commonSubject,
+    \\  ...commonCore,
     \\  type: v.literal('jelly.dreamball.tool'),
     \\  skill: v.optional(SkillSchema),
     \\  'applicable-to': v.optional(v.array(v.string()))
     \\});
     \\
     \\export const DreamBallRelicSchema = v.object({
-    \\  ...commonSubject,
+    \\  ...commonCore,
     \\  type: v.literal('jelly.dreamball.relic'),
     \\  'sealed-payload-hash': Base58Schema,
     \\  'unlock-guild': Base58Schema,
@@ -798,7 +798,7 @@ const SCHEMAS_SRC =
     \\});
     \\
     \\export const DreamBallFieldSchema = v.object({
-    \\  ...commonSubject,
+    \\  ...commonCore,
     \\  type: v.literal('jelly.dreamball.field'),
     \\  'omnispherical-grid': v.optional(OmnisphericalGridSchema),
     \\  'ambient-palette': v.optional(v.array(v.string())),
@@ -806,7 +806,7 @@ const SCHEMAS_SRC =
     \\});
     \\
     \\export const DreamBallGuildSchema = v.object({
-    \\  ...commonSubject,
+    \\  ...commonCore,
     \\  type: v.literal('jelly.dreamball.guild'),
     \\  'guild-name': v.optional(v.string()),
     \\  'keyspace-root-hash': v.optional(Base58Schema),

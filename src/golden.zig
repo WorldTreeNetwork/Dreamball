@@ -7,12 +7,12 @@ const std = @import("std");
 const protocol = @import("protocol.zig");
 const envelope = @import("envelope.zig");
 
-/// Expected Blake3 hex hash for an all-zeros seed envelope:
+/// Expected Blake3 hex hash for an all-zeros seed node:
 ///   stage = .seed
 ///   identity = [0] * 32
 ///   genesis_hash = [0] * 32
 ///   revision = 0
-///   (no assertions — subject only)
+///   (no attributes — core only)
 pub const GOLDEN_ZERO_SEED_BLAKE3: []const u8 = "df27762290f8b4dd2ac32fca17726483ecbe38b0a4ec954dd136de846f1c6998";
 
 fn blake3Hex(bytes: []const u8) [64]u8 {
@@ -34,7 +34,7 @@ fn blake3Hex(bytes: []const u8) [64]u8 {
 /// If this fails, inspect writeMemoryConnection core-key ordering in envelope_v2.zig.
 pub const GOLDEN_MEMORY_CONNECTION_BLAKE3: []const u8 = "d555eba7765504311b906ffdcf1c5df6bf8d3f3cb064fa205522d1c75f686255";
 
-test "golden bytes: all-zeros seed envelope (subject only)" {
+test "golden bytes: all-zeros seed node (core only)" {
     const allocator = std.testing.allocator;
     const db = protocol.DreamBall{
         .stage = .seed,

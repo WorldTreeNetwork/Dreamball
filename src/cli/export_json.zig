@@ -1,10 +1,10 @@
 //! `jelly export-json <in> --out <out>` — write canonical JSON rendering.
 //!
 //! To preserve signatures in the JSON output, this command uses
-//! `stripSignatures` to lift the signed-assertion objects back out of the
-//! envelope and re-attaches them to the decoded DreamBall before JSON
-//! emission. Other assertions (look/feel/act/name/created/...) are still
-//! lost until the full envelope decoder lands.
+//! `stripSignatures` to lift the signed-attribute entries back out of the
+//! CBOR envelope and re-attaches them to the decoded DreamBall before JSON
+//! emission. Other attributes (look/feel/act/name/created/...) are still
+//! lost until the full node decoder lands.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

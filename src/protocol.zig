@@ -16,7 +16,7 @@ pub const FORMAT_VERSION_V3: u32 = 3;
 /// docs/PROTOCOL.md §12. Every v2 envelope type uses this version number.
 pub const FORMAT_VERSION_V2: u32 = 2;
 
-/// The six DreamBall categories. Each changes which assertions the consumer
+/// The six DreamBall categories. Each changes which attributes the consumer
 /// expects and which renderer lens it maps to. See docs/VISION.md §10.
 pub const DreamBallType = enum {
     avatar,
