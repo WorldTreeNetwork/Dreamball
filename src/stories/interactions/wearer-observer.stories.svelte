@@ -31,14 +31,13 @@
   play={async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    // Wearer pane header must be visible
-    await expect(canvas.getByText(/wearing/i)).toBeVisible();
+    // Wearer pane header must be visible and include the agent name
+    // (the name also appears in the AvatarLens overlay and the observer
+    // FlatLens dd row, so we scope to the heading to disambiguate).
+    await expect(canvas.getByRole('heading', { name: /Wearing: Persona Agent/i })).toBeVisible();
 
     // Observer label must be visible
     await expect(canvas.getByText(/observer/i)).toBeVisible();
-
-    // The wearer header shows the agent name
-    await expect(canvas.getByText('Persona Agent')).toBeVisible();
   }}
 >
   {#snippet template(args)}

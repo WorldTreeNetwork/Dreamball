@@ -27,14 +27,15 @@
   play={async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    // Assert tool name is visible in the thumbnail
-    await expect(canvas.getByText('Haiku Composer')).toBeVisible();
+    // Assert tool and target agent names appear in their thumbnail headings
+    // (both also appear in the transmission banner and FlatLens rows, so we
+    // scope to role=heading to disambiguate).
+    await expect(canvas.getByRole('heading', { name: 'Haiku Composer' })).toBeVisible();
+    await expect(canvas.getByRole('heading', { name: 'Curiosity Agent' })).toBeVisible();
 
-    // Assert target agent name is visible
-    await expect(canvas.getByText('Curiosity Agent')).toBeVisible();
-
-    // Assert the "transmitted" status label is visible
-    await expect(canvas.getByText(/transmitted/i)).toBeVisible();
+    // Assert the "Transmitted" banner label is visible (case-sensitive to
+    // avoid matching the "Tool being transmitted" caption).
+    await expect(canvas.getByText('Transmitted')).toBeVisible();
   }}
 >
   {#snippet template(args)}
