@@ -6,9 +6,9 @@
 //!
 //! Policy: **all attached signatures must verify**, but there is no
 //! minimum count. An Ed25519-only node is valid. A hybrid node with
-//! both sigs is valid iff both pass. This deviates from PROTOCOL.md §2.3
-//! (inherited "both required" rule from recrypt); see
-//! `docs/known-gaps.md §6` for the reconciliation note.
+//! both sigs is valid iff both pass. Matches PROTOCOL.md §2.3 as of
+//! 2026-04-21 (the recrypt "both required" rule is expected to relax
+//! upstream; see `docs/known-gaps.md §6`).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

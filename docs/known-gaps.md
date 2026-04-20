@@ -149,14 +149,15 @@ simpler deployment.
   appropriate key. Policy: "all attached signatures must verify,"
   no minimum count. Ed25519-only nodes remain valid.
 
-**Two-sig policy note.** `PROTOCOL.md §2.3` (inherited from recrypt)
-reads "exactly one Ed25519 and one ML-DSA-87 signature required;
-a verifier that sees only one MUST reject." The Dreamball CLI
-currently implements the softer rule ("all present sigs must
-verify, no minimum count") per an explicit project direction —
-the stricter recrypt rule is expected to be relaxed upstream.
-Until that happens, either update `PROTOCOL.md §2.3` or tighten
-`cli/verify.zig` to match; they are currently out of sync.
+**Two-sig policy — reconciled 2026-04-21.** `PROTOCOL.md §2.3` now
+reads "all present signatures must verify, no minimum count" and
+`cli/verify.zig` implements the same rule. Ed25519-only nodes are
+valid; hybrid nodes require both sigs to verify; an ML-DSA
+signature without a matching `identity-pq` in the core is a
+verification error (no key to check against). The stricter
+recrypt "both required" rule is expected to relax upstream to
+match; until then, Dreamball is the reference for the softer
+policy.
 
 **What's still pending on the PQ side:**
 

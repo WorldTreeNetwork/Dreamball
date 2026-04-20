@@ -1400,6 +1400,38 @@ own circulation.
   encode explicit `close()` into its API; the CLI calls
   `process.exit(0)` belt-and-braces. §9 open-question entry
   closed. ADR: `docs/decisions/2026-04-21-ladybugdb-selection.md`.
+- 2026-04-21 — Phase 0 step 2b (WASM browser spike, take two)
+  confirmed the fallback path works: `kuzu-wasm@0.11.3` +
+  `mountIdbfs` + `syncfs` lifecycle under Vite 8.0.9 + Chromium
+  persists data across page reloads (verified `prior=0 → 2 → 3 → 4`
+  across three loads). No cross-origin isolation needed, no
+  pthread workers, no plugin workarounds. We'll use
+  `kuzu-wasm@0.11.3` in the browser interim (storage-compatible
+  with `.lbug`) and consolidate back onto `@ladybugdb/wasm-core`
+  once upstream restores IDBFS in the default build. Reproducer:
+  `/tmp/kuzu-wasm-spike/`. Full writeup:
+  `docs/decisions/2026-04-21-ladybugdb-selection.md`
+  §"Step 2b: WASM browser spike (kuzu-wasm@0.11.3, upstream) — FULL PASS".
+- 2026-04-21 — Phase 0 step 2 (WASM browser spike) executed.
+  `@ladybugdb/wasm-core` v0.15.3 default async build loads cleanly
+  under Vite + Chromium; in-memory node/edge queries and MATCH
+  round-trip correctly (runtime PASS). OPFS and IDBFS persistence
+  both blocked at the library layer in this release: default build
+  has OPFS mount but DB open crashes
+  (`Aborted(Assertion failed: invalid handle: 1)` at
+  `opfs_backend.cpp:292` — Emscripten WasmFS OPFS backend requires
+  a pthread worker context that the single-threaded build can't
+  provide); multithreaded build hits `thread pool exhausted` on
+  mount; sync multithreaded can't resolve pthread worker URLs
+  under Vite. The PRD's "browser runs LadybugDB directly" model
+  (FR74–79) is not available today; MVP will use
+  server-authoritative persistence (`jelly-server` owns the real
+  `.lbug`, browser carries an in-memory seed per page load) — an
+  upstream ask for a build with IDBFS or a larger pthread pool is
+  the long-term fix. Full analysis + reproducer + three
+  architectural options in
+  `docs/decisions/2026-04-21-ladybugdb-selection.md`
+  §"Step 2: WASM browser spike".
 - 2026-04-21 — Cut the pre-committed graph-DB fallback plans.
   §6.2.1 no longer documents Plan B (DuckDB+duckpgq+VSS) or
   Plan C (frozen Kuzu v0.11.3 vendored); the section now
