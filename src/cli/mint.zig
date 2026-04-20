@@ -1,7 +1,11 @@
 //! `jelly mint --out <path> [--name <str>]` — create a new DreamSeed with a
-//! freshly generated Ed25519 identity. Writes:
-//!   <out>           canonical dCBOR envelope bytes
-//!   <out>.key       raw 64-byte Ed25519 secret, permissions 0600
+//! freshly generated hybrid Ed25519 + ML-DSA-87 identity. Writes:
+//!   <out>           canonical dCBOR node bytes (format-version 3)
+//!   <out>.key       hybrid key file (see src/key_file.zig)
+//!
+//! Both signatures are attached. The ML-DSA public key is embedded in the
+//! node core as `identity-pq` so verifiers can check the PQ signature
+//! without out-of-band metadata.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -49,8 +53,8 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     else
         null;
 
-    // 1. Generate Ed25519 keypair.
-    const keys = try dreamball.SigningKeys.generate();
+    // 1. Generate hybrid Ed25519 + ML-DSA-87 keypair.
+    const keys = try dreamball.signer.HybridSigningKeys.generate();
 
     // 2. Build the seed DreamBall.
     const now: i64 = io.unixSeconds();
@@ -66,6 +70,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     var db = dreamball.DreamBall{
         .stage = .seed,
         .identity = keys.ed25519_public,
+        .identity_pq = keys.mldsa_public,
         .genesis_hash = genesis_hash,
         .revision = 0,
         .dreamball_type = dreamball_type,
@@ -73,20 +78,17 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         .created = now,
     };
 
-    // 3. Encode + sign (Ed25519 real, ML-DSA-87 placeholder).
+    // 3. Encode + sign with both Ed25519 and ML-DSA-87.
     const unsigned_bytes = try dreamball.envelope.encodeDreamBall(gpa, db);
     defer gpa.free(unsigned_bytes);
 
-    const kp = try keys.keyPair();
-    const ed_sig = try kp.sign(unsigned_bytes, null);
-    const ed_sig_bytes = ed_sig.toBytes();
-
-    const mldsa_ph = try dreamball.signer.mlDsaPlaceholder(gpa);
-    defer gpa.free(mldsa_ph);
+    const ed_sig_bytes = try dreamball.signer.signEd25519(unsigned_bytes, keys.classical());
+    const mldsa_sig = try dreamball.signer.signMlDsa(gpa, unsigned_bytes, keys);
+    defer gpa.free(mldsa_sig);
 
     const sigs = [_]dreamball.protocol.Signature{
         .{ .alg = "ed25519", .value = &ed_sig_bytes },
-        .{ .alg = "ml-dsa-87", .value = mldsa_ph },
+        .{ .alg = "ml-dsa-87", .value = mldsa_sig },
     };
     db.signatures = &sigs;
 
@@ -98,10 +100,10 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     const helpers = @import("helpers.zig");
     try helpers.writeFile(out_path, signed_bytes);
 
-    // 5. Write key file (permissions left at default — see security note).
+    // 5. Write hybrid key file (permissions left at default — see security note).
     const key_path = try std.fmt.allocPrint(gpa, "{s}.key", .{out_path});
     defer gpa.free(key_path);
-    try helpers.writeFile(key_path, &keys.ed25519_secret);
+    try dreamball.key_file.writeHybridToPath(gpa, key_path, keys);
 
     // 6. Report.
     const fp = db.fingerprint();
@@ -112,7 +114,6 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         "minted seed → {s}\n  type:        {s}\n  identity fingerprint: {s}\n  secret key:  {s}\n",
         .{ out_path, type_label, fp_b58, key_path },
     );
-    try io.writeAllStderr("warning: ML-DSA-87 signature is a placeholder (liboqs binding pending)\n");
 
     return 0;
 }

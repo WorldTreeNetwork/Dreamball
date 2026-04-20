@@ -61,6 +61,10 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     hasher.final(&hash);
 
     // Generate a fresh Ed25519 identity for the Relic wrapper itself.
+    // The wrapper is ephemeral — its identity has no persisted key file and
+    // therefore no durable ML-DSA pubkey to publish. Accept Ed25519-only here
+    // per the "lower-stakes context" policy; the inner DreamBall carries its
+    // own hybrid signatures independently.
     const relic_keys = try dreamball.SigningKeys.generate();
     const relic_identity = relic_keys.ed25519_public;
     var genesis_input: [64]u8 = undefined;
@@ -80,15 +84,10 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     const unsigned = try dreamball.envelope_v2.encodeRelic(gpa, relic_identity, gh, relic, hint, &.{});
     defer gpa.free(unsigned);
 
-    // Sign with the relic's own keypair.
-    const kp = try relic_keys.keyPair();
-    const sig = try kp.sign(unsigned, null);
-    const sig_bytes = sig.toBytes();
-    const mldsa_ph = try dreamball.signer.mlDsaPlaceholder(gpa);
-    defer gpa.free(mldsa_ph);
+    // Sign with the relic's own keypair (Ed25519 only — see note above).
+    const sig_bytes = try dreamball.signer.signEd25519(unsigned, relic_keys);
     const sigs = [_]dreamball.protocol.Signature{
         .{ .alg = "ed25519", .value = &sig_bytes },
-        .{ .alg = "ml-dsa-87", .value = mldsa_ph },
     };
     const signed_envelope = try dreamball.envelope_v2.encodeRelic(gpa, relic_identity, gh, relic, hint, &sigs);
     defer gpa.free(signed_envelope);

@@ -1,6 +1,14 @@
-//! `jelly verify <file>` — check Ed25519 signature over the canonical
-//! unsigned bytes. ML-DSA-87 real verification is pending the liboqs binding;
-//! the placeholder slot is accepted with a warning.
+//! `jelly verify <file>` — check each `'signed'` attribute against the
+//! appropriate verification key. Ed25519 signatures verify against
+//! `identity`. ML-DSA-87 signatures verify against `identity-pq` when
+//! present in the core; absent `identity-pq` with a present ML-DSA
+//! signature is an error (no way to verify).
+//!
+//! Policy: **all attached signatures must verify**, but there is no
+//! minimum count. An Ed25519-only node is valid. A hybrid node with
+//! both sigs is valid iff both pass. This deviates from PROTOCOL.md §2.3
+//! (inherited "both required" rule from recrypt); see
+//! `docs/known-gaps.md §6` for the reconciliation note.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -42,6 +50,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer stripped.deinit();
 
     var have_valid_ed = false;
+    var have_valid_mldsa = false;
     var have_mldsa_placeholder = false;
 
     for (stripped.signatures) |sig| {
@@ -64,11 +73,24 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
             have_valid_ed = true;
         } else if (std.mem.eql(u8, sig.alg, "ml-dsa-87")) {
             if (dreamball.signer.isPlaceholderMldsa(sig.value)) {
+                // Legacy placeholder bytes — don't count as a valid sig,
+                // but don't reject the envelope either (Ed25519-only is fine).
                 have_mldsa_placeholder = true;
-            } else {
-                // Real ML-DSA verification needs a liboqs binding — not yet wired.
-                try io.writeAllStderr("warning: non-placeholder ML-DSA-87 signature present but real verification is not yet implemented\n");
+                continue;
             }
+            if (sig.value.len != dreamball.protocol.ML_DSA_87_SIGNATURE_LEN) {
+                try io.writeAllStderr("error: malformed ML-DSA-87 signature length\n");
+                return 1;
+            }
+            const pq = db.identity_pq orelse {
+                try io.writeAllStderr("error: ML-DSA-87 signature present but envelope has no identity_pq slot\n");
+                return 1;
+            };
+            dreamball.signer.verifyMlDsa(sig.value, stripped.unsigned, &pq) catch {
+                try io.writeAllStderr("error: ML-DSA-87 signature verification failed\n");
+                return 1;
+            };
+            have_valid_mldsa = true;
         }
     }
 
@@ -76,8 +98,8 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         try io.writeAllStderr("error: no valid Ed25519 signature found\n");
         return 1;
     }
-    if (have_mldsa_placeholder) {
-        try io.writeAllStderr("warning: ML-DSA-87 signature is a zero-filled placeholder (liboqs binding pending)\n");
+    if (have_mldsa_placeholder and !have_valid_mldsa) {
+        try io.writeAllStderr("warning: ML-DSA-87 signature is a zero-filled placeholder (legacy envelope; re-mint for PQ signing)\n");
     }
 
     return 0;

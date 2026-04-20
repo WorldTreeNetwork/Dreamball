@@ -6,6 +6,11 @@ const Allocator = std.mem.Allocator;
 const Fingerprint = @import("fingerprint.zig").Fingerprint;
 
 pub const FORMAT_VERSION: u32 = 1;
+/// Format version bumped when a node opts into the post-quantum
+/// `identity-pq` core field. Semantically additive — v2 parsers reject with
+/// `UnsupportedVersion`, which is what we want rather than silently dropping
+/// the PQ pubkey.
+pub const FORMAT_VERSION_V3: u32 = 3;
 
 /// Protocol v2 — typed DreamBalls and new auxiliary envelopes. See
 /// docs/PROTOCOL.md §12. Every v2 envelope type uses this version number.
@@ -71,6 +76,8 @@ pub const ED25519_SIGNATURE_LEN: usize = 64;
 pub const ML_DSA_87_SIGNATURE_LEN: usize = 4627;
 /// ML-DSA-87 public key length (bytes).
 pub const ML_DSA_87_PUBLIC_KEY_LEN: usize = 2592;
+/// ML-DSA-87 secret key length (bytes).
+pub const ML_DSA_87_SECRET_KEY_LEN: usize = 4896;
 
 pub const Stage = enum {
     seed,
@@ -155,6 +162,12 @@ pub const DreamBall = struct {
     stage: Stage,
     /// Ed25519 public key — the container's identity.
     identity: [32]u8,
+    /// Post-quantum identity — the ML-DSA-87 public key (2592 bytes).
+    /// Optional; present only on nodes that opted into PQ signing. The
+    /// ML-DSA `'signed'` attribute verifies against this pubkey. Forcing
+    /// format-version=3 (see `FORMAT_VERSION_V3`) guarantees old parsers
+    /// reject the node rather than silently ignore the PQ pubkey.
+    identity_pq: ?[ML_DSA_87_PUBLIC_KEY_LEN]u8 = null,
     /// Blake3 of the canonical seed payload. Immutable across the lifetime.
     genesis_hash: [32]u8,
     /// Monotonic, bumped on every signed update.

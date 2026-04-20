@@ -260,7 +260,10 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     var subj = PairList.init(allocator);
     defer subj.deinit();
     const type_str: []const u8 = if (db.dreamball_type) |t| t.toWireString() else DREAMBALL_TYPE;
-    const fv: u32 = if (db.dreamball_type != null or db.guilds.len > 0)
+    // Version bumps cascade: identity_pq → v3, else typed-or-guilded → v2, else v1.
+    const fv: u32 = if (db.identity_pq != null)
+        protocol.FORMAT_VERSION_V3
+    else if (db.dreamball_type != null or db.guilds.len > 0)
         protocol.FORMAT_VERSION_V2
     else
         protocol.FORMAT_VERSION;
@@ -268,6 +271,7 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     try subj.addUint("format-version", fv);
     try subj.addText("stage", db.stage.toString());
     try subj.addBytes("identity", &db.identity);
+    if (db.identity_pq) |pq| try subj.addBytes("identity-pq", &pq);
     try subj.addBytes("genesis-hash", &db.genesis_hash);
     try subj.addUint("revision", db.revision);
     subj.sort();
@@ -360,7 +364,9 @@ pub fn decodeDreamBallSubject(bytes: []const u8) !protocol.DreamBall {
             }
         } else if (std.mem.eql(u8, key, "format-version")) {
             const v = try r.readUint();
-            if (v != protocol.FORMAT_VERSION and v != protocol.FORMAT_VERSION_V2) return error.UnsupportedVersion;
+            if (v != protocol.FORMAT_VERSION and
+                v != protocol.FORMAT_VERSION_V2 and
+                v != protocol.FORMAT_VERSION_V3) return error.UnsupportedVersion;
         } else if (std.mem.eql(u8, key, "stage")) {
             const s = try r.readText();
             out.stage = protocol.Stage.fromString(s) orelse return error.BadStage;
@@ -368,6 +374,12 @@ pub fn decodeDreamBallSubject(bytes: []const u8) !protocol.DreamBall {
             const b = try r.readBytes();
             if (b.len != 32) return error.BadIdentity;
             @memcpy(&out.identity, b);
+        } else if (std.mem.eql(u8, key, "identity-pq")) {
+            const b = try r.readBytes();
+            if (b.len != protocol.ML_DSA_87_PUBLIC_KEY_LEN) return error.BadIdentityPq;
+            var pq: [protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = undefined;
+            @memcpy(&pq, b);
+            out.identity_pq = pq;
         } else if (std.mem.eql(u8, key, "genesis-hash")) {
             const b = try r.readBytes();
             if (b.len != 32) return error.BadGenesis;
@@ -618,7 +630,9 @@ fn readSubjectMap(r: *cbor.Reader, out: *protocol.DreamBall) !void {
             }
         } else if (std.mem.eql(u8, key, "format-version")) {
             const v = try r.readUint();
-            if (v != protocol.FORMAT_VERSION and v != protocol.FORMAT_VERSION_V2) return error.UnsupportedVersion;
+            if (v != protocol.FORMAT_VERSION and
+                v != protocol.FORMAT_VERSION_V2 and
+                v != protocol.FORMAT_VERSION_V3) return error.UnsupportedVersion;
         } else if (std.mem.eql(u8, key, "stage")) {
             const s = try r.readText();
             out.stage = protocol.Stage.fromString(s) orelse return error.BadStage;
@@ -626,6 +640,12 @@ fn readSubjectMap(r: *cbor.Reader, out: *protocol.DreamBall) !void {
             const b = try r.readBytes();
             if (b.len != 32) return error.BadIdentity;
             @memcpy(&out.identity, b);
+        } else if (std.mem.eql(u8, key, "identity-pq")) {
+            const b = try r.readBytes();
+            if (b.len != protocol.ML_DSA_87_PUBLIC_KEY_LEN) return error.BadIdentityPq;
+            var pq: [protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = undefined;
+            @memcpy(&pq, b);
+            out.identity_pq = pq;
         } else if (std.mem.eql(u8, key, "genesis-hash")) {
             const b = try r.readBytes();
             if (b.len != 32) return error.BadGenesis;

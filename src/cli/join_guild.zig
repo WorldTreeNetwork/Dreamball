@@ -46,13 +46,6 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer gpa.free(db_bytes);
     const guild_bytes = try helpers.readFile(gpa, guild_path);
     defer gpa.free(guild_bytes);
-    const key_bytes = try helpers.readFile(gpa, key_path);
-    defer gpa.free(key_bytes);
-
-    if (key_bytes.len != 64) {
-        try io.writeAllStderr("error: key file must be exactly 64 bytes (Ed25519 secret key)\n");
-        return 2;
-    }
 
     var db = try dreamball.envelope.decodeDreamBallSubject(db_bytes);
     const guild_db = try dreamball.envelope.decodeDreamBallSubject(guild_bytes);
@@ -67,25 +60,9 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     db.revision += 1;
     db.updated = io.unixSeconds();
 
-    // Re-sign.
-    var sk_bytes: [64]u8 = undefined;
-    @memcpy(&sk_bytes, key_bytes);
-    const sk = try std.crypto.sign.Ed25519.SecretKey.fromBytes(sk_bytes);
-    const kp = try std.crypto.sign.Ed25519.KeyPair.fromSecretKey(sk);
-
-    const unsigned = try dreamball.envelope.encodeDreamBall(gpa, db);
-    defer gpa.free(unsigned);
-    const sig = try kp.sign(unsigned, null);
-    const sig_bytes = sig.toBytes();
-    const mldsa_ph = try dreamball.signer.mlDsaPlaceholder(gpa);
-    defer gpa.free(mldsa_ph);
-    const sigs = [_]dreamball.protocol.Signature{
-        .{ .alg = "ed25519", .value = &sig_bytes },
-        .{ .alg = "ml-dsa-87", .value = mldsa_ph },
-    };
-    db.signatures = &sigs;
-
-    const signed = try dreamball.envelope.encodeDreamBall(gpa, db);
+    // Re-sign with hybrid (or legacy) key.
+    const sign = @import("sign.zig");
+    const signed = try sign.signEnvelope(gpa, &db, key_path);
     defer gpa.free(signed);
 
     try helpers.writeFile(out_path, signed);

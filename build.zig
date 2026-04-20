@@ -17,6 +17,49 @@ pub fn build(b: *std.Build) void {
     });
     mod.addImport("zbor", zbor_mod);
 
+    // liboqs ML-DSA-87 reference implementation, vendored under vendor/liboqs.
+    // See vendor/liboqs/VENDOR.md for pin + scope. The .c sources compile into
+    // the dreamball module, so any artifact using this module (native library,
+    // CLI, or unit tests) automatically links the post-quantum signer. The
+    // wasm32-freestanding target uses a separate module (wasm_mod) which does
+    // not pull these in — see src/ml_dsa.zig for the `enabled` gate.
+    mod.link_libc = true;
+    const liboqs_vendor = b.path("vendor/liboqs");
+    mod.addIncludePath(liboqs_vendor.path(b, "include"));
+    mod.addIncludePath(liboqs_vendor.path(b, "src/common/pqclean_shims"));
+    mod.addIncludePath(liboqs_vendor.path(b, "src/common/sha3"));
+    mod.addIncludePath(liboqs_vendor.path(b, "src/common/sha3/xkcp_low/KeccakP-1600/plain-64bits"));
+    mod.addIncludePath(liboqs_vendor.path(b, "src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref"));
+    mod.addCSourceFiles(.{
+        .files = &.{
+            // ML-DSA-87 reference implementation (pqcrystals-dilithium).
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/ntt.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/packing.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/poly.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/polyvec.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/reduce.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/rounding.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/sign.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/symmetric-shake.c",
+            // XKCP SHAKE frontend + portable 64-bit Keccak backend.
+            "vendor/liboqs/src/common/sha3/sha3.c",
+            "vendor/liboqs/src/common/sha3/xkcp_sha3.c",
+            "vendor/liboqs/src/common/sha3/xkcp_low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c",
+            // OQS_randombytes + OQS_MEM_aligned_{alloc,free} backed by libc.
+            "vendor/liboqs/src/dreamball_stubs.c",
+        },
+        .flags = &.{
+            "-DDILITHIUM_MODE=5", // selects ML-DSA-87 via config.h
+            "-std=c11",
+            // liboqs's upstream sources are clean but compile with a handful
+            // of warnings under strict flags; silence the noisy categories
+            // rather than patching vendored code.
+            "-Wno-unused-parameter",
+            "-Wno-unused-but-set-variable",
+            "-Wno-sign-compare",
+        },
+    });
+
     const lib = b.addLibrary(.{
         .name = "dreamball",
         .root_module = mod,

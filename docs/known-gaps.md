@@ -13,20 +13,31 @@ lingers here without a clear next step.
 
 **State.** `verifyJelly` in `jelly.wasm` currently verifies Ed25519
 locally and acknowledges ML-DSA-87 signatures without verifying them.
-Production verification paths use `jelly-server`'s `mlDsaVerifyUrl`
-option, which delegates to `recrypt-server`.
+(Terminology: the nodes carry ML-DSA-87 `'signed'` attributes that
+reference an `identity-pq` core field on v3 nodes — see §1.2 of
+PROTOCOL.md.)
 
-**Why deferred.** `std.crypto.sign.Ed25519` works on freestanding-wasm
-out of the box; no equivalent ML-DSA-87 exists in Zig 0.16 stdlib.
-Options are liboqs-wasm (+1.5 MB bundle) or a pure-Zig port (correctness
-risk).
+**Native side is no longer deferred.** See §6 below — the vendored
+liboqs subset now links cleanly into the native `jelly` binary and
+the Zig library exposes `ml_dsa.keypair` / `ml_dsa.sign` / `ml_dsa.verify`
+with a round-trip test gate. Browser verification remains the open
+problem.
 
-**Path forward.** Revisit when either:
-- A trustworthy pure-Zig ML-DSA-87 implementation appears in the 0.17
-  stdlib, or
-- A vendored liboqs-wasm build becomes a manageable dep.
+**Why still deferred for WASM.** The compiled size of the ML-DSA-87
+reference C sources plus XKCP Keccak adds ~250-400 KB of code section
+to the WASM binary, against our 150 KB budget. The native path is
+strictly preferable: the server subprocesses the native `jelly`
+binary (no HTTP hop to recrypt-server, no bundle bloat) and the
+browser stays Ed25519-only.
 
-Tracked as **Growth FR58** in the v2.1 plan.
+**Path forward.**
+- Stay native-CLI-only until either (a) a tree-shaken pure-Zig
+  ML-DSA-87 implementation appears in stdlib or (b) the bundle-size
+  trade-off is explicitly revisited as a product decision.
+- The vendored `vendor/liboqs/` subset can be compiled for
+  wasm32-freestanding today by providing a freestanding `OQS_randombytes`
+  (the existing `env.getRandomBytes` host import) — the compile
+  toolchain is ready when the size budget is.
 
 ### 2. `zstd` compression for DragonBall sealed bundles
 
@@ -83,22 +94,82 @@ before prod` markers make the mistake visible in review.
 
 ### 6. Phase D — Real ML-DSA-87 + recrypt guild keyspaces (partial)
 
-**State (updated 2026-04-19).** The recrypt-server side of Phase D is
-**done** — `POST /sign/ml-dsa` and `POST /verify/ml-dsa` exist in
-`recrypt/recrypt-server/src/routes/signing.rs` (commit `d97060e`).
-They delegate to `recrypt-ffi::liboqs::{pq_sign, pq_verify}` which use
-the `oqs` crate. Sign+verify roundtrip test passes.
+**State (updated 2026-04-20).** The Dreamball side of Phase D no
+longer needs the HTTP hop. We vendored the ML-DSA-87 subset of
+liboqs 0.13.0 directly into `vendor/liboqs/` and the Zig core now
+links it at build time:
 
-The Dreamball side still needs to wire these in:
+- `vendor/liboqs/` — pqcrystals-dilithium ref impl (8 .c files) +
+  XKCP SHAKE plain-64 backend + 3 hand-rolled files (our
+  `oqsconfig.h`, minimal `oqs.h` override, `dreamball_stubs.c`
+  providing `OQS_randombytes` via libc and `OQS_MEM_aligned_*` via
+  `posix_memalign`). Pin: upstream tag `0.13.0`, via the vendored
+  `oqs-sys 0.11.0+liboqs-0.13.0` crate source. See
+  `vendor/liboqs/VENDOR.md` for the full pin record and refresh
+  procedure.
+- `src/ml_dsa.zig` — Zig wrapper exposing `keypair() → Keypair`,
+  `sign(sig_out, msg, secret) → usize`, `signAlloc(allocator, msg,
+  secret) → []u8`, `verify(sig, msg, pub) → !void`. Four tests pass:
+  keypair→sign→verify round-trip, tampered signature, tampered
+  message, cross-key rejection (55/55 total, up from 51).
+- `build.zig` — C sources compile into the `dreamball` module with
+  `-DDILITHIUM_MODE=5 -std=c11`. No separate static library, no
+  `b.dependency`, no CMake glue — just vendored files.
 
-  1. `jelly-server/src/mldsa-client.ts` — HTTP client calling the two
-     recrypt endpoints. Not yet written.
-  2. `jelly-server` mint route — do the two-hop WASM-Ed25519 +
-     HTTP-ML-DSA signing when `RECRYPT_SERVER_URL` is set. Currently
-     ML-DSA stays as the zero-filled placeholder.
-  3. `jelly` CLI — add `--ml-dsa-server <url>` flag.
-  4. `tests/e2e-cryptography.sh` — the real-mode assertions (guarded by
-     `$MODE == real`) flip on when the above is wired.
+Reversed architectural decision: the recrypt-server
+`POST /sign/ml-dsa` and `POST /verify/ml-dsa` endpoints exist and
+are tested on the recrypt side (`recrypt-server/src/routes/signing.rs`),
+but Dreamball never needs them. Dreamball's jelly-server subprocesses
+the native `jelly` binary, which has its own direct liboqs link. No
+network round-trip, no auth surface for a sign-with-secret endpoint,
+simpler deployment.
+
+**CLI wire-up is now complete for DreamBall nodes** (2026-04-20):
+
+- Node format bumped to `FORMAT_VERSION_V3` when the new
+  `identity-pq` core field is present. The field carries the
+  signer's 2592-byte ML-DSA-87 public key so verifiers can check
+  the PQ signature without out-of-band metadata. v1/v2 nodes
+  continue to verify unchanged.
+- Key file extended to a 7560-byte hybrid shape (magic `"DJELLY\n"`
+  + version byte + Ed25519 secret + ML-DSA public + ML-DSA secret).
+  Legacy 64-byte Ed25519-only key files are still accepted; the
+  CLI degrades to Ed25519-only signing when one is passed.
+- `jelly mint` generates a hybrid keypair, embeds `identity-pq`
+  in the core, and emits both signatures.
+- `jelly grow`, `jelly join-guild`, `jelly transmit` re-sign with
+  whichever algorithms the key file provides. Transmission
+  nodes do not yet carry `identity-pq` (no core field; tracked
+  separately — the sender's pubkey bundle flows out-of-band,
+  matching recrypt's public-key-bundle pattern).
+- `jelly seal-relic` stays Ed25519-only on the relic wrapper. Per
+  policy, ephemeral wrappers in lower-stakes contexts trust the
+  inner DreamBall's own hybrid signature.
+- `jelly verify` checks each `'signed'` attribute against the
+  appropriate key. Policy: "all attached signatures must verify,"
+  no minimum count. Ed25519-only nodes remain valid.
+
+**Two-sig policy note.** `PROTOCOL.md §2.3` (inherited from recrypt)
+reads "exactly one Ed25519 and one ML-DSA-87 signature required;
+a verifier that sees only one MUST reject." The Dreamball CLI
+currently implements the softer rule ("all present sigs must
+verify, no minimum count") per an explicit project direction —
+the stricter recrypt rule is expected to be relaxed upstream.
+Until that happens, either update `PROTOCOL.md §2.3` or tighten
+`cli/verify.zig` to match; they are currently out of sync.
+
+**What's still pending on the PQ side:**
+
+- A durable key-storage story beyond the per-DreamBall `.key`
+  file. The user's intent is to unify this with the
+  recrypt+identikey wallet format (`DCYW` shell + Argon2id +
+  XChaCha20-Poly1305 around a `recrypt.identity` node).
+  Tracked in a cross-repo follow-up.
+- Browser-side ML-DSA-87 verification (see §1 above — still
+  native-only due to WASM bundle-size budget).
+- `Transmission` / `Relic` nodes gaining an `identity-pq`
+  core field so the PQ sig can be verified standalone rather
+  than depending on a public-key-bundle lookup.
 
 Guild keyspace proxy-recryption (the harder half of Phase D) remains
 future work — `recrypt-server` already has keyspace endpoints

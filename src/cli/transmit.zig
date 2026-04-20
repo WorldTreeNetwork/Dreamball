@@ -51,23 +51,17 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         return 2;
     }
 
-    const key_bytes = try helpers.readFile(gpa, sender_key);
-    defer gpa.free(key_bytes);
-    if (key_bytes.len != 64) {
-        try io.writeAllStderr("error: sender key must be 64 bytes\n");
-        return 2;
-    }
-    var sk_bytes: [64]u8 = undefined;
-    @memcpy(&sk_bytes, key_bytes);
-    const sk = try std.crypto.sign.Ed25519.SecretKey.fromBytes(sk_bytes);
-    const kp = try std.crypto.sign.Ed25519.KeyPair.fromSecretKey(sk);
-
+    const loaded_keys = try dreamball.key_file.readFromPath(gpa, sender_key);
     const tool_fp = tool_db.fingerprint();
     var target_fp: dreamball.Fingerprint = undefined;
     @memcpy(&target_fp.bytes, target_fp_bytes);
     var via_guild: dreamball.Fingerprint = undefined;
     @memcpy(&via_guild.bytes, guild_fp_bytes);
-    const sender_fp = dreamball.Fingerprint.fromEd25519(kp.public_key.toBytes());
+    const ed_pub = switch (loaded_keys) {
+        .hybrid => |h| h.ed25519_public,
+        .ed25519_only => |e| e.ed25519_public,
+    };
+    const sender_fp = dreamball.Fingerprint.fromEd25519(ed_pub);
 
     var t = dreamball.protocol_v2.Transmission{
         .tool_fp = tool_fp,
@@ -81,27 +75,48 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     // Sign the unsigned transmission bytes.
     const unsigned = try dreamball.envelope_v2.encodeTransmission(gpa, t);
     defer gpa.free(unsigned);
-    const sig = try kp.sign(unsigned, null);
-    const sig_bytes = sig.toBytes();
-    const mldsa_ph = try dreamball.signer.mlDsaPlaceholder(gpa);
-    defer gpa.free(mldsa_ph);
-    const sigs = [_]dreamball.protocol.Signature{
-        .{ .alg = "ed25519", .value = &sig_bytes },
-        .{ .alg = "ml-dsa-87", .value = mldsa_ph },
-    };
-    t.signatures = &sigs;
 
-    const signed = try dreamball.envelope_v2.encodeTransmission(gpa, t);
-    defer gpa.free(signed);
-    try helpers.writeFile(out_path, signed);
+    // The Transmission envelope has no identity_pq slot yet, so the ML-DSA
+    // signature is emitted only when the sender holds a hybrid key. A
+    // verifier needs the sender's pubkey bundle out-of-band to check it —
+    // handled by recrypt-style public-key-bundle lookup in a later pass.
+    switch (loaded_keys) {
+        .hybrid => |keys| {
+            const ed_sig = try dreamball.signer.signEd25519(unsigned, keys.classical());
+            const mldsa_sig = try dreamball.signer.signMlDsa(gpa, unsigned, keys);
+            defer gpa.free(mldsa_sig);
+            const sigs = [_]dreamball.protocol.Signature{
+                .{ .alg = "ed25519", .value = &ed_sig },
+                .{ .alg = "ml-dsa-87", .value = mldsa_sig },
+            };
+            t.signatures = &sigs;
+            const signed = try dreamball.envelope_v2.encodeTransmission(gpa, t);
+            defer gpa.free(signed);
+            try helpers.writeFile(out_path, signed);
+            try io.printStdout(
+                "transmitted {s} → {s} via guild {s}\nreceipt: {s} ({d} bytes)\n",
+                .{ tool_path, target_b58, guild_b58, out_path, signed.len },
+            );
+        },
+        .ed25519_only => |keys| {
+            const ed_sig = try dreamball.signer.signEd25519(unsigned, keys);
+            const sigs = [_]dreamball.protocol.Signature{
+                .{ .alg = "ed25519", .value = &ed_sig },
+            };
+            t.signatures = &sigs;
+            const signed = try dreamball.envelope_v2.encodeTransmission(gpa, t);
+            defer gpa.free(signed);
+            try helpers.writeFile(out_path, signed);
+            try io.printStdout(
+                "transmitted {s} → {s} via guild {s}\nreceipt: {s} ({d} bytes)\n",
+                .{ tool_path, target_b58, guild_b58, out_path, signed.len },
+            );
+        },
+    }
 
-    try io.printStdout(
-        "transmitted {s} → {s} via guild {s}\nreceipt: {s} ({d} bytes)\n",
-        .{ tool_path, target_b58, guild_b58, out_path, signed.len },
-    );
     // TODO-CRYPTO: replace before prod — real transmission requires recrypt
     // proxy-recryption so the receiver can decrypt the Tool's secrets.
-    try io.writeAllStderr("warning: transmission crypto is mocked (Ed25519 sig real; proxy-recryption stub)\n");
+    try io.writeAllStderr("warning: transmission proxy-recryption is mocked; signatures are real\n");
     return 0;
 }
 
