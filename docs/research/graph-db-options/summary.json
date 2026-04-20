@@ -1,0 +1,141 @@
+{
+  "question": "Which embedded graph database should the Dreamball Memory Palace composition use in place of KuzuDB?",
+  "mode": "engineering",
+  "status": "complete",
+  "confidence": "medium-high",
+  "executive_summary": "Adopt LadybugDB as the Memory Palace graph store. It is the only actively maintained Kuzu fork (9 releases Nov 2025 - Apr 2026, ex-Facebook Dragon lead, published on all registries, active WASM+OPFS), is one-for-one API and storage compatible with Kuzu v0.11.3, MIT-licensed, and inherits Kuzu's bundled vector extension which closes PRD section 9. Fallback is DuckDB 1.5.x + duckpgq + VSS on the server with recursive CTEs for timeline walks, accepting a server-only deployment because duckpgq and VSS are not in the stable DuckDB-WASM extension list. CozoDB is technically a near-perfect fit but ruled out due to effective project abandonment (last release Dec 2023, candle-vigil on issue #301). Oxigraph, SurrealDB, HelixDB, IndraDB, TerminusDB are disqualified on hard criteria; Grafeo is an AI-generated beta held at arm's length.",
+  "recommendation": {
+    "primary": "LadybugDB (@ladybugdb/core)",
+    "fallback": "DuckDB 1.5.x + duckpgq + VSS on server, recursive CTEs for timeline",
+    "last_resort": "Vendor-and-freeze Kuzu v0.11.3, or custom SQLite + recursive CTEs + sqlite-vec"
+  },
+  "key_findings": [
+    {
+      "finding": "KuzuDB upstream is definitively dead: archived 2025-10-10, final release v0.11.3, Kuzu Inc. acquired by Apple per Feb 2026 EU DMA filings.",
+      "confidence": "high",
+      "sources": ["docs/research/graph-db-options/hypotheses/h1-kuzu-status/findings.md"]
+    },
+    {
+      "finding": "LadybugDB is the only Kuzu fork with sustained momentum: 9 releases across Nov 2025 - Apr 2026 (v0.12.2 through v0.15.3), packages on npm/pypi/cargo/maven, active WASM build with OPFS support, 973 stars, ex-Facebook Dragon engineer Arun Sharma leading.",
+      "confidence": "high",
+      "sources": [
+        "docs/research/graph-db-options/hypotheses/h1-kuzu-status/findings.md",
+        "docs/research/graph-db-options/hypotheses/h2-h3-ladybug-vs-bighorn/findings.md"
+      ]
+    },
+    {
+      "finding": "Bighorn is effectively dormant: 0 published releases since Oct 2025 fork, last commit 2025-10-11, no npm/pypi/cargo packages, Kineviz treats it as internal GraphXR dependency.",
+      "confidence": "high",
+      "sources": ["docs/research/graph-db-options/hypotheses/h2-h3-ladybug-vs-bighorn/findings.md"]
+    },
+    {
+      "finding": "DuckDB+duckpgq+VSS is the most elegant architecture but Plan B only: duckpgq is a CWI research project self-labelled WIP (v0.3.1 community extension), lacks ALL PATHS Kleene closure, VSS persistence has experimental crash-corruption risk, and neither extension ships in the stable DuckDB-WASM extension list as of DuckDB 1.5.x.",
+      "confidence": "medium",
+      "sources": ["docs/research/graph-db-options/hypotheses/h4-duckdb-duckpgq-vss/findings.md"]
+    },
+    {
+      "finding": "CozoDB is a technical near-perfect match (Datalog + native HNSW + Bytes keys + recursive queries + MPL-2.0) but effectively abandoned: last release Dec 2023, last commit Dec 2024, issue #301 'Is cozo still being maintained?' has 8 candle emoji responses Dec 2025 - Apr 2026 with no author reply, Bun bundler fix #303 unmerged.",
+      "confidence": "high",
+      "sources": ["docs/research/graph-db-options/hypotheses/h5-cozodb/findings.md"]
+    },
+    {
+      "finding": "Oxigraph (RDF-only), SurrealDB (BUSL 1.1), HelixDB (server-required + AGPL), IndraDB (no Node/WASM bindings, no vector, dormant), TerminusDB (not embedded) all fail a hard criterion.",
+      "confidence": "high",
+      "sources": ["docs/research/graph-db-options/hypotheses/h6-h7-h8-field-survey/findings.md"]
+    },
+    {
+      "finding": "Grafeo is a newly discovered Apache-2.0 embedded LPG+RDF+vector store with Node and WASM bindings that checks every requirements box on paper, but HN flagged the codebase as largely AI-generated (100K-200K LOC/week) with the creator acknowledging beta status - not trustworthy as a primary or fallback pick.",
+      "confidence": "medium",
+      "sources": ["docs/research/graph-db-options/hypotheses/h6-h7-h8-field-survey/findings.md"]
+    },
+    {
+      "finding": "LadybugDB inherits Kuzu's bundled vector extension, closing PRD section 9 (vector store question) under the primary recommendation; separate vector store (usearch / sqlite-vec) remains as a code-level swap point via a VectorIndex interface.",
+      "confidence": "medium",
+      "sources": [
+        "docs/research/graph-db-options/hypotheses/h1-kuzu-status/findings.md",
+        "docs/research/graph-db-options/hypotheses/h2-h3-ladybug-vs-bighorn/findings.md"
+      ]
+    },
+    {
+      "finding": "Vendor-and-freeze Kuzu v0.11.3 is a viable Plan C for rebuild-from-CAS workloads: final release bundles all extensions (algo, fts, json, vector), CIDR-2023 engine, known-working napi bindings, 18-24 month runway with security-patch risk only.",
+      "confidence": "medium",
+      "sources": ["docs/research/graph-db-options/hypotheses/h1-kuzu-status/findings.md"]
+    },
+    {
+      "finding": "NextGraph is not a graph-DB candidate (alpha app-runtime, RDF-only, no vectors, no Bun, browser SDK runs in broker iframe) but its architectural convergence with Dreamball is striking: both use Blake3 content addressing, ChaCha20 encryption, Ed25519 per-commit signatures, CBOR envelopes, parent-hash-referenced commit DAGs, and local-first semantics. The team should read NextGraph's repo-format and threshold-signature specs before finalizing FR68 / section 6.4 shared-palace coherence to avoid reinventing incompatible solutions.",
+      "confidence": "high",
+      "sources": ["docs/research/graph-db-options/hypotheses/h-nextgraph/findings.md"]
+    }
+  ],
+  "phase_0_spikes": [
+    "LadybugDB + Bun napi smoke test (~30min) - load @ladybugdb/core under Bun runtime, confirm native addon works",
+    "LadybugDB WASM + OPFS browser spike (~2h) - load @ladybugdb/wasm-core in Vite, round-trip a node/edge via OPFS",
+    "Vendor-and-freeze Kuzu v0.11.3 branch prep (~1h) - pin as submodule or vendor directory",
+    "DuckDB+duckpgq Plan-B reference spike (~4h) - build schema, verify 2-hop path + recursive CTE parent-chain",
+    "Storage format cross-read check (~30min) - confirm LadybugDB v0.15.x opens Kuzu v0.11.3 .kz files"
+  ],
+  "prd_edits_required": [
+    "Section 6.2: Replace every 'kuzu'/'KuzuDB' reference with 'LadybugDB' (@ladybugdb/core, lbug crate, .lbug files)",
+    "Section 6.2: Change storage path .memory-palace/kuzu/ to .memory-palace/lbug/",
+    "FR80: Change 'rebuilt into KuzuDB' to 'rebuilt into LadybugDB (Kuzu-lineage, v0.11.3 storage compatible)'",
+    "Section 9: Close the vector-store open question - vectors go in LadybugDB's bundled vector extension",
+    "Section 9: Add 'Bun+@ladybugdb/core napi compatibility' as Phase-0 spike item",
+    "Section 9: Add 'LadybugDB funding runway monitoring' as quarterly review",
+    "New section 6.2.1 'Fallback strategy': Document Plan B (DuckDB+duckpgq+VSS server-side) and Plan C (frozen Kuzu v0.11.3 vendored)",
+    "New section 6.2.2 'Architectural convergence - NextGraph': Cross-reference note that Dreamball has independently arrived at the same primitives as NextGraph (Blake3 + ChaCha20 + Ed25519 + CBOR + signed-DAG + local-first); direct FR68 and section 6.4 authors to docs.nextgraph.org/en/specs/ before finalizing wire format",
+    "References: Link to docs/research/graph-db-options/synthesis.md"
+  ],
+  "ruled_out": [
+    {
+      "candidate": "Bighorn",
+      "reason": "Dormant - 0 releases, last commit 2025-10-11, no published packages on any registry"
+    },
+    {
+      "candidate": "RyuGraph",
+      "reason": "Stalled - 4 month gap after v25.9.2 (Dec 2025); no npm package confirmed"
+    },
+    {
+      "candidate": "CozoDB",
+      "reason": "Effectively abandoned - last release Dec 2023, candle vigil on issue #301, Bun bundler fix unmerged due to no maintainer"
+    },
+    {
+      "candidate": "Oxigraph",
+      "reason": "RDF-only; no property-graph with edge properties"
+    },
+    {
+      "candidate": "SurrealDB",
+      "reason": "BUSL 1.1 license disqualifying until 2030"
+    },
+    {
+      "candidate": "HelixDB",
+      "reason": "Not embedded (requires server process); AGPL-3.0"
+    },
+    {
+      "candidate": "IndraDB",
+      "reason": "No Node/WASM bindings, no vector support, last release Aug 2025 - too thin to compete"
+    },
+    {
+      "candidate": "TerminusDB",
+      "reason": "Not embedded; server-oriented"
+    },
+    {
+      "candidate": "Grafeo",
+      "reason": "AI-generated beta codebase with unvalidated benchmarks; creator acknowledges beta status - not production-trustworthy"
+    },
+    {
+      "candidate": "NextGraph",
+      "reason": "Not an embeddable graph DB - it is an alpha decentralized-app runtime with mandatory broker, RDF-only data model via ng-oxigraph, no vector support, browser SDK in broker iframe, no Bun path. Flagged separately as architectural mirror (see key_findings) - not a candidate but the convergence deserves synthesis-level awareness."
+    }
+  ],
+  "open_questions": [
+    "Bun runtime compatibility of @ladybugdb/core's napi native addon - resolved by Phase-0 step 1 smoke test",
+    "LadybugDB storage format backward compatibility with Kuzu v0.11.3 .kz files - resolved by Phase-0 step 5",
+    "LadybugDB Ladybug Memory funding runway - monitor quarterly",
+    "Whether Apple will open-source a Kuzu successor - no action until signal emerges"
+  ],
+  "contradictions": [],
+  "hypotheses_explored": 6,
+  "hypotheses_total": 6,
+  "verification_status": "PASS",
+  "output_dir": "/Users/dukejones/work/Identikey/Dreamball/docs/research/graph-db-options"
+}

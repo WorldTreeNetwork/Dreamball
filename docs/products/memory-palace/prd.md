@@ -250,21 +250,27 @@ All additions are additive. Every new envelope type carries
 `format-version: 2` and extends v2's existing taxonomy rather than
 breaking it.
 
-### 5.1 The `palace` subtype marker
+### 5.1 The `field-kind` marker (assertion)
 
 The palace is a Field DreamBall. v2 already defines
 `jelly.dreamball.field` (`docs/PROTOCOL.md §12.1.5`). We add a single
-optional subject field to distinguish a palace-flavoured field:
+optional **assertion** to distinguish a palace-flavoured field:
 
 ```
-"field-kind": "palace"     ; optional; one of "palace" | "room" | "ambient" | …
+"field-kind": "palace"     ; optional assertion; one of "palace" | "room" | "ambient" | …
 ```
 
-Absent the field, a Field DreamBall behaves as v2 specified. Present
-with `"palace"`, the renderer routes the omnispherical lens through
-the palace view (§6.1). Present with `"room"`, the field is treated
-as a palace's contained child and renders only when the parent palace
-is the current active Field.
+Carrying the marker as an assertion (not a subject field) keeps it
+elidable for privacy, addable later as the author's intent settles,
+and additive without bumping `format-version` — consistent with
+§12.1's rule that "the difference between [Field variants] lives in
+*assertions*."
+
+Absent the assertion, a Field DreamBall behaves as v2 specified.
+Present with `"palace"`, the renderer routes the omnispherical lens
+through the palace view (§6.1). Present with `"room"`, the field is
+treated as a palace's contained child and renders only when the
+parent palace is the current active Field.
 
 ### 5.2 `jelly.layout`
 
@@ -298,14 +304,22 @@ detection) can be derived without a central authority.
 ```
 200(
   201({ "type": "jelly.timeline", "format-version": 2,
-        "palace-fp":  h'…32…',
-        "head-hash":  h'…32…'                  ; Blake3 of the latest action envelope
+        "palace-fp":  h'…32…'                   ; identity anchor — which palace this timeline belongs to
   })
 ) [
-  "action":   <jelly.action envelope>,          ; repeatable, ordered by parent-hash chain
-  [salted] "note": "v2.0 genesis timeline"
+  "head-hash":       h'…32…',                   ; Blake3 of the latest action envelope (assertion, updated on every append)
+  "action":          <jelly.action envelope>,   ; repeatable, ordered by parent-hash chain
+  [salted] "note":   "v2.0 genesis timeline"
 ]
 ```
+
+`head-hash` lives in an assertion, not the subject, because the head
+changes every time an action is appended — that is current *state*,
+not *identity*. The subject stays stable: `palace-fp` anchors which
+palace this timeline belongs to, a 1:1 identity binding. Re-signing
+the timeline on every append still happens (the revision bumps), but
+the subject digest doesn't churn — making the chain cheaper to
+verify and easier to hash-cache.
 
 `jelly.action` subject: `{ type, format-version, action-kind: "inscribe"|"move"|"unlock"|…, parent-hashes: [h'…', h'…'] }`.
 Multiple parent hashes allow merge semantics; the common case is a
@@ -338,7 +352,7 @@ electrical-style properties:
   "strength":     0.12,                            ; 0.0–1.0, grows with traversal (the "fire-together, wire-together" counter)
   "resistance":   0.30,                            ; 0.0–1.0, how much the channel impedes flow (locked door = high R)
   "capacitance":  0.55,                            ; 0.0–1.0, how much Vril the endpoint pools before discharging
-  "conductance":  0.70,                            ; 0.0–1.0, derived = (1 - resistance) × strength; cached here for renderers
+  "conductance":  0.70,                            ; 0.0–1.0, intermediate accumulator; recomputable from (1 - resistance) × strength and neighbour flow (see note below)
   "phase":        "in"|"out"|"standing"|"resonant", ; qualitative directionality of current flow
   [salted] "last-traversed": 1(…)
 ]
@@ -375,6 +389,29 @@ relationship between two rooms that the renderer draws as a ghostly
 underlay beneath the physical palace. Ley-lines are how the palace
 says: "these two rooms are related even though you can't walk
 between them."
+
+**A note on `conductance` (and caching in general).** `conductance`
+is an **intermediate accumulator**, not a canonical derivation.
+True conductance in a connected Vril network depends on neighbour
+flow, and neighbour flow depends on *their* neighbours — the same
+eigenvalue-like ripple problem that reputation systems (EigenTrust,
+PageRank) face. A closed-form formula doesn't exist; the value is
+converged by iteration over the network.
+
+Consequences the protocol accepts:
+
+- A stored `conductance` may be stale. That is expected, not a bug.
+- The runtime may recompute conductance opportunistically (on every
+  traversal, on every timeline rewrite, on a periodic reflow pass)
+  and overwrite in place. Verifiers do not reject on mismatch — they
+  treat the stored value as the author's best-effort snapshot at
+  signing time.
+- A palace may be instructed to *reset and reflow* (discard all
+  stored `conductance` values and iteratively recompute from
+  `resistance` × `strength` × neighbour-conductance) without loss of
+  correctness.
+- Think of the number as a neural-pathway multiplier, updated
+  lazily, always re-derivable.
 
 ### 5.5 `jelly.element-tag`
 
@@ -477,20 +514,33 @@ composition.
 ```
 200(
   201({ "type": "jelly.mythos", "format-version": 2,
-        "is-genesis": false,                        ; true only on the first-ever mythos of a palace
+        "is-genesis": false,                        ; true only on the first-ever mythos of this chain (canonical or poetic)
         "predecessor": h'…32…'                     ; Blake3 of the previous jelly.mythos envelope; absent iff is-genesis
   })
 ) [
+  "about":        h'…32…',                                           ; present on poetic chains — fingerprint of the palace this is about; absent on canonical (embedded)
   "form":         "blurb"|"invocation"|"image"|"utterance"|"glyph"|"true-name"|…,
   "body":         "There is a giant cow beside the chaos abyss.",   ; the mythos in its full poetic form
   "true-name":    "Audhumla",                                        ; optional — the condensed totem name, if one has surfaced
   "source":       <jelly.asset envelope>,                            ; optional longer form (essay, recorded reading)
-  "discovered-in":<jelly.action-ref>,                                ; optional — the 'true-naming' action that surfaced this mythos
+  "discovered-in":<jelly.action-ref>,                                ; canonical only — the 'true-naming' action that surfaced this mythos
+  "inspired-by":  [h'…32…', h'…32…'],                               ; poetic only — other mythoi this author was thinking with
+  "synthesizes":  [h'…32…', h'…32…'],                               ; canonical only — poetic mythoi that informed this renaming
   [salted] "author":       h'…32…',
   [salted] "authored-at":  1(…),
   [salted] 'note':         "surfaced during a sit-by-the-fountain on 2026-04-19"
 ]
 ```
+
+The envelope shape is identical for canonical and poetic mythoi; the
+distinction is **who signed it** and **whether `about` is present**.
+A canonical mythos is embedded as an assertion on a palace and
+signed under the palace's custodian signatures; a poetic mythos is a
+standalone envelope with an `about` fingerprint and its own
+independent author signatures. The assertions `discovered-in` /
+`synthesizes` appear only on canonical links; `inspired-by` appears
+only on poetic links. Mixing these is a protocol error and is
+rejected at verify time.
 
 **The chain of mythoi.** A palace's mythos is a **linked chain**,
 not a single value. The first `jelly.mythos` carries
@@ -506,29 +556,76 @@ genesis is the seed; each new link is a truer name for what the
 palace has become. Like a soul across lifetimes, the essence
 (genesis) is conserved; the expression (current head) evolves.
 
+**Canonical and poetic mythoi — the palace is not monotheistic.**
+
+A palace carries exactly one **canonical mythos chain** — the
+custodian-signed sequence of true-namings that constitutes its
+identity-of-record. But the palace is *also* experienced by many
+hearts, each of which may form its own **poetic mythos** — a
+personal reading of what this place is. Poetic mythoi are
+first-class in the protocol. They live in their own signed
+envelopes, authored by anyone who has been to the palace, pointing
+at the palace via an `about` assertion. They are not signed by the
+custodian; they are signed by their author, and they carry the
+author's own predecessor chain of self-renamings.
+
+The canonical chain and the poetic chains are **different objects**:
+
+- **Canonical chain** — signed by the palace's custodian(s) (solo
+  wayfarer, or Guild admin). Embedded as a `jelly.mythos` assertion
+  on the palace DreamBall. Appears on the fountain's ring of
+  lanterns (FR60f). Load-bearing on the palace's identity.
+- **Poetic chain** — signed by a visitor. A standalone
+  `jelly.mythos`-shaped envelope carrying an `about: <palace-fp>`
+  assertion. Discoverable via the archiform/mythos registry at
+  `aspects.sh` (§5.9) or a palace's local query endpoint.
+  Decorative on the palace's identity; load-bearing on the
+  visitor's relationship to it. Appears as a softer constellation
+  of lights around the fountain's canonical ring.
+
 **Rules the palace imposes:**
 
-- The **genesis mythos is immutable**. Only the first `jelly.mythos`
-  ever signed against a palace is load-bearing on its identity;
-  attempting to alter it after publication is rejected.
-- **Subsequent mythoi are append-only**. New true names are added to
-  the chain, never deleted. History is readable; the past is never
-  rewritten. A wayfarer inspecting an old mythos is walking their
-  own past names, exactly the way `jelly palace rewind` (FR67)
-  walks the timeline.
-- **Only the palace's custodian(s) may extend the chain.** For a
-  solo palace, the wayfarer's keypair. For a Guild-owned palace,
-  any admin — though a Growth-tier policy might require quorum
-  (§9). Non-custodians publishing a mythos assertion are ignored by
-  the renderer.
-- **Every new mythos is emitted alongside a `jelly.action` of kind
-  `"true-naming"`** on the timeline. The action carries the
-  discovery context: the conversation with the oracle, the
-  aqueduct traversal that surfaced it, a short human reflection.
-  The mythos envelope's `discovered-in` points back at this action.
-  This is how the protocol preserves *why* a renaming happened —
-  the naming itself is only half the story; the other half is the
-  reflection that summoned it.
+- The **genesis canonical mythos is immutable**. Only the first
+  custodian-signed `jelly.mythos` is load-bearing on the palace's
+  identity; attempting to alter it after publication is rejected.
+- **The canonical chain is append-only** and extended only by
+  custodian(s). Non-custodian chains pointing at the palace are
+  poetic, not canonical — they do not extend the canonical chain.
+- **Poetic chains are append-only per author.** Each visitor's
+  chain has its own genesis (their first personal mythos of this
+  palace) and grows as their experience of the palace grows. A
+  visitor may have poetic chains for many palaces; each is rooted
+  at its own `about` fingerprint.
+- **Every canonical true-naming is paired with a `jelly.action` of
+  kind `"true-naming"`** on the palace timeline. The action carries
+  the discovery context — the conversation with the oracle, the
+  aqueducts that surfaced it, a short human reflection — and its
+  fingerprint is referenced by the mythos's `discovered-in`. This
+  is how the protocol preserves *why* a canonical renaming
+  happened.
+- **Poetic true-namings may optionally cite their inspiration.**
+  A poetic chain link MAY carry `inspired-by: [<canonical-mythos-fp>,
+  <other-poetic-mythos-fp>, …]` citing prior mythoi the author was
+  thinking with. No timeline action is required — poetic mythoi are
+  a personal act, not a palace-state change.
+- **Synthesis: how a canonical renaming acknowledges poetic input.**
+  When a custodian extends the canonical chain after a
+  `jelly palace reflect` session (FR60e), the new canonical mythos
+  MAY carry a `synthesizes: [<poetic-mythos-fp>, …]` assertion
+  citing which poetic chains the oracle drew from. This turns the
+  canonical chain into a record not only of what the palace has
+  come to know about itself, but of whose hearts contributed to
+  that knowing.
+- **Fork: when poetic mythoi diverge beyond synthesis.** If a
+  visitor's poetic chain has drifted so far from the palace's
+  canonical chain that no synthesis can bridge them, the visitor
+  may mint a new palace (`jelly mint --type=palace --derived-from
+  <source-palace-fp>`) with a fresh genesis mythos of their own
+  choosing. The `derived-from` edge (v1 primitive) records the
+  lineage without claiming shared identity; the new palace begins
+  its own canonical chain. No protocol change is needed — this is
+  the existing "composition, not curation" rule (VISION §5) applied
+  to mythoi.
 - Rooms and Inscriptions MAY carry their own mythos chain; a Room's
   mythos MUST be a coherent extension of its palace's current
   mythos, checked rhetorically, not mechanically. The palace
@@ -615,9 +712,15 @@ prescribe the tree — it is community-defined and extensible.
 A small **seed set of archiforms** ships with the palace runtime
 (library, forge, throne-room, garden, courtyard, lab, crypt,
 portal, atrium, cell). Authors may introduce new archiforms at any
-time; the runtime's archiform registry is a `jelly.asset` of
-media-type `application/vnd.palace.archiform-registry+json`
-attached to the palace itself and discoverable by any guest.
+time; the authoritative registry lives at
+**[aspects.sh](https://aspects.sh)** — a general-purpose schema
+registry that handles archiforms alongside other schema kinds. A
+palace resolves archiform identifiers via aspects.sh at load time
+and caches results locally; a palace published offline or into an
+isolated network MAY snapshot the registry into a local `jelly.asset`
+of media-type `application/vnd.palace.archiform-registry+json` for
+air-gapped use. Poetic mythoi (§5.8) use the same registry pattern
+and live in aspects.sh alongside archiforms.
 
 ### 5.10 Type additions summary
 
@@ -662,13 +765,91 @@ colour and motion encode the oracle's emotional register).
 
 | Store | Purpose | Why |
 |---|---|---|
-| **Kuzu (open-source fork)** | Primary graph store — containment, aqueducts, timeline edges, knowledge-graph triples | Native property graph with Cypher-ish query; local-first; embeddable; the open-source fork is kept current in-tree |
-| **Vector store** (candidate: `lancedb` or `usearch`, TBD) | Semantic prefetch and ambient resonance (§6.3) | Required for the "half-remembered" behaviour; quantised low-precision vectors acceptable |
-| **DreamBall CAS** | Canonical storage of every `.jelly` envelope and attachment | Content-addressed by Blake3; Kuzu nodes reference this by fingerprint; swappable with recrypt's blob store |
+| **LadybugDB** (`@ladybugdb/core`, Rust crate `lbug`, storage files `.lbug`) | Primary graph store — containment, aqueducts, timeline edges, knowledge-graph triples; also carries the vector index (see below) | Active MIT-licensed Kuzu fork; property graph with Cypher; embeddable; native disk-HNSW vector index via the bundled `vector` extension — one store, two roles |
+| **Vector index** — *bundled into LadybugDB via its `vector` extension* | Semantic prefetch and ambient resonance (§6.3); cosine / L2 / L2sq / dot-product over `ARRAY(FLOAT, N)` node properties | HNSW on-disk, SIMD-accelerated via `simsimd`, pre-loaded since Kuzu v0.11.3 and actively maintained in `ladybugdb/extensions`; graph-join with Cypher is first-class, which a sidecar store would lose |
+| **DreamBall CAS** | Canonical storage of every `.jelly` envelope and attachment | Content-addressed by Blake3; LadybugDB nodes reference this by fingerprint; swappable with recrypt's blob store |
 
-The three stores are coupled only by fingerprint. Kuzu never holds
-CBOR; the CAS never holds queryable structure. Delete the vector
-store and the palace still works, it just loses resonance.
+Graph and vectors are coupled only by fingerprint. LadybugDB never
+holds CBOR; the CAS never holds queryable structure. Drop the vector
+index and the palace still works, it just loses resonance.
+
+**Why LadybugDB over Kuzu.** The upstream Kuzu repo was archived on
+2025-10-10 (final release v0.11.3) following Kùzu Inc.'s acquisition
+by Apple. LadybugDB is the actively maintained community fork — 9
+releases Nov 2025–Apr 2026, one-for-one API and storage-format
+compatibility with Kuzu v0.11.3, MIT license, ex-Facebook Dragon
+engineer leading, packages on npm / crates.io / PyPI / Maven Central,
+and an active WASM build with OPFS support. Migration from the
+original `kuzu` dependency is a package rename. See
+`docs/research/graph-db-options/synthesis.md` for the full decision
+record, fork comparison, and the rejected alternatives
+(DuckDB+duckpgq, CozoDB, Oxigraph, SurrealDB, and others).
+
+### 6.2.1 Fallback strategy
+
+The Memory Palace uses LadybugDB as its primary graph+vector store
+(§6.2). Two fallbacks exist for scenarios in which LadybugDB becomes
+unsustainable — a funding collapse at Ladybug Memory, a storage-
+format divergence that breaks reads, a blocking incompatibility with
+Bun's Node-API shim, or a regulatory change. Neither is active; both
+are documented so that a future migration is not a research problem.
+
+**Plan B — DuckDB 1.5.x + duckpgq + VSS, server-side.** DuckDB is
+production-grade and provides a clean SQL/PGQ property-graph view
+over ordinary tables; VSS gives in-memory HNSW. Limitations:
+`duckpgq` is a CWI research extension explicitly labelled "WIP",
+lacks `ALL PATHS` Kleene closure (timeline parent-hash walks must
+fall back to recursive CTEs in standard SQL), and neither duckpgq
+nor VSS ships in the stable DuckDB-WASM extension list as of 1.5.x.
+Plan B is a server-only posture; browser clients would fall back to
+either core DuckDB-WASM without the graph-query layer, or the
+commodity vector branch (Plan C).
+
+**Plan C — Frozen Kuzu v0.11.3 vendored.** Pin `kuzudb/kuzu@v0.11.3`
+as a submodule or vendored directory. The final Kuzu release bundles
+all extensions (`algo`, `fts`, `json`, `vector`), uses the
+CIDR-2023-documented engine, and ships with known-working
+Node-API bindings. Viable for 18–24 months of rebuild-from-CAS
+workloads with security-patch risk only. Insurance, not a plan.
+
+A thin wrapper module `src/memory-palace/store.ts` re-exports a
+narrow subset of `@ladybugdb/core` so that a future swap (to frozen
+Kuzu, DuckDB, or a commodity-vector sidecar like `usearch` /
+`sqlite-vec`) changes one file rather than the palace ingestion and
+resonance code paths. The `VectorIndex` interface exposed by that
+wrapper keeps the separate-vector-store branch implementable without
+re-architecting §6.3.
+
+### 6.2.2 Architectural convergence — NextGraph
+
+An independent local-first project — NextGraph
+(nextgraph.org, NLnet-funded, Rust/MIT-Apache-2.0) — has converged
+on a strikingly similar cryptographic and structural substrate to
+Dreamball: Blake3 content addressing, ChaCha20 convergent
+encryption, per-commit Ed25519 author signatures, CBOR envelopes,
+parent-hash-referenced commit DAGs, and local-first semantics with
+CRDT-friendly sync. Where Dreamball diverges: ML-DSA-87
+post-quantum signatures (NextGraph has none), pure-computation
+`jelly.wasm` vs NextGraph's full-application-runtime WASM bundle,
+and a labelled property graph vs NextGraph's RDF/SPARQL data model.
+
+NextGraph is **not** a candidate for the Memory Palace graph store:
+it is an alpha-stage decentralized-app runtime, not an embeddable
+query engine; its browser SDK runs inside a broker-controlled
+iframe; it has no vector support; no Bun path; solo-author bus
+factor. Using it would be architectural redirection, not a library
+linkage.
+
+The convergence is called out here because anyone finalizing the
+wire format for FR68 (CRDT-compatible shared rooms) or §6.4
+(shared-palace coherence) should read
+`docs.nextgraph.org/en/specs/` — specifically the repo format and
+threshold-signature documents — **before** locking in our own
+multi-writer merge semantics, so that Dreamball does not
+accidentally reinvent NextGraph's solutions in an incompatible
+shape. The detailed overlap table and evidence live in
+`docs/research/graph-db-options/hypotheses/h-nextgraph/findings.md`
+§12.
 
 ### 6.3 The resonance kernel
 
@@ -864,27 +1045,37 @@ FR79. [Vision] The renderer shall surface shared-palace resonance
 
 ### Backing stores (FR80–FR84)
 
-FR80. [MVP] The system shall embed Kuzu (open-source fork) as the
-palace's primary graph store. Containment edges, aqueducts, timeline
-edges, and knowledge-graph triples are all mirrored into Kuzu on
-every state change. CAS remains the source of truth; Kuzu is the
-queryable index.
+FR80. [MVP] The system shall embed **LadybugDB** (`@ladybugdb/core`;
+Rust crate `lbug`; storage files `.lbug`) as the palace's primary
+graph store. LadybugDB is the actively maintained MIT-licensed fork
+of Kuzu v0.11.3 (upstream archived 2025-10-10); storage format is
+drop-in compatible with the final Kuzu release, and frozen Kuzu
+v0.11.3 remains a vendor-and-freeze fallback per §6.2.1.
+Containment edges, aqueducts, timeline edges, and knowledge-graph
+triples are all mirrored into LadybugDB on every state change. CAS
+remains the source of truth; LadybugDB is the queryable index.
 
-FR81. [MVP] The system shall embed a vector store (candidate lancedb
-or usearch — decision in §9) for semantic embeddings over
-inscriptions, memory-nodes, and interaction-set content.
+FR81. [MVP] The system shall use **LadybugDB's bundled `vector`
+extension** (disk-HNSW, SIMD-accelerated via `simsimd`,
+cosine/L2/L2sq/dot-product over `ARRAY(FLOAT, N)` node properties)
+for semantic embeddings over inscriptions, memory-nodes, and
+interaction-set content. No separate vector store. The graph-join
+pattern `CALL QUERY_VECTOR_INDEX(...) ... MATCH (node)-[...]->(...)`
+is first-class and load-bearing for §6.3.
 
 FR82. [MVP] The system shall recompute vectors on every inscription
 revision bump, keyed by the content hash so unchanged content skips
-re-embedding.
+re-embedding. Because LadybugDB issue #377 prohibits in-place updates
+of indexed columns, the re-embedding path is delete-then-insert; a
+thin helper in the ingestion layer encapsulates this.
 
 FR83. [Growth] The system shall maintain a quantised low-precision
 vector alongside the full vector; quantised vectors drive the
 ambient-resonance biasing pass without full recall.
 
 FR84. [Vision] The system shall support rebuild-from-CAS: given only
-the set of `.jelly` files, Kuzu + the vector store can be
-reconstructed from scratch with no loss of queryable state.
+the set of `.jelly` files, LadybugDB (including the vector index)
+can be reconstructed from scratch with no loss of queryable state.
 
 ### Reputation & trust (FR85–FR87)
 
@@ -974,8 +1165,8 @@ NFR10. [latency] Opening a palace of ≤500 rooms with ≤50 inscriptions
 each shall render the first lit room in <2 s on a mid-range laptop.
 
 NFR11. [offline] Every palace operation except Guild transmission and
-ML-DSA signing shall work fully offline. Kuzu + vector store +
-`jelly.wasm` are all local.
+ML-DSA signing shall work fully offline. LadybugDB (graph + vector
+index) and `jelly.wasm` are all local.
 
 NFR12. [authorship] Every `jelly.action` and every
 `jelly.trust-observation` shall carry dual signatures (Ed25519 + ML-
@@ -1004,15 +1195,37 @@ discipline.
 
 ## 9. Open Questions
 
-- **Vector store choice.** `lancedb` (Rust, embedded, Arrow-native,
-  good quantisation story) vs `usearch` (header-only C++, smaller
-  footprint, WASM-buildable). Decision deferred to Phase 0 spike;
-  evaluate on: embeddability from Bun, size on disk for 10k vectors,
-  WASM footprint for eventual browser support.
-- **Kuzu fork tracking.** Which fork do we pin — upstream open-
-  source, or a community fork with longer support promises? Needs a
-  short-lived spike; default to upstream until a specific pain
-  appears.
+- ~~**Vector store choice.**~~ **Resolved (2026-04-20)**: vectors
+  live inside LadybugDB via its bundled `vector` extension (disk-HNSW,
+  SIMD via `simsimd`, cosine/L2/L2sq/dot-product over `ARRAY(FLOAT,
+  N)`). Graph-join is first-class; a separate store would lose that
+  integration. The `VectorIndex` interface in
+  `src/memory-palace/store.ts` retains a swap point for
+  `usearch` / `sqlite-vec` if the primary store ever changes. See
+  `docs/research/graph-db-options/synthesis.md`.
+- ~~**Kuzu fork tracking.**~~ **Resolved (2026-04-20)**: upstream
+  Kuzu was archived 2025-10-10 (Apple acqui-hire per Feb 2026 EU
+  DMA filings). Primary is **LadybugDB** — the actively maintained
+  MIT fork (9 releases Nov 2025–Apr 2026, ex-Facebook Dragon lead).
+  Plan B is DuckDB+duckpgq+VSS server-side; Plan C is frozen Kuzu
+  v0.11.3 vendored. See §6.2.1 and
+  `docs/research/graph-db-options/synthesis.md`.
+- **Bun + `@ladybugdb/core` napi compatibility.** The LadybugDB
+  Node.js binding ships prebuilt C++ binaries via Node-API; Bun's
+  napi shim is mostly compatible but not certified on this package.
+  30-minute Phase-0 smoke test: `bun add @ladybugdb/core &&
+  bun -e "require('@ladybugdb/core')"` and run a trivial query. If
+  it fails, fall back to `@ladybugdb/wasm-core` (no napi) in both
+  Bun and browser contexts.
+- **LadybugDB funding runway.** "Ladybug Memory" (sponsor entity) is
+  opaque — enterprise support contracts exist but no public funding
+  round. Monitor quarterly; if release cadence slows for >2 months
+  without explanation, re-evaluate against Plan B / Plan C.
+- **LadybugDB storage format cross-compatibility with Kuzu v0.11.3.**
+  The vendor-and-freeze fallback (Plan C) assumes LadybugDB v0.15.x
+  writes `.lbug` files that Kuzu v0.11.3 can still read (or
+  vice-versa). 30-minute Phase-0 check to confirm before the freeze
+  option is load-bearing.
 - **CRDT merge strategy for shared rooms.** Layout conflicts ("two
   scribes moved the same item") want either LWW-per-item or
   last-signer-wins-with-notice. Default: LWW-per-item with the loser
@@ -1050,6 +1263,22 @@ discipline.
   in ohms/farads is a nice-to-have that the renderer pack can add
   without protocol impact.
 
+### Phase 0 must-reads (blocking for FR68 / FR60g)
+
+- **NextGraph CRDT & threshold-signature spec review.** Before
+  finalising `jelly.action` multi-parent semantics (FR68) or the
+  mythos divergence-resolution protocol (FR60g), a contributor MUST
+  read `docs.nextgraph.org/en/specs/` — specifically the repo
+  format and threshold-signature documents. NextGraph has worked
+  through many of the CRDT corner cases we'd otherwise reinvent
+  (see PRD §6.2.2 for the architectural convergence we've already
+  noted). The goal is not to adopt NextGraph wholesale — their
+  runtime is a poor fit — but to avoid shipping an incompatible
+  solution to a problem they've already solved well. Deliverable:
+  a one-page diff note in `docs/decisions/` calling out where our
+  semantics match theirs, where we diverge deliberately, and where
+  we diverge accidentally (and should reconsider).
+
 ---
 
 ## 10. Scope Boundaries
@@ -1059,8 +1288,8 @@ discipline.
 - The palace type marker and one default oracle at the zero point.
 - Rooms, inscriptions, layouts, timeline, aqueducts.
 - Element tags (tag-only; no enforced palette).
-- Kuzu + vector store integration (MVP features only — no quantised
-  resonance biasing).
+- LadybugDB integration including its bundled `vector` extension
+  (MVP features only — no quantised resonance biasing).
 - Three new lenses; every v2 lens remains available.
 - CLI `jelly palace` verb group covering the MVP FR set.
 - Updates to `docs/PROTOCOL.md §13` (new section) and `docs/VISION.md
@@ -1115,9 +1344,9 @@ own circulation.
 - **No new wire format**. Palace rides on v2. Every new envelope is
   additive and fits the dCBOR conventions already documented in
   `docs/PROTOCOL.md §2`.
-- **Kuzu and vector store are embedded, not service-oriented.** The
-  palace is local-first. A `jelly-server` is an optional accelerator
-  exactly as in v2.
+- **LadybugDB (with its bundled vector index) is embedded, not
+  service-oriented.** The palace is local-first. A `jelly-server` is
+  an optional accelerator exactly as in v2.
 - **Mythos is load-bearing.** The renderer is allowed (and required)
   to prefer aesthetic coherence over geometric minimalism. See
   NFR14 + VISION §15.
@@ -1134,11 +1363,17 @@ own circulation.
   depends on. No v2 requirement is altered by this spec.
 - `src/lib/lenses/` — v2 lens pack; palace lenses land alongside.
 - `src/lib/backend/` — JellyBackend interface. Palace state is
-  an additional backend concern (Kuzu + vectors) behind the same
-  interface.
+  an additional backend concern (LadybugDB including its bundled
+  vector index) behind the same interface.
 - `docs/known-gaps.md §3, §6` — trust transmission and keyspace
   proxy-recryption are already tracked; palace surfaces them as a
   concrete consumer but does not resolve them.
+- `docs/research/graph-db-options/synthesis.md` — decision record
+  for the LadybugDB selection (§6.2), the Plan B / Plan C fallbacks
+  (§6.2.1), and the NextGraph architectural-convergence note
+  (§6.2.2). Points to per-candidate findings under
+  `docs/research/graph-db-options/hypotheses/` for anyone who asks
+  "why not Kuzu / DuckDB / Cozo / SurrealDB / NextGraph?"
 
 ---
 
@@ -1149,3 +1384,15 @@ own circulation.
   the prescriptive map onto the v2 protocol. Status: draft (not yet
   run through the critic loop; some open questions in §9 will
   resolve only in Phase 0 spike).
+- 2026-04-20 — Graph-DB selection resolved. §6.2 switches the
+  primary store from Kuzu (upstream archived 2025-10-10, Apple
+  acqui-hire) to **LadybugDB** (`@ladybugdb/core`), the actively
+  maintained MIT fork. FR80–FR82, FR84, NFR11, §10–§12 updated to
+  match. The vector-store open question is closed in favour of
+  LadybugDB's bundled `vector` extension (disk-HNSW, SIMD via
+  `simsimd`) — graph and vector now live in one store. New
+  §6.2.1 documents fallbacks (DuckDB+duckpgq+VSS server-side;
+  vendor-and-freeze Kuzu v0.11.3). New §6.2.2 flags the
+  architectural convergence with NextGraph for anyone working on
+  FR68 / §6.4. Full decision record in
+  `docs/research/graph-db-options/synthesis.md`.
