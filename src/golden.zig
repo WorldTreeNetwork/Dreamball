@@ -29,10 +29,10 @@ fn blake3Hex(bytes: []const u8) [64]u8 {
     return hex;
 }
 
-/// Pinned Blake3 for a canonical jelly.memory-edge envelope.
-/// Subject keys must emit in dCBOR order: to(2), from(4), kind(4), type(4), format-version(14).
-/// If this fails, inspect writeMemoryEdge subject-key ordering in envelope_v2.zig.
-pub const GOLDEN_MEMORY_EDGE_BLAKE3: []const u8 = "a6e281675976e52573847101a890d6e4ec21478b40c03dcdfa80f0efb08fa5c3";
+/// Pinned Blake3 for a canonical jelly.memory-connection envelope.
+/// Core keys must emit in dCBOR order: to(2), from(4), kind(4), type(4), format-version(14).
+/// If this fails, inspect writeMemoryConnection core-key ordering in envelope_v2.zig.
+pub const GOLDEN_MEMORY_CONNECTION_BLAKE3: []const u8 = "d555eba7765504311b906ffdcf1c5df6bf8d3f3cb064fa205522d1c75f686255";
 
 test "golden bytes: all-zeros seed envelope (subject only)" {
     const allocator = std.testing.allocator;
@@ -52,26 +52,26 @@ test "golden bytes: all-zeros seed envelope (subject only)" {
     };
 }
 
-test "golden bytes: jelly.memory-edge canonical ordering" {
+test "golden bytes: jelly.memory-connection canonical ordering" {
     const allocator = std.testing.allocator;
     const v2 = @import("protocol_v2.zig");
     const envelope_v2 = @import("envelope_v2.zig");
     const m: v2.Memory = .{
         .nodes = &.{},
-        .edges = &[_]v2.MemoryEdge{
+        .connections = &[_]v2.MemoryConnection{
             .{ .from = 1, .to = 2, .kind = .temporal, .strength = 0.5 },
         },
     };
     const bytes = try envelope_v2.encodeMemory(allocator, m);
     defer allocator.free(bytes);
     const hex = blake3Hex(bytes);
-    if (!std.mem.eql(u8, GOLDEN_MEMORY_EDGE_BLAKE3, "__RECOMPUTE_ON_FIRST_RUN__")) {
-        std.testing.expectEqualSlices(u8, GOLDEN_MEMORY_EDGE_BLAKE3, &hex) catch |err| {
-            std.debug.print("\n  MEMORY-EDGE GOLDEN MISMATCH\n  observed: {s}\n  expected: {s}\n", .{ hex, GOLDEN_MEMORY_EDGE_BLAKE3 });
+    if (!std.mem.eql(u8, GOLDEN_MEMORY_CONNECTION_BLAKE3, "__RECOMPUTE_ON_FIRST_RUN__")) {
+        std.testing.expectEqualSlices(u8, GOLDEN_MEMORY_CONNECTION_BLAKE3, &hex) catch |err| {
+            std.debug.print("\n  MEMORY-CONNECTION GOLDEN MISMATCH\n  observed: {s}\n  expected: {s}\n", .{ hex, GOLDEN_MEMORY_CONNECTION_BLAKE3 });
             return err;
         };
     } else {
         // First-run sentinel: print the observed hash so we can commit it.
-        std.debug.print("\n  MEMORY-EDGE golden first run — commit this value to GOLDEN_MEMORY_EDGE_BLAKE3:\n  {s}\n", .{hex});
+        std.debug.print("\n  MEMORY-CONNECTION golden first run — commit this value to GOLDEN_MEMORY_CONNECTION_BLAKE3:\n  {s}\n", .{hex});
     }
 }

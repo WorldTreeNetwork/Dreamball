@@ -88,7 +88,7 @@ export const ActSchema = v.object({
 //                  interaction-set
 // ========================================================================
 
-export const MemoryEdgeKindSchema = v.picklist(['semantic', 'emotional', 'temporal', 'other']);
+export const MemoryConnectionKindSchema = v.picklist(['semantic', 'emotional', 'temporal', 'other']);
 
 export const MemoryNodeSchema = v.object({
   id: v.number(),
@@ -98,24 +98,24 @@ export const MemoryNodeSchema = v.object({
   'last-recalled': v.optional(Rfc3339Schema)
 });
 
-export const MemoryEdgeSchema = v.object({
+export const MemoryConnectionSchema = v.object({
   from: v.number(),
   to: v.number(),
-  kind: MemoryEdgeKindSchema,
+  kind: MemoryConnectionKindSchema,
   strength: v.optional(v.number()),
   label: v.optional(v.string())
 });
 
 export const MemorySchema = v.object({
   nodes: v.array(MemoryNodeSchema),
-  edges: v.array(MemoryEdgeSchema),
+  connections: v.array(MemoryConnectionSchema),
   'last-updated': v.optional(Rfc3339Schema)
 });
 
 export const TripleSchema = v.object({
-  subject: v.string(),
-  predicate: v.string(),
-  object: v.string()
+  from: v.string(),
+  label: v.string(),
+  to: v.string()
 });
 
 export const KnowledgeGraphSchema = v.object({

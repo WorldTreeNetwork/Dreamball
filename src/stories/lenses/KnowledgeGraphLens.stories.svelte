@@ -1,7 +1,7 @@
 <!--
   KnowledgeGraphLens stories — force-directed SVG graph of knowledge triples.
   Reviewer cares because this is the primary way to inspect an agent's semantic
-  relationships; the textarea control lets a reviewer paste subject,predicate,object
+  relationships; the textarea control lets a reviewer paste from,label,to
   CSV lines and see the graph update live without rebuilding.
 -->
 <script module lang="ts">
@@ -9,16 +9,16 @@
   import KnowledgeGraphLens from '$lib/lenses/KnowledgeGraphLens.svelte';
   import { mockBall } from '$lib/backend/MockBackend.js';
 
-  function parseTriplesCSV(csv: string): { subject: string; predicate: string; object: string }[] {
+  function parseTriplesCSV(csv: string): { from: string; label: string; to: string }[] {
     return csv
       .split('\n')
       .map((line: string) => line.trim())
       .filter((line: string) => line.length > 0 && !line.startsWith('#'))
       .map((line: string) => {
-        const [subject, predicate, object] = line.split(',').map((s: string) => s.trim());
-        return { subject: subject ?? '', predicate: predicate ?? '', object: object ?? '' };
+        const [from, label, to] = line.split(',').map((s: string) => s.trim());
+        return { from: from ?? '', label: label ?? '', to: to ?? '' };
       })
-      .filter((t: { subject: string; predicate: string; object: string }) => t.subject && t.predicate && t.object);
+      .filter((t: { from: string; label: string; to: string }) => t.from && t.label && t.to);
   }
 
   const defaultTriples = `curiosity,inclines-toward,new-things
@@ -34,7 +34,7 @@ simplicity,enables,clarity`;
     argTypes: {
       triplesCSV: {
         control: 'text',
-        description: 'Triples as CSV lines: subject,predicate,object — one per line'
+        description: 'Triples as CSV lines: from,label,to — one per line'
       }
     },
     args: {
@@ -64,12 +64,12 @@ simplicity,enables,clarity`;
     {@const ball = mockBall('agent', {
       'knowledge-graph': {
         triples: [
-          { subject: 'A', predicate: 'links', object: 'B' },
-          { subject: 'B', predicate: 'links', object: 'C' },
-          { subject: 'C', predicate: 'links', object: 'D' },
-          { subject: 'D', predicate: 'links', object: 'A' },
-          { subject: 'A', predicate: 'relates', object: 'C' },
-          { subject: 'E', predicate: 'depends-on', object: 'B' }
+          { from: 'A', label: 'links', to: 'B' },
+          { from: 'B', label: 'links', to: 'C' },
+          { from: 'C', label: 'links', to: 'D' },
+          { from: 'D', label: 'links', to: 'A' },
+          { from: 'A', label: 'relates', to: 'C' },
+          { from: 'E', label: 'depends-on', to: 'B' }
         ]
       }
     })}

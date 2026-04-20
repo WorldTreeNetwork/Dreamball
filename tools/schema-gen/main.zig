@@ -103,26 +103,26 @@ const TYPES_SRC =
     \\  'last-recalled'?: string;
     \\}
     \\
-    \\export type MemoryEdgeKind = 'semantic' | 'emotional' | 'temporal' | 'other';
+    \\export type MemoryConnectionKind = 'semantic' | 'emotional' | 'temporal' | 'other';
     \\
-    \\export interface MemoryEdge {
+    \\export interface MemoryConnection {
     \\  from: number;
     \\  to: number;
-    \\  kind: MemoryEdgeKind;
+    \\  kind: MemoryConnectionKind;
     \\  strength?: number;
     \\  label?: string;
     \\}
     \\
     \\export interface Memory {
     \\  nodes: MemoryNode[];
-    \\  edges: MemoryEdge[];
+    \\  connections: MemoryConnection[];
     \\  'last-updated'?: string;
     \\}
     \\
     \\export interface Triple {
-    \\  subject: string;
-    \\  predicate: string;
-    \\  object: string;
+    \\  from: string;
+    \\  label: string;
+    \\  to: string;
     \\}
     \\
     \\export interface KnowledgeGraph {
@@ -623,7 +623,7 @@ const SCHEMAS_SRC =
     \\//                  interaction-set
     \\// ========================================================================
     \\
-    \\export const MemoryEdgeKindSchema = v.picklist(['semantic', 'emotional', 'temporal', 'other']);
+    \\export const MemoryConnectionKindSchema = v.picklist(['semantic', 'emotional', 'temporal', 'other']);
     \\
     \\export const MemoryNodeSchema = v.object({
     \\  id: v.number(),
@@ -633,24 +633,24 @@ const SCHEMAS_SRC =
     \\  'last-recalled': v.optional(Rfc3339Schema)
     \\});
     \\
-    \\export const MemoryEdgeSchema = v.object({
+    \\export const MemoryConnectionSchema = v.object({
     \\  from: v.number(),
     \\  to: v.number(),
-    \\  kind: MemoryEdgeKindSchema,
+    \\  kind: MemoryConnectionKindSchema,
     \\  strength: v.optional(v.number()),
     \\  label: v.optional(v.string())
     \\});
     \\
     \\export const MemorySchema = v.object({
     \\  nodes: v.array(MemoryNodeSchema),
-    \\  edges: v.array(MemoryEdgeSchema),
+    \\  connections: v.array(MemoryConnectionSchema),
     \\  'last-updated': v.optional(Rfc3339Schema)
     \\});
     \\
     \\export const TripleSchema = v.object({
-    \\  subject: v.string(),
-    \\  predicate: v.string(),
-    \\  object: v.string()
+    \\  from: v.string(),
+    \\  label: v.string(),
+    \\  to: v.string()
     \\});
     \\
     \\export const KnowledgeGraphSchema = v.object({

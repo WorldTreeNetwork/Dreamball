@@ -77,26 +77,26 @@ export interface MemoryNode {
   'last-recalled'?: string;
 }
 
-export type MemoryEdgeKind = 'semantic' | 'emotional' | 'temporal' | 'other';
+export type MemoryConnectionKind = 'semantic' | 'emotional' | 'temporal' | 'other';
 
-export interface MemoryEdge {
+export interface MemoryConnection {
   from: number;
   to: number;
-  kind: MemoryEdgeKind;
+  kind: MemoryConnectionKind;
   strength?: number;
   label?: string;
 }
 
 export interface Memory {
   nodes: MemoryNode[];
-  edges: MemoryEdge[];
+  connections: MemoryConnection[];
   'last-updated'?: string;
 }
 
 export interface Triple {
-  subject: string;
-  predicate: string;
-  object: string;
+  from: string;
+  label: string;
+  to: string;
 }
 
 export interface KnowledgeGraph {

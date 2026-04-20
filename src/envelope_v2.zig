@@ -259,8 +259,8 @@ pub fn encodeMemory(allocator: Allocator, m: v2.Memory) ![]u8 {
     errdefer w.deinit();
     try w.writeTag(cbor.Tag.envelope);
 
-    const assertion_count: u64 = m.nodes.len + m.edges.len + @as(u64, if (m.last_updated != null) 1 else 0);
-    try w.writeArrayHeader(1 + assertion_count);
+    const attribute_count: u64 = m.nodes.len + m.connections.len + @as(u64, if (m.last_updated != null) 1 else 0);
+    try w.writeArrayHeader(1 + attribute_count);
 
     try w.writeTag(cbor.Tag.leaf);
     try w.writeMapHeader(2);
@@ -274,10 +274,10 @@ pub fn encodeMemory(allocator: Allocator, m: v2.Memory) ![]u8 {
         try w.writeText("node");
         try writeMemoryNode(&w, n);
     }
-    for (m.edges) |e| {
+    for (m.connections) |c| {
         try w.writeArrayHeader(2);
-        try w.writeText("edge");
-        try writeMemoryEdge(&w, e);
+        try w.writeText("connection");
+        try writeMemoryConnection(&w, c);
     }
     if (m.last_updated) |t| {
         try w.writeArrayHeader(2);
@@ -334,11 +334,11 @@ fn writeMemoryNode(w: *cbor.Writer, n: v2.MemoryNode) !void {
     }
 }
 
-fn writeMemoryEdge(w: *cbor.Writer, e: v2.MemoryEdge) !void {
+fn writeMemoryConnection(w: *cbor.Writer, e: v2.MemoryConnection) !void {
     try w.writeTag(cbor.Tag.envelope);
-    var assertion_count: u64 = 1; // strength
-    if (e.label != null) assertion_count += 1;
-    try w.writeArrayHeader(1 + assertion_count);
+    var attribute_count: u64 = 1; // strength
+    if (e.label != null) attribute_count += 1;
+    try w.writeArrayHeader(1 + attribute_count);
 
     try w.writeTag(cbor.Tag.leaf);
     // dCBOR canonical order: len ascending, then lex for equal lengths.
@@ -352,7 +352,7 @@ fn writeMemoryEdge(w: *cbor.Writer, e: v2.MemoryEdge) !void {
     try w.writeText("kind");
     try w.writeText(e.kind.toWireString());
     try w.writeText("type");
-    try w.writeText("jelly.memory-edge");
+    try w.writeText("jelly.memory-connection");
     try w.writeText("format-version");
     try w.writeUint(protocol.FORMAT_VERSION_V2);
 
@@ -386,9 +386,9 @@ pub fn encodeKnowledgeGraph(allocator: Allocator, kg: v2.KnowledgeGraph) ![]u8 {
         try w.writeArrayHeader(2);
         try w.writeText("triple");
         try w.writeArrayHeader(3);
-        try w.writeText(t.subject);
-        try w.writeText(t.predicate);
-        try w.writeText(t.object);
+        try w.writeText(t.from);
+        try w.writeText(t.label);
+        try w.writeText(t.to);
     }
     if (kg.source) |s| {
         try w.writeArrayHeader(2);
@@ -507,10 +507,10 @@ test "encodeMemory produces well-formed envelope" {
         .{ .id = 1, .content = "First memory" },
         .{ .id = 2, .content = "Second memory" },
     };
-    const edges = [_]v2.MemoryEdge{
+    const connections = [_]v2.MemoryConnection{
         .{ .from = 1, .to = 2, .kind = .temporal, .strength = 0.8 },
     };
-    const m: v2.Memory = .{ .nodes = &nodes, .edges = &edges };
+    const m: v2.Memory = .{ .nodes = &nodes, .connections = &connections };
     const bytes = try encodeMemory(allocator, m);
     defer allocator.free(bytes);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "First memory") != null);
@@ -520,7 +520,7 @@ test "encodeMemory produces well-formed envelope" {
 test "encodeKnowledgeGraph emits triples" {
     const allocator = std.testing.allocator;
     const triples = [_]v2.Triple{
-        .{ .subject = "curiosity", .predicate = "inclines-toward", .object = "new-things" },
+        .{ .from = "curiosity", .label = "inclines-toward", .to = "new-things" },
     };
     const kg: v2.KnowledgeGraph = .{ .triples = &triples, .source = "test" };
     const bytes = try encodeKnowledgeGraph(allocator, kg);

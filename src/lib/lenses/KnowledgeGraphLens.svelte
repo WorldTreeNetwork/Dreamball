@@ -26,9 +26,9 @@
 			return nodes.get(label)!;
 		};
 		for (const t of triples) {
-			place(t.subject);
-			place(t.object);
-			edges.push({ from: t.subject, to: t.object, label: t.predicate });
+			place(t.from);
+			place(t.to);
+			edges.push({ from: t.from, to: t.to, label: t.label });
 		}
 		return { nodes: [...nodes.values()], edges };
 	});

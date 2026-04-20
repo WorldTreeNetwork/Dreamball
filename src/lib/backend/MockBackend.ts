@@ -60,15 +60,15 @@ function stockMemory(): Memory {
 			{ id: 1, content: 'saw a hummingbird at sunrise' },
 			{ id: 2, content: 'learned the haiku 5-7-5 structure' }
 		],
-		edges: [{ from: 1, to: 2, kind: 'temporal', strength: 0.6 }]
+		connections: [{ from: 1, to: 2, kind: 'temporal', strength: 0.6 }]
 	};
 }
 
 function stockKG(): KnowledgeGraph {
 	return {
 		triples: [
-			{ subject: 'curiosity', predicate: 'inclines-toward', object: 'new-things' },
-			{ subject: 'haiku', predicate: 'requires', object: '5-7-5 syllables' }
+			{ from: 'curiosity', label: 'inclines-toward', to: 'new-things' },
+			{ from: 'haiku', label: 'requires', to: '5-7-5 syllables' }
 		]
 	};
 }

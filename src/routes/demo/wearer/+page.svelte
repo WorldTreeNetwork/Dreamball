@@ -34,7 +34,7 @@
 		},
 		'knowledge-graph': {
 			triples: [
-				{ subject: 'curiosity', predicate: 'inclines-toward', object: 'new-things' }
+				{ from: 'curiosity', label: 'inclines-toward', to: 'new-things' }
 			]
 		},
 		feel: {

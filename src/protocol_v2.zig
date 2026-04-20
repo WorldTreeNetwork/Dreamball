@@ -36,13 +36,13 @@ pub const OmnisphericalGrid = struct {
 // §12.3 jelly.memory
 // ============================================================================
 
-pub const MemoryEdgeKind = enum {
+pub const MemoryConnectionKind = enum {
     semantic,
     emotional,
     temporal,
     other,
 
-    pub fn toWireString(self: MemoryEdgeKind) []const u8 {
+    pub fn toWireString(self: MemoryConnectionKind) []const u8 {
         return switch (self) {
             .semantic => "semantic",
             .emotional => "emotional",
@@ -68,17 +68,17 @@ pub const MemoryNode = struct {
     };
 };
 
-pub const MemoryEdge = struct {
+pub const MemoryConnection = struct {
     from: u64,
     to: u64,
-    kind: MemoryEdgeKind,
+    kind: MemoryConnectionKind,
     strength: f64 = 1.0,
     label: ?[]const u8 = null,
 };
 
 pub const Memory = struct {
     nodes: []const MemoryNode = &.{},
-    edges: []const MemoryEdge = &.{},
+    connections: []const MemoryConnection = &.{},
     last_updated: ?i64 = null,
 };
 
@@ -87,10 +87,10 @@ pub const Memory = struct {
 // ============================================================================
 
 pub const Triple = struct {
-    subject: []const u8,
-    predicate: []const u8,
-    /// Either an object-text or a fingerprint reference to another DreamBall.
-    object: []const u8,
+    from: []const u8,
+    label: []const u8,
+    /// Either a text value or a fingerprint reference to another DreamBall.
+    to: []const u8,
 };
 
 pub const KnowledgeGraph = struct {
@@ -262,9 +262,9 @@ test "Guild default policy has sensible slot split" {
     try std.testing.expect(secret_admin);
 }
 
-test "MemoryEdgeKind strings" {
-    try std.testing.expectEqualStrings("semantic", MemoryEdgeKind.semantic.toWireString());
-    try std.testing.expectEqualStrings("emotional", MemoryEdgeKind.emotional.toWireString());
+test "MemoryConnectionKind strings" {
+    try std.testing.expectEqualStrings("semantic", MemoryConnectionKind.semantic.toWireString());
+    try std.testing.expectEqualStrings("emotional", MemoryConnectionKind.emotional.toWireString());
 }
 
 test "Interaction kind string" {
