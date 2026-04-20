@@ -126,6 +126,7 @@ fn writePolicy(w: *cbor.Writer, p: v2.GuildPolicy) !void {
 pub fn encodeRelic(
     allocator: Allocator,
     identity: [32]u8,
+    identity_pq: ?[protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8,
     genesis_hash: [32]u8,
     relic: v2.Relic,
     reveal_hint: ?[]const u8,
@@ -144,22 +145,31 @@ pub fn encodeRelic(
     try w.writeArrayHeader(1 + attribute_count);
 
     try w.writeTag(cbor.Tag.leaf);
-    // Core: type, format-version, identity, genesis-hash, sealed-payload-hash, unlock-guild.
-    // Keys sorted canonically: "type"(4), "identity"(8), "unlock-guild"(12), "genesis-hash"(12),
-    //   "format-version"(14), "sealed-payload-hash"(19).
-    // For equal-length keys, lex order breaks ties.
-    try w.writeMapHeader(6);
+    // Core keys canonically sorted (len asc, lex within equal len):
+    //   "type"(4), "identity"(8), "identity-pq"(11), "genesis-hash"(12),
+    //   "unlock-guild"(12), "format-version"(14), "sealed-payload-hash"(19).
+    // identity-pq is optional; when set, format-version bumps to V3.
+    const core_len: u64 = if (identity_pq != null) 7 else 6;
+    const fv: u32 = if (identity_pq != null)
+        protocol.FORMAT_VERSION_V3
+    else
+        protocol.FORMAT_VERSION_V2;
+    try w.writeMapHeader(core_len);
     try w.writeText("type");
     try w.writeText("jelly.dreamball.relic");
     try w.writeText("identity");
     try w.writeBytes(&identity);
+    if (identity_pq) |pq| {
+        try w.writeText("identity-pq");
+        try w.writeBytes(&pq);
+    }
     // "genesis-hash" < "unlock-guild" lex (g < u) so genesis first at len 12.
     try w.writeText("genesis-hash");
     try w.writeBytes(&genesis_hash);
     try w.writeText("unlock-guild");
     try w.writeBytes(&relic.unlock_guild.bytes);
     try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try w.writeUint(fv);
     try w.writeText("sealed-payload-hash");
     try w.writeBytes(&relic.sealed_payload_hash);
 
@@ -206,9 +216,20 @@ pub fn encodeTransmission(
     try w.writeArrayHeader(1 + attribute_count);
 
     try w.writeTag(cbor.Tag.leaf);
-    // Core keys: "type"(4), "tool-fp"(7), "target-fp"(9), "via-guild"(9),
-    //   "format-version"(14).
-    try w.writeMapHeader(5);
+    // Core keys canonical (len asc, lex): "type"(4), "tool-fp"(7),
+    //   "target-fp"(9), "via-guild"(9), "format-version"(14),
+    //   "sender-identity"(15), "sender-identity-pq"(18).
+    // sender-identity makes the receipt self-verifying. When present,
+    // format-version bumps to V3. sender-identity-pq requires
+    // sender-identity to be set.
+    var core_len: u64 = 5;
+    if (t.sender_identity != null) core_len += 1;
+    if (t.sender_identity_pq != null) core_len += 1;
+    const fv: u32 = if (t.sender_identity != null)
+        protocol.FORMAT_VERSION_V3
+    else
+        protocol.FORMAT_VERSION_V2;
+    try w.writeMapHeader(core_len);
     try w.writeText("type");
     try w.writeText("jelly.transmission");
     try w.writeText("tool-fp");
@@ -218,7 +239,15 @@ pub fn encodeTransmission(
     try w.writeText("via-guild");
     try w.writeBytes(&t.via_guild.bytes);
     try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try w.writeUint(fv);
+    if (t.sender_identity) |si| {
+        try w.writeText("sender-identity");
+        try w.writeBytes(&si);
+    }
+    if (t.sender_identity_pq) |spq| {
+        try w.writeText("sender-identity-pq");
+        try w.writeBytes(&spq);
+    }
 
     // Attributes in sorted order: "sender-fp"(9), "signed"(6), "tool-envelope"(13), "transmitted-at"(14).
     // len-first ordering: "signed"(6) < "sender-fp"(9) < "tool-envelope"(13) < "transmitted-at"(14).
@@ -481,9 +510,49 @@ test "encodeRelic carries sealed-payload-hash + unlock-guild" {
         .unlock_guild = .{ .bytes = [_]u8{0xBB} ** 32 },
         .reveal_hint = "Look behind the mirror",
     };
-    const bytes = try encodeRelic(allocator, [_]u8{1} ** 32, [_]u8{2} ** 32, relic, relic.reveal_hint, &.{});
+    const bytes = try encodeRelic(allocator, [_]u8{1} ** 32, null, [_]u8{2} ** 32, relic, relic.reveal_hint, &.{});
     defer allocator.free(bytes);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "Look behind the mirror") != null);
+}
+
+test "encodeRelic with identity_pq bumps format-version to V3" {
+    const allocator = std.testing.allocator;
+    const relic: v2.Relic = .{
+        .sealed_payload_hash = [_]u8{0xAA} ** 32,
+        .unlock_guild = .{ .bytes = [_]u8{0xBB} ** 32 },
+    };
+    const pq_key: [protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = [_]u8{0xCC} ** protocol.ML_DSA_87_PUBLIC_KEY_LEN;
+    const bytes = try encodeRelic(allocator, [_]u8{1} ** 32, pq_key, [_]u8{2} ** 32, relic, null, &.{});
+    defer allocator.free(bytes);
+    // The pubkey byte pattern should appear in the encoded envelope.
+    try std.testing.expect(std.mem.indexOfScalar(u8, bytes, 0xCC) != null);
+    // v3 single-byte uint (03) must appear after "format-version" label.
+    const fv_idx = std.mem.indexOf(u8, bytes, "format-version") orelse unreachable;
+    const fv_val = bytes[fv_idx + "format-version".len];
+    try std.testing.expectEqual(@as(u8, 0x03), fv_val);
+}
+
+test "encodeTransmission with sender-identity bumps format-version to V3" {
+    const allocator = std.testing.allocator;
+    const fake_tool_envelope = [_]u8{ 0xD8, 0xC8, 0x01, 0x02, 0x03 };
+    const sender_id: [32]u8 = [_]u8{0xAB} ** 32;
+    const sender_pq: [protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = [_]u8{0xCD} ** protocol.ML_DSA_87_PUBLIC_KEY_LEN;
+    const t: v2.Transmission = .{
+        .tool_fp = .{ .bytes = [_]u8{0x11} ** 32 },
+        .target_fp = .{ .bytes = [_]u8{0x22} ** 32 },
+        .via_guild = .{ .bytes = [_]u8{0x33} ** 32 },
+        .sender_identity = sender_id,
+        .sender_identity_pq = sender_pq,
+        .tool_envelope = &fake_tool_envelope,
+    };
+    const bytes = try encodeTransmission(allocator, t);
+    defer allocator.free(bytes);
+    // Core must advertise V3.
+    const fv_idx = std.mem.indexOf(u8, bytes, "format-version") orelse unreachable;
+    try std.testing.expectEqual(@as(u8, 0x03), bytes[fv_idx + "format-version".len]);
+    // Both pubkey-pattern bytes appear in the envelope.
+    try std.testing.expect(std.mem.indexOfScalar(u8, bytes, 0xAB) != null);
+    try std.testing.expect(std.mem.indexOfScalar(u8, bytes, 0xCD) != null);
 }
 
 test "encodeTransmission includes the tool envelope inline" {

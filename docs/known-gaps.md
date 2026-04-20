@@ -167,10 +167,14 @@ policy.
   XChaCha20-Poly1305 around a `recrypt.identity` node).
   Tracked in a cross-repo follow-up.
 - Browser-side ML-DSA-87 verification (see §1 above — still
-  native-only due to WASM bundle-size budget).
-- `Transmission` / `Relic` nodes gaining an `identity-pq`
-  core field so the PQ sig can be verified standalone rather
-  than depending on a public-key-bundle lookup.
+  native-only due to WASM bundle-size budget; verify-only spike
+  planned next to measure the minimum WASM delta).
+- ✅ Closed 2026-04-21 — `Transmission` and `Relic` envelopes now
+  carry their own `identity-pq` slot in core (`sender-identity` +
+  `sender-identity-pq` on Transmission, `identity-pq` on Relic)
+  so the PQ sig verifies standalone without a pubkey-bundle
+  lookup. Envelopes bump to `format-version: 3` when the slot is
+  populated. See PROTOCOL.md §12.1.4 and §12.9.
 
 Guild keyspace proxy-recryption (the harder half of Phase D) remains
 future work — `recrypt-server` already has keyspace endpoints

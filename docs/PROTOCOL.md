@@ -522,6 +522,15 @@ A transferable skill. Carries exactly one `skill` attribute (a `jelly.skill` env
 
 Wraps a sealed inner DreamBall. Core adds `sealed-payload-hash` (Blake3 of the sealed inner envelope bytes) and `unlock-guild` (Guild fingerprint whose keyspace can unlock). Attribute `reveal-hint` is an optional short text shown to would-be unlockers. Attachment slot in the `.jelly` file carries the sealed bytes.
 
+The Relic wrapper has its own ephemeral `identity` (Ed25519 pubkey of the
+relic-issuer keypair) and MAY carry an `identity-pq` (ML-DSA-87 pubkey of
+the same issuer) so the wrapper is self-verifying under the §2.3 hybrid
+model. When `identity-pq` is present the core advertises
+`format-version: 3`; Ed25519-only wrappers remain `format-version: 2`.
+The relic keypair is typically ephemeral — generated fresh at seal
+time, discarded after — so the hybrid strength protects the seal
+record, not the issuer's long-lived identity.
+
 #### 12.1.5 `jelly.dreamball.field`
 
 Attribute surface includes `omnispherical-grid` (§12.2), `ambient-palette` (hex colors or `jelly.asset` refs), and `dream-field-id` (a UUID grouping related fields).
@@ -660,17 +669,30 @@ Auditable record of a Tool transferred to an Agent via a Guild. Producers emit t
 
 ```
 200(
-  201({ "type": "jelly.transmission", "format-version": 2,
-        "tool-fp":   h'…32…',    ; Blake3(Tool.identity)
-        "target-fp": h'…32…',    ; the Agent DreamBall being augmented
-        "via-guild": h'…32…' })
+  201({ "type":                "jelly.transmission",
+        "format-version":      3,                    ; 3 when sender-identity is set; 2 otherwise
+        "tool-fp":             h'…32…',              ; Blake3(Tool.identity)
+        "target-fp":           h'…32…',              ; the Agent DreamBall being augmented
+        "via-guild":           h'…32…',              ; Guild fingerprint scoping the transfer
+        "sender-identity":     h'…32…',              ; sender Ed25519 pubkey — verifies the Ed25519 'signed'
+        "sender-identity-pq":  h'…2592…'             ; sender ML-DSA-87 pubkey — verifies the ML-DSA 'signed'
+  })
 ) [
   "tool-envelope":    <full jelly.dreamball.tool envelope>,   ; the Tool being transmitted, inlined
-  [salted] "sender-fp": h'…32…',
+  [salted] "sender-fp": h'…32…',                               ; optional — Blake3(sender-identity); redundant when sender-identity present
   [salted] "transmitted-at": 1(…),
   'signed': ..., 'signed': ...
 ]
 ```
+
+Pre-v3 Transmission envelopes carried only `sender-fp` (a
+fingerprint), requiring verifiers to look up the sender's pubkey
+bundle out-of-band. v3 embeds the sender's full public keys in
+the core so the receipt is self-verifying. A Transmission that
+sets `sender-identity-pq` MUST also set `sender-identity` and a
+matching ML-DSA-87 `'signed'` attribute; verification follows the
+§2.3 hybrid model. Ed25519-only senders set `sender-identity`
+only and emit one signature.
 
 Upon receipt, the target Agent's custodian updates the Agent's `act.skill` (or the Tool is kept separate, referenced by fingerprint) and bumps the Agent's `revision`.
 

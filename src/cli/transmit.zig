@@ -67,19 +67,22 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         .tool_fp = tool_fp,
         .target_fp = target_fp,
         .via_guild = via_guild,
+        .sender_identity = ed_pub,
+        .sender_identity_pq = switch (loaded_keys) {
+            .hybrid => |h| h.mldsa_public,
+            .ed25519_only => null,
+        },
         .sender_fp = sender_fp,
         .transmitted_at = io.unixSeconds(),
         .tool_envelope = tool_bytes,
     };
 
-    // Sign the unsigned transmission bytes.
+    // Sign the unsigned transmission bytes. With sender-identity (and
+    // optionally sender-identity-pq) now embedded in the core, the
+    // receipt is self-verifying — no pubkey-bundle lookup required.
     const unsigned = try dreamball.envelope_v2.encodeTransmission(gpa, t);
     defer gpa.free(unsigned);
 
-    // The Transmission envelope has no identity_pq slot yet, so the ML-DSA
-    // signature is emitted only when the sender holds a hybrid key. A
-    // verifier needs the sender's pubkey bundle out-of-band to check it —
-    // handled by recrypt-style public-key-bundle lookup in a later pass.
     switch (loaded_keys) {
         .hybrid => |keys| {
             const ed_sig = try dreamball.signer.signEd25519(unsigned, keys.classical());

@@ -182,6 +182,13 @@ pub const Transmission = struct {
     tool_fp: Fingerprint,
     target_fp: Fingerprint,
     via_guild: Fingerprint,
+    /// Sender's Ed25519 public key, embedded in the core so the receipt
+    /// is self-verifying without a pubkey-bundle lookup. When set, the
+    /// envelope bumps to `format-version: 3`. See PROTOCOL.md §12.9.
+    sender_identity: ?[32]u8 = null,
+    /// Sender's ML-DSA-87 public key. Requires `sender_identity` to be
+    /// set as well. When present the envelope is `format-version: 3`.
+    sender_identity_pq: ?[protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = null,
     sender_fp: ?Fingerprint = null,
     transmitted_at: ?i64 = null,
     /// The Tool envelope bytes inlined into the transmission receipt.

@@ -60,13 +60,14 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     var hash: [32]u8 = undefined;
     hasher.final(&hash);
 
-    // Generate a fresh Ed25519 identity for the Relic wrapper itself.
-    // The wrapper is ephemeral — its identity has no persisted key file and
-    // therefore no durable ML-DSA pubkey to publish. Accept Ed25519-only here
-    // per the "lower-stakes context" policy; the inner DreamBall carries its
-    // own hybrid signatures independently.
-    const relic_keys = try dreamball.SigningKeys.generate();
+    // Generate a fresh ephemeral hybrid keypair for the Relic wrapper.
+    // The wrapper's identity has no persisted key file — it's thrown
+    // away after sealing — so the hybrid strength protects the seal
+    // record, not a long-lived custodian. The inner DreamBall carries
+    // its own hybrid signatures independently.
+    const relic_keys = try dreamball.signer.HybridSigningKeys.generate();
     const relic_identity = relic_keys.ed25519_public;
+    const relic_identity_pq = relic_keys.mldsa_public;
     var genesis_input: [64]u8 = undefined;
     @memcpy(genesis_input[0..32], &relic_identity);
     @memcpy(genesis_input[32..64], &hash);
@@ -80,16 +81,18 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         .unlock_guild = unlock_guild,
     };
 
-    // Encode the relic envelope.
-    const unsigned = try dreamball.envelope_v2.encodeRelic(gpa, relic_identity, gh, relic, hint, &.{});
+    // Encode the unsigned relic envelope and sign with both algorithms.
+    const unsigned = try dreamball.envelope_v2.encodeRelic(gpa, relic_identity, relic_identity_pq, gh, relic, hint, &.{});
     defer gpa.free(unsigned);
 
-    // Sign with the relic's own keypair (Ed25519 only — see note above).
-    const sig_bytes = try dreamball.signer.signEd25519(unsigned, relic_keys);
+    const ed_sig = try dreamball.signer.signEd25519(unsigned, relic_keys.classical());
+    const mldsa_sig = try dreamball.signer.signMlDsa(gpa, unsigned, relic_keys);
+    defer gpa.free(mldsa_sig);
     const sigs = [_]dreamball.protocol.Signature{
-        .{ .alg = "ed25519", .value = &sig_bytes },
+        .{ .alg = "ed25519", .value = &ed_sig },
+        .{ .alg = "ml-dsa-87", .value = mldsa_sig },
     };
-    const signed_envelope = try dreamball.envelope_v2.encodeRelic(gpa, relic_identity, gh, relic, hint, &sigs);
+    const signed_envelope = try dreamball.envelope_v2.encodeRelic(gpa, relic_identity, relic_identity_pq, gh, relic, hint, &sigs);
     defer gpa.free(signed_envelope);
 
     // Wrap in a DragonBall sealed-file with the inner bytes as attachment 0.
