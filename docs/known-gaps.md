@@ -178,11 +178,6 @@ policy.
 
 **What's still pending on the PQ side:**
 
-- A durable key-storage story beyond the per-DreamBall `.key`
-  file. The user's intent is to unify this with the
-  recrypt+identikey wallet format (`DCYW` shell + Argon2id +
-  XChaCha20-Poly1305 around a `recrypt.identity` node).
-  Tracked in a cross-repo follow-up.
 - Browser-side ML-DSA-87 verification — **spike landed 2026-04-21**
   behind `-Dpq-wasm=true`. +28.7 KB raw / +9.9 KB gzipped over the
   Ed25519-only baseline. Default build stays PQ-free until a
@@ -265,6 +260,14 @@ These gaps existed before v2.1 and have now closed:
   `unlock` use real proxy-recryption.
 - ✅ **`HttpBackend` talks to a real server.** The `EdenBackend`
   replacement hits `jelly-server` via typed `treaty<App>` calls.
+- ✅ **Identity envelope adopted.** Per-DreamBall key files now use the
+  `recrypt.identity` Gordian Envelope (CBOR tag 200) instead of the
+  hand-rolled `DJELLY\n` hybrid layout. Byte-identical interop with
+  recrypt, tested against three vendored fixtures. See
+  `docs/decisions/2026-04-21-identity-envelope.md`. The encrypted
+  wallet container (`DCYW` shell around a multi-identity envelope) was
+  explicitly NOT adopted — Dreamball has no multi-identity concept per
+  DreamBall, so that complexity isn't warranted.
 
 ---
 

@@ -16,6 +16,7 @@ pub const signer = @import("signer.zig");
 pub const graph = @import("graph.zig");
 pub const ml_dsa = @import("ml_dsa.zig");
 pub const key_file = @import("key_file.zig");
+pub const identity_envelope = @import("identity_envelope.zig");
 
 pub const Stage = protocol.Stage;
 pub const DreamBall = protocol.DreamBall;
@@ -41,5 +42,6 @@ test {
     _ = envelope_v2;
     _ = ml_dsa;
     _ = key_file;
+    _ = identity_envelope;
     _ = @import("golden.zig");
 }

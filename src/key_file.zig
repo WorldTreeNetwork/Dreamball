@@ -1,29 +1,27 @@
 //! Secret-key file format for the CLI.
 //!
-//! Two on-disk shapes are accepted:
+//! Three on-disk shapes are accepted on read; only the envelope shape is written:
 //!
-//!   - **Legacy** (64 bytes total): raw Ed25519 secret key. Produced by
-//!     older `jelly mint` invocations that predated ML-DSA integration.
-//!     Readable but not re-signable with a PQ signature.
+//!   - **Envelope** (default): raw `recrypt.identity` dCBOR bytes, detected by
+//!     the leading two bytes `0xd8 0xc8` (CBOR tag 200). Written by all new
+//!     `jelly mint` invocations. See `src/identity_envelope.zig` for the codec
+//!     and `docs/decisions/2026-04-21-identity-envelope.md` for the rationale.
 //!
-//!   - **Hybrid** (7560 bytes total):
-//!         [0..7]    magic    = "DJELLY\n"
-//!         [7..8]    version  = 0x01
-//!         [8..72]   Ed25519 secret (64 bytes)
-//!         [72..2664]  ML-DSA-87 public key (2592 bytes)
-//!         [2664..7560] ML-DSA-87 secret key (4896 bytes)
+//!   - **Legacy ed25519-only** (64 bytes): raw Ed25519 secret key. Produced by
+//!     old `jelly mint` invocations that predated ML-DSA integration. Accepted
+//!     on read; callers that need ML-DSA signing must regenerate.
 //!
-//! The magic is short and human-visible in `xxd` output; it exists mainly
-//! so a legacy 64-byte file and a hybrid file are distinguishable by size
-//! + prefix without needing a filename convention. A version byte lets us
-//! evolve the layout later (e.g., adding a PRE keypair to match recrypt's
-//! wallet identity — see docs/known-gaps.md §6).
+//!   - **Legacy DJELLY hybrid** (7560 bytes, magic `DJELLY\n`): retired format.
+//!     Reading returns `error.LegacyHybridKeyFileRetired`. Regenerate with
+//!     `jelly mint`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const protocol = @import("protocol.zig");
 const signer = @import("signer.zig");
+const identity_envelope = @import("identity_envelope.zig");
+const fingerprint = @import("fingerprint.zig");
 
 /// Inline `io()` — same as io.zig but we can't import io.zig here without
 /// dragging it into both the `dreamball` (library) and `root` (exe) module
@@ -33,13 +31,6 @@ fn io() std.Io {
 }
 
 const Ed25519_SECRET_LEN = 64;
-const MAGIC = "DJELLY\n";
-const VERSION: u8 = 0x01;
-
-pub const HYBRID_LEN: usize =
-    MAGIC.len + 1 + Ed25519_SECRET_LEN +
-    protocol.ML_DSA_87_PUBLIC_KEY_LEN +
-    protocol.ML_DSA_87_SECRET_KEY_LEN;
 
 pub const LoadedKeys = union(enum) {
     hybrid: signer.HybridSigningKeys,
@@ -48,29 +39,13 @@ pub const LoadedKeys = union(enum) {
     ed25519_only: signer.SigningKeys,
 };
 
-/// Serialize `keys` in the hybrid format (7560 bytes). Caller owns the
-/// returned buffer.
-pub fn encodeHybrid(allocator: Allocator, keys: signer.HybridSigningKeys) ![]u8 {
-    const buf = try allocator.alloc(u8, HYBRID_LEN);
-    errdefer allocator.free(buf);
-
-    var i: usize = 0;
-    @memcpy(buf[i..][0..MAGIC.len], MAGIC);
-    i += MAGIC.len;
-    buf[i] = VERSION;
-    i += 1;
-    @memcpy(buf[i..][0..Ed25519_SECRET_LEN], &keys.ed25519_secret);
-    i += Ed25519_SECRET_LEN;
-    @memcpy(buf[i..][0..protocol.ML_DSA_87_PUBLIC_KEY_LEN], &keys.mldsa_public);
-    i += protocol.ML_DSA_87_PUBLIC_KEY_LEN;
-    @memcpy(buf[i..][0..protocol.ML_DSA_87_SECRET_KEY_LEN], &keys.mldsa_secret);
-    i += protocol.ML_DSA_87_SECRET_KEY_LEN;
-    std.debug.assert(i == HYBRID_LEN);
-    return buf;
-}
-
-/// Parse a key file. Recognises both legacy and hybrid shapes.
+/// Parse a key file. Dispatches on file shape:
+///   1. 64 bytes → ed25519-only legacy
+///   2. leading 0xd8 0xc8 → recrypt.identity envelope (hybrid)
+///   3. leading "DJELLY\n" → error.LegacyHybridKeyFileRetired
+///   4. otherwise → error.BadKeyFile
 pub fn decode(bytes: []const u8) !LoadedKeys {
+    // Shape 1: legacy 64-byte ed25519-only
     if (bytes.len == Ed25519_SECRET_LEN) {
         var secret: [Ed25519_SECRET_LEN]u8 = undefined;
         @memcpy(&secret, bytes);
@@ -82,38 +57,106 @@ pub fn decode(bytes: []const u8) !LoadedKeys {
         } };
     }
 
-    if (bytes.len != HYBRID_LEN) return error.BadKeyFileLength;
-    var i: usize = 0;
-    if (!std.mem.eql(u8, bytes[i..][0..MAGIC.len], MAGIC)) return error.BadKeyFileMagic;
-    i += MAGIC.len;
-    if (bytes[i] != VERSION) return error.UnsupportedKeyFileVersion;
-    i += 1;
+    // Shape 2: recrypt.identity envelope (tag 200 = 0xd8 0xc8)
+    if (bytes.len >= 2 and bytes[0] == 0xd8 and bytes[1] == 0xc8) {
+        // decode() has no allocator param; use a DebugAllocator for the
+        // temporary identity parse. The HybridSigningKeys fields are all
+        // fixed-size arrays copied out before identity.deinit(), so the
+        // allocator lifetime doesn't escape.
+        var da: std.heap.DebugAllocator(.{}) = .init;
+        defer _ = da.deinit();
+        return decodeEnvelope(da.allocator(), bytes);
+    }
+
+    // Shape 3: legacy DJELLY hybrid — retired
+    if (bytes.len >= 7 and std.mem.eql(u8, bytes[0..7], "DJELLY\n")) {
+        return error.LegacyHybridKeyFileRetired;
+    }
+
+    // Shape 4: unrecognised
+    return error.BadKeyFile;
+}
+
+/// Internal: parse a recrypt.identity envelope from `bytes`, require both
+/// ed25519_secret and ml_dsa.secret, return HybridSigningKeys.
+fn decodeEnvelope(alloc: Allocator, bytes: []const u8) !LoadedKeys {
+    var id = try identity_envelope.decode(alloc, bytes);
+    defer id.deinit(alloc);
+
+    const ed25519_secret = id.ed25519_secret orelse return error.EnvelopeMissingEd25519Secret;
+    const ml = id.ml_dsa orelse return error.EnvelopeMissingMlDsaSecret;
+    const ml_secret_slice = ml.secret orelse return error.EnvelopeMissingMlDsaSecret;
+
+    if (ml.public.len != protocol.ML_DSA_87_PUBLIC_KEY_LEN) return error.BadKeyFile;
+    if (ml_secret_slice.len != protocol.ML_DSA_87_SECRET_KEY_LEN) return error.BadKeyFile;
 
     var keys: signer.HybridSigningKeys = undefined;
-    @memcpy(&keys.ed25519_secret, bytes[i..][0..Ed25519_SECRET_LEN]);
-    i += Ed25519_SECRET_LEN;
 
-    // Recover the Ed25519 public key from the secret.
-    const sk = try std.crypto.sign.Ed25519.SecretKey.fromBytes(keys.ed25519_secret);
+    // ed25519_secret is a 32-byte seed; recover the full 64-byte secret + public
+    // via the standard Ed25519 key expansion.
+    const sk = try std.crypto.sign.Ed25519.SecretKey.fromBytes(ed25519_secret ++ id.ed25519_public);
     const kp = std.crypto.sign.Ed25519.KeyPair.fromSecretKey(sk) catch return error.BadKeyFile;
     keys.ed25519_public = kp.public_key.toBytes();
+    // Store the 64-byte form (seed || public) that the rest of the codebase expects.
+    keys.ed25519_secret = sk.toBytes();
 
-    @memcpy(&keys.mldsa_public, bytes[i..][0..protocol.ML_DSA_87_PUBLIC_KEY_LEN]);
-    i += protocol.ML_DSA_87_PUBLIC_KEY_LEN;
-    @memcpy(&keys.mldsa_secret, bytes[i..][0..protocol.ML_DSA_87_SECRET_KEY_LEN]);
+    @memcpy(&keys.mldsa_public, ml.public[0..protocol.ML_DSA_87_PUBLIC_KEY_LEN]);
+    @memcpy(&keys.mldsa_secret, ml_secret_slice[0..protocol.ML_DSA_87_SECRET_KEY_LEN]);
+
     return .{ .hybrid = keys };
 }
 
 pub fn readFromPath(gpa: Allocator, path: []const u8) !LoadedKeys {
     const bytes = try readAllOwned(gpa, path);
     defer gpa.free(bytes);
+    // For envelope-shape files we need an allocator inside decode; pass gpa
+    // via the explicit envelope path to avoid the internal GPA allocation.
+    if (bytes.len >= 2 and bytes[0] == 0xd8 and bytes[1] == 0xc8) {
+        return decodeEnvelope(gpa, bytes);
+    }
     return decode(bytes);
 }
 
+/// Write `keys` as a `recrypt.identity` envelope to `path`.
+/// `created` is the Unix epoch timestamp to embed; use `writeHybridToPath`
+/// for the wall-clock convenience wrapper.
+pub fn writeHybridToPathAt(
+    gpa: Allocator,
+    path: []const u8,
+    keys: signer.HybridSigningKeys,
+    created: u64,
+) !void {
+    // ed25519_secret is 64 bytes (seed || public); the envelope stores the
+    // 32-byte seed (first half) as "ed25519-secret".
+    const seed: [32]u8 = keys.ed25519_secret[0..32].*;
+
+    const fp = fingerprint.Fingerprint.fromEd25519(keys.ed25519_public);
+
+    const id = identity_envelope.Identity{
+        .fingerprint = fp.bytes,
+        .ed25519_public = keys.ed25519_public,
+        .ed25519_secret = seed,
+        .ml_dsa = .{
+            .public = &keys.mldsa_public,
+            .secret = &keys.mldsa_secret,
+        },
+        .name = null,
+        .created = created,
+        .pre = null,
+        .unknown_assertions = &.{},
+    };
+
+    const envelope_bytes = try identity_envelope.encode(gpa, id);
+    defer gpa.free(envelope_bytes);
+    try writeAll(path, envelope_bytes);
+}
+
+/// Write `keys` as a `recrypt.identity` envelope to `path`, stamping the
+/// current wall-clock time as the `created` field.
 pub fn writeHybridToPath(gpa: Allocator, path: []const u8, keys: signer.HybridSigningKeys) !void {
-    const bytes = try encodeHybrid(gpa, keys);
-    defer gpa.free(bytes);
-    try writeAll(path, bytes);
+    const ts = std.Io.Clock.real.now(io());
+    const epoch_secs: u64 = @intCast(@divFloor(ts.nanoseconds, std.time.ns_per_s));
+    return writeHybridToPathAt(gpa, path, keys, epoch_secs);
 }
 
 // Inline file helpers so key_file.zig stays self-contained and belongs to
@@ -141,13 +184,20 @@ fn writeAll(path: []const u8, bytes: []const u8) !void {
     try w.interface.flush();
 }
 
-test "hybrid round-trip" {
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "hybrid round-trip via writeHybridToPathAt" {
     const allocator = std.testing.allocator;
     const keys = try signer.HybridSigningKeys.generate();
-    const bytes = try encodeHybrid(allocator, keys);
-    defer allocator.free(bytes);
-    try std.testing.expectEqual(HYBRID_LEN, bytes.len);
-    const loaded = try decode(bytes);
+
+    // Write to a temp path
+    const tmp_path = "/tmp/key_file_test_hybrid.key";
+    try writeHybridToPathAt(allocator, tmp_path, keys, 1704067200);
+
+    // Read back
+    const loaded = try readFromPath(allocator, tmp_path);
     switch (loaded) {
         .hybrid => |h| {
             try std.testing.expectEqualSlices(u8, &keys.ed25519_secret, &h.ed25519_secret);
@@ -171,7 +221,40 @@ test "legacy 64-byte file decodes as ed25519_only" {
     }
 }
 
-test "wrong length rejected" {
-    const bad = [_]u8{0} ** 123;
-    try std.testing.expectError(error.BadKeyFileLength, decode(&bad));
+test "legacy DJELLY file rejected with LegacyHybridKeyFileRetired" {
+    var djelly: [7560]u8 = undefined;
+    @memcpy(djelly[0..7], "DJELLY\n");
+    djelly[7] = 0x01; // version byte
+    @memset(djelly[8..], 0);
+    try std.testing.expectError(error.LegacyHybridKeyFileRetired, decode(&djelly));
+}
+
+test "garbage bytes rejected with BadKeyFile" {
+    const bad = [_]u8{0xFF} ** 100;
+    try std.testing.expectError(error.BadKeyFile, decode(&bad));
+}
+
+test "envelope missing ml-dsa secret rejected" {
+    const allocator = std.testing.allocator;
+
+    // Build an identity with ml_dsa.public but no ml_dsa.secret
+    const kp = try signer.SigningKeys.generate();
+    const fp = fingerprint.Fingerprint.fromEd25519(kp.ed25519_public);
+    const ml_pub = [_]u8{0xAA} ** protocol.ML_DSA_87_PUBLIC_KEY_LEN;
+
+    const id = identity_envelope.Identity{
+        .fingerprint = fp.bytes,
+        .ed25519_public = kp.ed25519_public,
+        .ed25519_secret = kp.ed25519_secret[0..32].*,
+        .ml_dsa = .{ .public = &ml_pub, .secret = null },
+        .created = 1704067200,
+        .name = null,
+        .pre = null,
+        .unknown_assertions = &.{},
+    };
+
+    const env_bytes = try identity_envelope.encode(allocator, id);
+    defer allocator.free(env_bytes);
+
+    try std.testing.expectError(error.EnvelopeMissingMlDsaSecret, decodeEnvelope(allocator, env_bytes));
 }

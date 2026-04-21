@@ -77,6 +77,9 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // src/recrypt-identity-fixtures is a symlink → vendor/recrypt-identity-fixtures.
+    // @embedFile resolves relative to the source file, so no addEmbedPath needed.
+
     const lib = b.addLibrary(.{
         .name = "dreamball",
         .root_module = mod,
