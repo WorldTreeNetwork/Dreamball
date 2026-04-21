@@ -139,12 +139,22 @@ pub fn build(b: *std.Build) void {
         .cpu_arch = .wasm32,
         .os_tag = .freestanding,
     });
+    // zbor is compiled for the wasm32-freestanding target for this module.
+    // zbor pulls no libc / syscalls — it's pure data manipulation — so the
+    // freestanding target handles it cleanly.
+    const zbor_wasm_dep = b.dependency("zbor", .{
+        .target = wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    const zbor_wasm_mod = zbor_wasm_dep.module("zbor");
+
     const wasm_mod = b.createModule(.{
         .root_source_file = b.path("src/wasm_main.zig"),
         .target = wasm_target,
         .optimize = .ReleaseSmall,
     });
     wasm_mod.addImport("build_options", build_opts.createModule());
+    wasm_mod.addImport("zbor", zbor_wasm_mod);
 
     // Optional PQ verify: link the vendored liboqs subset into the WASM
     // module. The linker's dead-code elimination (ReleaseSmall + wasm-ld)

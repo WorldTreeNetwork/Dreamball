@@ -25,10 +25,16 @@
 //!
 //! Interop contract: byte-identical to recrypt's Rust output for the same
 //! identity content. Fixture tests in this file enforce this invariant.
+//!
+//! CBOR primitives come from `zbor.builder` / `zbor.DataItem`. The raw
+//! byte-span preservation for unknown assertions uses `dcbor.itemLen`
+//! (a thin wrapper over `zbor.advance`) so unknown predicate/object CBOR
+//! is captured verbatim from the source envelope.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const cbor = @import("cbor.zig");
+const zbor = @import("zbor");
+const dcbor = @import("dcbor.zig");
 const fingerprint_mod = @import("fingerprint.zig");
 
 pub const TYPE: []const u8 = "recrypt.identity";
@@ -113,70 +119,114 @@ pub const Error = error{
     InvalidCreated,
     InvalidPreKeyMaterial,
     MalformedAssertion,
-} || cbor.Error || std.mem.Allocator.Error;
+    // Bubbled through from zbor / std.Io.Writer:
+    Malformed,
+    WriteFailed,
+} || std.mem.Allocator.Error;
 
 // ============================================================================
-// Pair / PairList helpers (copied from envelope.zig — no refactor per plan §4)
+// Local cursor-based readers (same shape as envelope.zig).
 // ============================================================================
 
-/// A pre-serialised key-value pair for building subject maps.
-/// `key` is a plain string; `value` is owned dCBOR bytes for the value only.
-const Pair = struct { key: []const u8, value: []const u8 };
-
-fn pairLt(_: void, a: Pair, b: Pair) bool {
-    if (a.key.len != b.key.len) return a.key.len < b.key.len;
-    return std.mem.lessThan(u8, a.key, b.key);
+/// Peek the major type at `cursor` without advancing.
+fn peekMajor(bytes: []const u8, cursor: usize) !u3 {
+    if (cursor >= bytes.len) return Error.Malformed;
+    return @intCast(bytes[cursor] >> 5);
 }
 
-const PairList = struct {
-    pairs: std.ArrayListUnmanaged(Pair) = .empty,
-    allocator: Allocator,
+/// Decode one head (major + arg) and advance cursor past it. Does not consume
+/// any tagged item / string content / array members.
+fn readHead(bytes: []const u8, cursor: *usize) !struct { major: u3, arg: u64 } {
+    if (cursor.* >= bytes.len) return Error.Malformed;
+    const b = bytes[cursor.*];
+    cursor.* += 1;
+    const major: u3 = @intCast(b >> 5);
+    const info: u5 = @intCast(b & 0x1F);
+    const arg: u64 = switch (info) {
+        0...23 => @as(u64, info),
+        24 => blk: {
+            if (cursor.* >= bytes.len) return Error.Malformed;
+            const v = bytes[cursor.*];
+            cursor.* += 1;
+            break :blk @as(u64, v);
+        },
+        25 => blk: {
+            if (cursor.* + 2 > bytes.len) return Error.Malformed;
+            const v = std.mem.readInt(u16, bytes[cursor.*..][0..2], .big);
+            cursor.* += 2;
+            break :blk @as(u64, v);
+        },
+        26 => blk: {
+            if (cursor.* + 4 > bytes.len) return Error.Malformed;
+            const v = std.mem.readInt(u32, bytes[cursor.*..][0..4], .big);
+            cursor.* += 4;
+            break :blk @as(u64, v);
+        },
+        27 => blk: {
+            if (cursor.* + 8 > bytes.len) return Error.Malformed;
+            const v = std.mem.readInt(u64, bytes[cursor.*..][0..8], .big);
+            cursor.* += 8;
+            break :blk v;
+        },
+        else => return Error.Malformed,
+    };
+    return .{ .major = major, .arg = arg };
+}
 
-    fn init(allocator: Allocator) PairList {
-        return .{ .pairs = .empty, .allocator = allocator };
-    }
+fn readArrayHeader(bytes: []const u8, cursor: *usize) !u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 4) return Error.MalformedAssertion;
+    return h.arg;
+}
 
-    fn deinit(self: *PairList) void {
-        for (self.pairs.items) |p| {
-            self.allocator.free(p.key);
-            self.allocator.free(p.value);
-        }
-        self.pairs.deinit(self.allocator);
-    }
+fn readMapHeader(bytes: []const u8, cursor: *usize) !u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 5) return Error.MalformedAssertion;
+    return h.arg;
+}
 
-    fn addOwned(self: *PairList, key: []const u8, value: []u8) !void {
-        const key_copy = try self.allocator.dupe(u8, key);
-        try self.pairs.append(self.allocator, .{ .key = key_copy, .value = value });
-    }
+fn expectTag(bytes: []const u8, cursor: *usize, want: u64) !void {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 6) return Error.MalformedAssertion;
+    if (h.arg != want) return Error.WrongEnvelopeType;
+}
 
-    fn addText(self: *PairList, key: []const u8, text: []const u8) !void {
-        var w = cbor.Writer.init(self.allocator);
-        errdefer w.deinit();
-        try w.writeText(text);
-        const bytes = try w.toOwned();
-        try self.addOwned(key, bytes);
-    }
+fn readTag(bytes: []const u8, cursor: *usize) !u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 6) return Error.MalformedAssertion;
+    return h.arg;
+}
 
-    fn addUint(self: *PairList, key: []const u8, v: u64) !void {
-        var w = cbor.Writer.init(self.allocator);
-        errdefer w.deinit();
-        try w.writeUint(v);
-        const bytes = try w.toOwned();
-        try self.addOwned(key, bytes);
-    }
+fn readText(bytes: []const u8, cursor: *usize) ![]const u8 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 3) return Error.MalformedAssertion;
+    const len: usize = @intCast(h.arg);
+    if (cursor.* + len > bytes.len) return Error.Malformed;
+    const s = bytes[cursor.* .. cursor.* + len];
+    cursor.* += len;
+    return s;
+}
 
-    fn addBytes(self: *PairList, key: []const u8, b: []const u8) !void {
-        var w = cbor.Writer.init(self.allocator);
-        errdefer w.deinit();
-        try w.writeBytes(b);
-        const raw = try w.toOwned();
-        try self.addOwned(key, raw);
-    }
+fn readBytesItem(bytes: []const u8, cursor: *usize) ![]const u8 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 2) return Error.MalformedAssertion;
+    const len: usize = @intCast(h.arg);
+    if (cursor.* + len > bytes.len) return Error.Malformed;
+    const s = bytes[cursor.* .. cursor.* + len];
+    cursor.* += len;
+    return s;
+}
 
-    fn sort(self: *PairList) void {
-        std.sort.insertion(Pair, self.pairs.items, {}, pairLt);
-    }
-};
+fn readUint(bytes: []const u8, cursor: *usize) !u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 0) return Error.MalformedAssertion;
+    return h.arg;
+}
+
+fn skipItem(bytes: []const u8, cursor: *usize) !void {
+    if (cursor.* >= bytes.len) return Error.Malformed;
+    if (zbor.advance(bytes, cursor) == null) return Error.Malformed;
+}
 
 // ============================================================================
 // Assertion encoding helpers
@@ -207,18 +257,20 @@ fn rawAssertionLt(_: void, a: RawAssertion, b: RawAssertion) bool {
     return std.mem.lessThan(u8, &a.sort_key, &b.sort_key);
 }
 
-/// Build a single-key CBOR map wrapping two tag-201 leaves:
-///   map(1){ tag(201)(pred_cbor): tag(201)(obj_cbor) }
-/// Returns owned bytes.
-fn encodeAssertionMap(allocator: Allocator, pred_cbor: []const u8, obj_cbor: []const u8) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
-    try w.writeMapHeader(1);
-    try w.writeTag(cbor.Tag.leaf); // tag 201
-    try w.appendSlice(pred_cbor);
-    try w.writeTag(cbor.Tag.leaf); // tag 201
-    try w.appendSlice(obj_cbor);
-    return w.toOwned();
+/// Serialise `value` as CBOR text-string into an owned byte slice.
+fn cborText(allocator: Allocator, value: []const u8) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    try zbor.builder.writeTextString(&ai.writer, value);
+    return ai.toOwnedSlice();
+}
+
+/// Serialise `value` as CBOR byte-string into an owned byte slice.
+fn cborBytes(allocator: Allocator, value: []const u8) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    try zbor.builder.writeByteString(&ai.writer, value);
+    return ai.toOwnedSlice();
 }
 
 // ============================================================================
@@ -236,7 +288,7 @@ pub fn encode(allocator: Allocator, identity: Identity) ![]u8 {
     }
 
     // Build subject map: type, fingerprint, format-version (sorted by encoded-key lex)
-    var subj = PairList.init(allocator);
+    var subj = dcbor.PairList.init(allocator);
     defer subj.deinit();
     try subj.addText("type", TYPE);
     try subj.addBytes("fingerprint", &identity.fingerprint);
@@ -244,15 +296,14 @@ pub fn encode(allocator: Allocator, identity: Identity) ![]u8 {
     subj.sort(); // sorts: "type"(4) < "fingerprint"(11) < "format-version"(14)
 
     // Encode subject map CBOR
-    var subj_writer = cbor.Writer.init(allocator);
-    defer subj_writer.deinit();
-    try subj_writer.writeMapHeader(subj.pairs.items.len);
+    var subj_ai = std.Io.Writer.Allocating.init(allocator);
+    defer subj_ai.deinit();
+    try zbor.builder.writeMap(&subj_ai.writer, subj.pairs.items.len);
     for (subj.pairs.items) |p| {
-        try subj_writer.writeText(p.key);
-        try subj_writer.appendSlice(p.value);
+        try zbor.builder.writeTextString(&subj_ai.writer, p.key);
+        try subj_ai.writer.writeAll(p.value);
     }
-    const subj_map_cbor = try subj_writer.toOwned();
-    defer allocator.free(subj_map_cbor);
+    const subj_map_cbor = subj_ai.written();
 
     // Collect all assertions (in emission order, then sort by digest)
     var assertions: std.ArrayListUnmanaged(RawAssertion) = .empty;
@@ -267,16 +318,10 @@ pub fn encode(allocator: Allocator, identity: Identity) ![]u8 {
     // Helper to append a text-pred / bytes-obj assertion
     const appendBytesAssertion = struct {
         fn run(alloc: Allocator, list: *std.ArrayListUnmanaged(RawAssertion), pred: []const u8, obj_bytes: []const u8) !void {
-            var pw = cbor.Writer.init(alloc);
-            defer pw.deinit();
-            try pw.writeText(pred);
-            const pred_cbor = try pw.toOwned();
-
-            var ow = cbor.Writer.init(alloc);
-            defer ow.deinit();
-            try ow.writeBytes(obj_bytes);
-            const obj_cbor = try ow.toOwned();
-
+            const pred_cbor = try cborText(alloc, pred);
+            errdefer alloc.free(pred_cbor);
+            const obj_cbor = try cborBytes(alloc, obj_bytes);
+            errdefer alloc.free(obj_cbor);
             const sk = RawAssertion.computeSortKey(pred_cbor, obj_cbor);
             try list.append(alloc, .{ .pred_cbor = pred_cbor, .obj_cbor = obj_cbor, .sort_key = sk });
         }
@@ -284,16 +329,10 @@ pub fn encode(allocator: Allocator, identity: Identity) ![]u8 {
 
     const appendTextAssertion = struct {
         fn run(alloc: Allocator, list: *std.ArrayListUnmanaged(RawAssertion), pred: []const u8, obj_text: []const u8) !void {
-            var pw = cbor.Writer.init(alloc);
-            defer pw.deinit();
-            try pw.writeText(pred);
-            const pred_cbor = try pw.toOwned();
-
-            var ow = cbor.Writer.init(alloc);
-            defer ow.deinit();
-            try ow.writeText(obj_text);
-            const obj_cbor = try ow.toOwned();
-
+            const pred_cbor = try cborText(alloc, pred);
+            errdefer alloc.free(pred_cbor);
+            const obj_cbor = try cborText(alloc, obj_text);
+            errdefer alloc.free(obj_cbor);
             const sk = RawAssertion.computeSortKey(pred_cbor, obj_cbor);
             try list.append(alloc, .{ .pred_cbor = pred_cbor, .obj_cbor = obj_cbor, .sort_key = sk });
         }
@@ -301,16 +340,15 @@ pub fn encode(allocator: Allocator, identity: Identity) ![]u8 {
 
     // 1. created (tag 1 + uint)
     if (identity.created) |ts| {
-        var pw = cbor.Writer.init(allocator);
-        defer pw.deinit();
-        try pw.writeText("created");
-        const pred_cbor = try pw.toOwned();
+        const pred_cbor = try cborText(allocator, "created");
+        errdefer allocator.free(pred_cbor);
 
-        var ow = cbor.Writer.init(allocator);
-        defer ow.deinit();
-        try ow.writeTag(cbor.Tag.epoch_time);
-        try ow.writeUint(ts);
-        const obj_cbor = try ow.toOwned();
+        var ow = std.Io.Writer.Allocating.init(allocator);
+        errdefer ow.deinit();
+        try zbor.builder.writeTag(&ow.writer, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(&ow.writer, @intCast(ts));
+        const obj_cbor = try ow.toOwnedSlice();
+        errdefer allocator.free(obj_cbor);
 
         const sk = RawAssertion.computeSortKey(pred_cbor, obj_cbor);
         try assertions.append(allocator, .{ .pred_cbor = pred_cbor, .obj_cbor = obj_cbor, .sort_key = sk });
@@ -359,37 +397,29 @@ pub fn encode(allocator: Allocator, identity: Identity) ![]u8 {
     std.sort.insertion(RawAssertion, assertions.items, {}, rawAssertionLt);
 
     // Emit: tag(200) [ tag(201)(subj_map), assertion_map_0, ..., assertion_map_N ]
-    var out = cbor.Writer.init(allocator);
+    var out = std.Io.Writer.Allocating.init(allocator);
     errdefer out.deinit();
+    const ow = &out.writer;
 
-    try out.writeTag(cbor.Tag.envelope); // tag 200
+    try zbor.builder.writeTag(ow, dcbor.Tag.envelope); // tag 200
 
     const total_elements = 1 + assertions.items.len;
-    try out.writeArrayHeader(total_elements);
+    try zbor.builder.writeArray(ow, total_elements);
 
     // Subject: tag(201)(map)
-    try out.writeTag(cbor.Tag.leaf); // tag 201
-    try out.appendSlice(subj_map_cbor);
+    try zbor.builder.writeTag(ow, dcbor.Tag.leaf); // tag 201
+    try ow.writeAll(subj_map_cbor);
 
     // Each assertion: map(1){ tag201(pred): tag201(obj) }
     for (assertions.items) |a| {
-        try out.writeMapHeader(1);
-        try out.writeTag(cbor.Tag.leaf);
-        try out.appendSlice(a.pred_cbor);
-        try out.writeTag(cbor.Tag.leaf);
-        try out.appendSlice(a.obj_cbor);
+        try zbor.builder.writeMap(ow, 1);
+        try zbor.builder.writeTag(ow, dcbor.Tag.leaf);
+        try ow.writeAll(a.pred_cbor);
+        try zbor.builder.writeTag(ow, dcbor.Tag.leaf);
+        try ow.writeAll(a.obj_cbor);
     }
 
-    return out.toOwned();
-}
-
-// ============================================================================
-// Skip helpers for decode
-// ============================================================================
-
-/// Skip one complete CBOR item starting at reader's current position.
-fn skipItem(r: *cbor.Reader) !void {
-    try r.skipItem();
+    return out.toOwnedSlice();
 }
 
 // ============================================================================
@@ -401,20 +431,22 @@ fn skipItem(r: *cbor.Reader) !void {
 /// All owned fields use `allocator.dupe` so the input bytes can be freed.
 /// Caller must call `identity.deinit(allocator)` when done.
 pub fn decode(allocator: Allocator, bytes: []const u8) !Identity {
-    var r = cbor.Reader.init(bytes);
+    var cursor: usize = 0;
 
     // tag(200)
-    try r.expectTag(cbor.Tag.envelope);
+    const first_tag = try readTag(bytes, &cursor);
+    if (first_tag != dcbor.Tag.envelope) return Error.WrongEnvelopeType;
 
     // Must be an array (subject + 0 or more assertions)
-    const array_len = try r.readArrayHeader();
+    const array_len = try readArrayHeader(bytes, &cursor);
     if (array_len == 0) return Error.MalformedAssertion;
 
     // Subject: tag(201)(map{...})
-    try r.expectTag(cbor.Tag.leaf);
+    const second_tag = try readTag(bytes, &cursor);
+    if (second_tag != dcbor.Tag.leaf) return Error.MalformedAssertion;
 
     // Parse the subject map
-    const map_len = try r.readMapHeader();
+    const map_len = try readMapHeader(bytes, &cursor);
 
     var parsed_type: ?[]const u8 = null;
     var parsed_version: ?u64 = null;
@@ -422,20 +454,20 @@ pub fn decode(allocator: Allocator, bytes: []const u8) !Identity {
 
     var mi: u64 = 0;
     while (mi < map_len) : (mi += 1) {
-        const key = try r.readText();
+        const key = try readText(bytes, &cursor);
         if (std.mem.eql(u8, key, "type")) {
-            parsed_type = try r.readText();
+            parsed_type = try readText(bytes, &cursor);
         } else if (std.mem.eql(u8, key, "format-version")) {
-            parsed_version = try r.readUint();
+            parsed_version = try readUint(bytes, &cursor);
         } else if (std.mem.eql(u8, key, "fingerprint")) {
-            const fp_bytes = try r.readBytes();
+            const fp_bytes = try readBytesItem(bytes, &cursor);
             if (fp_bytes.len != 32) return Error.MalformedAssertion;
             var arr: [32]u8 = undefined;
             @memcpy(&arr, fp_bytes);
             parsed_fingerprint = arr;
         } else {
             // Unknown subject key — skip the value
-            try r.skipItem();
+            try skipItem(bytes, &cursor);
         }
     }
 
@@ -489,65 +521,70 @@ pub fn decode(allocator: Allocator, bytes: []const u8) !Identity {
     var ai: u64 = 1;
     while (ai < array_len) : (ai += 1) {
         // Each element is a map(1){ tag201(pred): tag201(obj) }
-        const m_len = try r.readMapHeader();
+        const m_len = try readMapHeader(bytes, &cursor);
         if (m_len != 1) return Error.MalformedAssertion;
 
         // key = tag201(pred_cbor)
+        const pred_tag = try readTag(bytes, &cursor);
+        if (pred_tag != dcbor.Tag.leaf) return Error.MalformedAssertion;
         // Record pred_cbor start/end for unknown assertion preservation
-        try r.expectTag(cbor.Tag.leaf);
-        const pred_start = r.pos;
-        const pred_text = try r.readText();
-        const pred_end = r.pos;
+        const pred_start = cursor;
+        const pred_text = try readText(bytes, &cursor);
+        const pred_end = cursor;
 
         // value = tag201(obj_cbor)
-        try r.expectTag(cbor.Tag.leaf);
-        const obj_start = r.pos;
+        const obj_tag = try readTag(bytes, &cursor);
+        if (obj_tag != dcbor.Tag.leaf) return Error.MalformedAssertion;
+        // Start of the obj CBOR — captured only when we fall through to the
+        // unknown-predicate branch below; the known branches advance
+        // `cursor` themselves.
+        const obj_start = cursor;
 
         if (std.mem.eql(u8, pred_text, "ed25519-public")) {
-            const b = try r.readBytes();
+            const b = try readBytesItem(bytes, &cursor);
             if (b.len != 32) return Error.MalformedAssertion;
             var arr: [32]u8 = undefined;
             @memcpy(&arr, b);
             ed25519_public = arr;
         } else if (std.mem.eql(u8, pred_text, "ed25519-secret")) {
-            const b = try r.readBytes();
+            const b = try readBytesItem(bytes, &cursor);
             if (b.len != 32) return Error.MalformedAssertion;
             var arr: [32]u8 = undefined;
             @memcpy(&arr, b);
             ed25519_secret = arr;
         } else if (std.mem.eql(u8, pred_text, "ml-dsa-public")) {
-            const b = try r.readBytes();
+            const b = try readBytesItem(bytes, &cursor);
             const owned = try allocator.dupe(u8, b);
             alloc_ml_dsa_public = owned;
             ml_dsa_public = owned;
         } else if (std.mem.eql(u8, pred_text, "ml-dsa-secret")) {
-            const b = try r.readBytes();
+            const b = try readBytesItem(bytes, &cursor);
             const owned = try allocator.dupe(u8, b);
             alloc_ml_dsa_secret = owned;
             ml_dsa_secret = owned;
         } else if (std.mem.eql(u8, pred_text, "name")) {
-            const t = try r.readText();
+            const t = try readText(bytes, &cursor);
             const owned = try allocator.dupe(u8, t);
             alloc_name = owned;
             name = owned;
         } else if (std.mem.eql(u8, pred_text, "created")) {
             // Must be tag(1)(uint)
-            const tag_val = try r.readTag();
-            if (tag_val != cbor.Tag.epoch_time) return Error.InvalidCreated;
-            const ts = try r.readUint();
+            const tag_val = try readTag(bytes, &cursor);
+            if (tag_val != dcbor.Tag.epoch_time) return Error.InvalidCreated;
+            const ts = try readUint(bytes, &cursor);
             created = ts;
         } else if (std.mem.eql(u8, pred_text, "pre-backend")) {
-            const t = try r.readText();
+            const t = try readText(bytes, &cursor);
             const owned = try allocator.dupe(u8, t);
             alloc_pre_backend = owned;
             pre_backend = owned;
         } else if (std.mem.eql(u8, pred_text, "pre-public")) {
-            const b = try r.readBytes();
+            const b = try readBytesItem(bytes, &cursor);
             const owned = try allocator.dupe(u8, b);
             alloc_pre_public = owned;
             pre_public = owned;
         } else if (std.mem.eql(u8, pred_text, "pre-secret")) {
-            const b = try r.readBytes();
+            const b = try readBytesItem(bytes, &cursor);
             const owned = try allocator.dupe(u8, b);
             alloc_pre_secret = owned;
             pre_secret = owned;
@@ -555,16 +592,13 @@ pub fn decode(allocator: Allocator, bytes: []const u8) !Identity {
             // Unknown assertion: preserve raw CBOR bytes of pred and obj
             const pred_raw = try allocator.dupe(u8, bytes[pred_start..pred_end]);
             // Skip the object and capture its extent
-            try r.skipItem();
-            const obj_end = r.pos;
+            try skipItem(bytes, &cursor);
+            const obj_end = cursor;
             const obj_raw = try allocator.dupe(u8, bytes[obj_start..obj_end]);
             try unknown_list.append(allocator, .{ .predicate_cbor = pred_raw, .object_cbor = obj_raw });
             // Object already skipped — continue to next assertion
             continue;
         }
-
-        const obj_end = r.pos;
-        _ = obj_end; // used only for unknown
     }
 
     // Require ed25519-public
@@ -723,28 +757,16 @@ test "encode → decode preserves two unknown assertions in order" {
     const fp = fingerprint_mod.Fingerprint.fromEd25519(pk);
 
     // Build raw CBOR for two unknown assertions
-    var pw1 = cbor.Writer.init(allocator);
-    defer pw1.deinit();
-    try pw1.writeText("zzz-unknown-first");
-    const pred1 = try pw1.toOwned();
+    const pred1 = try cborText(allocator, "zzz-unknown-first");
     defer allocator.free(pred1);
 
-    var ow1 = cbor.Writer.init(allocator);
-    defer ow1.deinit();
-    try ow1.writeBytes(&[_]u8{ 0xDE, 0xAD });
-    const obj1 = try ow1.toOwned();
+    const obj1 = try cborBytes(allocator, &[_]u8{ 0xDE, 0xAD });
     defer allocator.free(obj1);
 
-    var pw2 = cbor.Writer.init(allocator);
-    defer pw2.deinit();
-    try pw2.writeText("aaa-unknown-second");
-    const pred2 = try pw2.toOwned();
+    const pred2 = try cborText(allocator, "aaa-unknown-second");
     defer allocator.free(pred2);
 
-    var ow2 = cbor.Writer.init(allocator);
-    defer ow2.deinit();
-    try ow2.writeBytes(&[_]u8{ 0xBE, 0xEF });
-    const obj2 = try ow2.toOwned();
+    const obj2 = try cborBytes(allocator, &[_]u8{ 0xBE, 0xEF });
     defer allocator.free(obj2);
 
     const unknowns = [_]Assertion{
@@ -788,44 +810,36 @@ test "decode rejects fingerprint mismatch" {
     const pk: [32]u8 = [_]u8{0x10} ** 32;
     const wrong_fp: [32]u8 = [_]u8{0xFF} ** 32;
 
-    var subj_w = cbor.Writer.init(allocator);
-    defer subj_w.deinit();
-    try subj_w.writeMapHeader(3);
-    try subj_w.writeText("type");
-    try subj_w.writeText(TYPE);
-    try subj_w.writeText("fingerprint");
-    try subj_w.writeBytes(&wrong_fp);
-    try subj_w.writeText("format-version");
-    try subj_w.writeUint(FORMAT_VERSION);
-    const subj_cbor = try subj_w.toOwned();
-    defer allocator.free(subj_cbor);
+    var subj_ai = std.Io.Writer.Allocating.init(allocator);
+    defer subj_ai.deinit();
+    try zbor.builder.writeMap(&subj_ai.writer, 3);
+    try zbor.builder.writeTextString(&subj_ai.writer, "type");
+    try zbor.builder.writeTextString(&subj_ai.writer, TYPE);
+    try zbor.builder.writeTextString(&subj_ai.writer, "fingerprint");
+    try zbor.builder.writeByteString(&subj_ai.writer, &wrong_fp);
+    try zbor.builder.writeTextString(&subj_ai.writer, "format-version");
+    try zbor.builder.writeInt(&subj_ai.writer, FORMAT_VERSION);
+    const subj_cbor = subj_ai.written();
 
     // Build assertion for ed25519-public
-    var pred_w = cbor.Writer.init(allocator);
-    defer pred_w.deinit();
-    try pred_w.writeText("ed25519-public");
-    const pred_cbor = try pred_w.toOwned();
+    const pred_cbor = try cborText(allocator, "ed25519-public");
     defer allocator.free(pred_cbor);
 
-    var obj_w = cbor.Writer.init(allocator);
-    defer obj_w.deinit();
-    try obj_w.writeBytes(&pk);
-    const obj_cbor = try obj_w.toOwned();
+    const obj_cbor = try cborBytes(allocator, &pk);
     defer allocator.free(obj_cbor);
 
-    var env_w = cbor.Writer.init(allocator);
-    defer env_w.deinit();
-    try env_w.writeTag(cbor.Tag.envelope);
-    try env_w.writeArrayHeader(2);
-    try env_w.writeTag(cbor.Tag.leaf);
-    try env_w.appendSlice(subj_cbor);
-    try env_w.writeMapHeader(1);
-    try env_w.writeTag(cbor.Tag.leaf);
-    try env_w.appendSlice(pred_cbor);
-    try env_w.writeTag(cbor.Tag.leaf);
-    try env_w.appendSlice(obj_cbor);
-    const env_bytes = try env_w.toOwned();
-    defer allocator.free(env_bytes);
+    var env_ai = std.Io.Writer.Allocating.init(allocator);
+    defer env_ai.deinit();
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(&env_ai.writer, 2);
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.leaf);
+    try env_ai.writer.writeAll(subj_cbor);
+    try zbor.builder.writeMap(&env_ai.writer, 1);
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.leaf);
+    try env_ai.writer.writeAll(pred_cbor);
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.leaf);
+    try env_ai.writer.writeAll(obj_cbor);
+    const env_bytes = env_ai.written();
 
     try std.testing.expectError(Error.FingerprintMismatch, decode(allocator, env_bytes));
 }
@@ -837,27 +851,25 @@ test "decode rejects missing ed25519-public" {
     const fp = fingerprint_mod.Fingerprint.fromEd25519(pk);
 
     // Build valid subject map but NO ed25519-public assertion
-    var subj_w = cbor.Writer.init(allocator);
-    defer subj_w.deinit();
-    try subj_w.writeMapHeader(3);
-    try subj_w.writeText("type");
-    try subj_w.writeText(TYPE);
-    try subj_w.writeText("fingerprint");
-    try subj_w.writeBytes(&fp.bytes);
-    try subj_w.writeText("format-version");
-    try subj_w.writeUint(FORMAT_VERSION);
-    const subj_cbor = try subj_w.toOwned();
-    defer allocator.free(subj_cbor);
+    var subj_ai = std.Io.Writer.Allocating.init(allocator);
+    defer subj_ai.deinit();
+    try zbor.builder.writeMap(&subj_ai.writer, 3);
+    try zbor.builder.writeTextString(&subj_ai.writer, "type");
+    try zbor.builder.writeTextString(&subj_ai.writer, TYPE);
+    try zbor.builder.writeTextString(&subj_ai.writer, "fingerprint");
+    try zbor.builder.writeByteString(&subj_ai.writer, &fp.bytes);
+    try zbor.builder.writeTextString(&subj_ai.writer, "format-version");
+    try zbor.builder.writeInt(&subj_ai.writer, FORMAT_VERSION);
+    const subj_cbor = subj_ai.written();
 
     // Envelope with only subject (array of 1)
-    var env_w = cbor.Writer.init(allocator);
-    defer env_w.deinit();
-    try env_w.writeTag(cbor.Tag.envelope);
-    try env_w.writeArrayHeader(1);
-    try env_w.writeTag(cbor.Tag.leaf);
-    try env_w.appendSlice(subj_cbor);
-    const env_bytes = try env_w.toOwned();
-    defer allocator.free(env_bytes);
+    var env_ai = std.Io.Writer.Allocating.init(allocator);
+    defer env_ai.deinit();
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(&env_ai.writer, 1);
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.leaf);
+    try env_ai.writer.writeAll(subj_cbor);
+    const env_bytes = env_ai.written();
 
     try std.testing.expectError(Error.MissingEd25519Public, decode(allocator, env_bytes));
 }
@@ -868,26 +880,24 @@ test "decode rejects wrong type string" {
     const pk: [32]u8 = [_]u8{0x30} ** 32;
     const fp = fingerprint_mod.Fingerprint.fromEd25519(pk);
 
-    var subj_w = cbor.Writer.init(allocator);
-    defer subj_w.deinit();
-    try subj_w.writeMapHeader(3);
-    try subj_w.writeText("type");
-    try subj_w.writeText("wrong.type");
-    try subj_w.writeText("fingerprint");
-    try subj_w.writeBytes(&fp.bytes);
-    try subj_w.writeText("format-version");
-    try subj_w.writeUint(FORMAT_VERSION);
-    const subj_cbor = try subj_w.toOwned();
-    defer allocator.free(subj_cbor);
+    var subj_ai = std.Io.Writer.Allocating.init(allocator);
+    defer subj_ai.deinit();
+    try zbor.builder.writeMap(&subj_ai.writer, 3);
+    try zbor.builder.writeTextString(&subj_ai.writer, "type");
+    try zbor.builder.writeTextString(&subj_ai.writer, "wrong.type");
+    try zbor.builder.writeTextString(&subj_ai.writer, "fingerprint");
+    try zbor.builder.writeByteString(&subj_ai.writer, &fp.bytes);
+    try zbor.builder.writeTextString(&subj_ai.writer, "format-version");
+    try zbor.builder.writeInt(&subj_ai.writer, FORMAT_VERSION);
+    const subj_cbor = subj_ai.written();
 
-    var env_w = cbor.Writer.init(allocator);
-    defer env_w.deinit();
-    try env_w.writeTag(cbor.Tag.envelope);
-    try env_w.writeArrayHeader(1);
-    try env_w.writeTag(cbor.Tag.leaf);
-    try env_w.appendSlice(subj_cbor);
-    const env_bytes = try env_w.toOwned();
-    defer allocator.free(env_bytes);
+    var env_ai = std.Io.Writer.Allocating.init(allocator);
+    defer env_ai.deinit();
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(&env_ai.writer, 1);
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.leaf);
+    try env_ai.writer.writeAll(subj_cbor);
+    const env_bytes = env_ai.written();
 
     try std.testing.expectError(Error.WrongEnvelopeType, decode(allocator, env_bytes));
 }
@@ -898,26 +908,24 @@ test "decode rejects wrong format-version" {
     const pk: [32]u8 = [_]u8{0x40} ** 32;
     const fp = fingerprint_mod.Fingerprint.fromEd25519(pk);
 
-    var subj_w = cbor.Writer.init(allocator);
-    defer subj_w.deinit();
-    try subj_w.writeMapHeader(3);
-    try subj_w.writeText("type");
-    try subj_w.writeText(TYPE);
-    try subj_w.writeText("fingerprint");
-    try subj_w.writeBytes(&fp.bytes);
-    try subj_w.writeText("format-version");
-    try subj_w.writeUint(99);
-    const subj_cbor = try subj_w.toOwned();
-    defer allocator.free(subj_cbor);
+    var subj_ai = std.Io.Writer.Allocating.init(allocator);
+    defer subj_ai.deinit();
+    try zbor.builder.writeMap(&subj_ai.writer, 3);
+    try zbor.builder.writeTextString(&subj_ai.writer, "type");
+    try zbor.builder.writeTextString(&subj_ai.writer, TYPE);
+    try zbor.builder.writeTextString(&subj_ai.writer, "fingerprint");
+    try zbor.builder.writeByteString(&subj_ai.writer, &fp.bytes);
+    try zbor.builder.writeTextString(&subj_ai.writer, "format-version");
+    try zbor.builder.writeInt(&subj_ai.writer, 99);
+    const subj_cbor = subj_ai.written();
 
-    var env_w = cbor.Writer.init(allocator);
-    defer env_w.deinit();
-    try env_w.writeTag(cbor.Tag.envelope);
-    try env_w.writeArrayHeader(1);
-    try env_w.writeTag(cbor.Tag.leaf);
-    try env_w.appendSlice(subj_cbor);
-    const env_bytes = try env_w.toOwned();
-    defer allocator.free(env_bytes);
+    var env_ai = std.Io.Writer.Allocating.init(allocator);
+    defer env_ai.deinit();
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(&env_ai.writer, 1);
+    try zbor.builder.writeTag(&env_ai.writer, dcbor.Tag.leaf);
+    try env_ai.writer.writeAll(subj_cbor);
+    const env_bytes = env_ai.written();
 
     try std.testing.expectError(Error.UnsupportedFormatVersion, decode(allocator, env_bytes));
 }
@@ -1001,8 +1009,8 @@ test "fixture: hybrid-no-pre preserves dreamball-lineage unknown assertion" {
 
     // The predicate CBOR should be text("dreamball-lineage")
     const ua = decoded.unknown_assertions[0];
-    var r = cbor.Reader.init(ua.predicate_cbor);
-    const pred_text = try r.readText();
+    const di = try zbor.DataItem.new(ua.predicate_cbor);
+    const pred_text = di.string() orelse return error.NotAString;
     try std.testing.expectEqualStrings("dreamball-lineage", pred_text);
 
     // Re-encode and verify byte-identical

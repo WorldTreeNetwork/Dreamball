@@ -7,7 +7,7 @@ pub const protocol = @import("protocol.zig");
 pub const protocol_v2 = @import("protocol_v2.zig");
 pub const fingerprint = @import("fingerprint.zig");
 pub const base58 = @import("base58.zig");
-pub const cbor = @import("cbor.zig");
+pub const dcbor = @import("dcbor.zig");
 pub const envelope = @import("envelope.zig");
 pub const envelope_v2 = @import("envelope_v2.zig");
 pub const sealing = @import("sealing.zig");
@@ -32,7 +32,7 @@ test {
     _ = protocol;
     _ = fingerprint;
     _ = base58;
-    _ = cbor;
+    _ = dcbor;
     _ = envelope;
     _ = sealing;
     _ = json;

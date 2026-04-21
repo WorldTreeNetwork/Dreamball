@@ -3,11 +3,17 @@
 //! All encoders produce deterministic dCBOR output matching the v1
 //! canonical-ordering rules. The one documented exception is the
 //! omnispherical-grid envelope, which uses floats — see §12.2.
+//!
+//! CBOR primitives come from `zbor.builder` (https://codeberg.org/r4gus/zbor).
+//! Map-key ordering is enforced manually at each callsite — the key lists here
+//! are short and hand-sorted by (len asc, then lex). See comments on each
+//! `writeMap` for the ordering rationale.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const cbor = @import("cbor.zig");
+const zbor = @import("zbor");
+const dcbor = @import("dcbor.zig");
 const protocol = @import("protocol.zig");
 const v2 = @import("protocol_v2.zig");
 const envelope = @import("envelope.zig");
@@ -25,10 +31,11 @@ pub fn encodeGuild(
     guild: v2.Guild,
     signatures: []const protocol.Signature,
 ) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
 
-    try w.writeTag(cbor.Tag.envelope);
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
 
     // Count attributes up front (members + admins + policy + signatures + guild-name + keyspace-root-hash).
     var attribute_count: u64 = 2; // guild-name, keyspace-root-hash
@@ -39,83 +46,83 @@ pub fn encodeGuild(
     };
     for (signatures) |_| attribute_count += 1;
 
-    try w.writeArrayHeader(1 + attribute_count);
+    try zbor.builder.writeArray(w, 1 + attribute_count);
 
     // Core: tag 201 { type, format-version, identity, genesis-hash }
-    try w.writeTag(cbor.Tag.leaf);
-    try w.writeMapHeader(4);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 4);
     // dCBOR canonical ordering: sort keys by (len, lex)
     // "type"(4) < "identity"(8) < "genesis-hash"(12) < "format-version"(14)
-    try w.writeText("type");
-    try w.writeText("jelly.dreamball.guild");
-    try w.writeText("identity");
-    try w.writeBytes(&identity);
-    try w.writeText("genesis-hash");
-    try w.writeBytes(&genesis_hash);
-    try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.dreamball.guild");
+    try zbor.builder.writeTextString(w, "identity");
+    try zbor.builder.writeByteString(w, &identity);
+    try zbor.builder.writeTextString(w, "genesis-hash");
+    try zbor.builder.writeByteString(w, &genesis_hash);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
     // Attributes as [label, value] 2-arrays. Emit in sorted label order.
     // For determinism we emit: admin, member, policy, signed, guild-name, keyspace-root-hash.
     // dCBOR ordering over those label lengths: "admin"(5), "member"(6), "policy"(6),
     // "signed"(6), "guild-name"(10), "keyspace-root-hash"(18).
     for (guild.members) |m| if (m.is_admin) {
-        try w.writeArrayHeader(2);
-        try w.writeText("admin");
-        try w.writeBytes(&m.member.bytes);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "admin");
+        try zbor.builder.writeByteString(w, &m.member.bytes);
     };
 
     // members (all — admins are also listed under "member")
     for (guild.members) |m| {
-        try w.writeArrayHeader(2);
-        try w.writeText("member");
-        try w.writeBytes(&m.member.bytes);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "member");
+        try zbor.builder.writeByteString(w, &m.member.bytes);
     }
 
     if (guild.policy) |p| {
-        try w.writeArrayHeader(2);
-        try w.writeText("policy");
-        try writePolicy(&w, p);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "policy");
+        try writePolicy(w, p);
     }
 
     for (signatures) |s| {
-        try w.writeArrayHeader(2);
-        try w.writeText("signed");
-        try w.writeArrayHeader(2);
-        try w.writeText(s.alg);
-        try w.writeBytes(s.value);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "signed");
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, s.alg);
+        try zbor.builder.writeByteString(w, s.value);
     }
 
-    try w.writeArrayHeader(2);
-    try w.writeText("guild-name");
-    try w.writeText(guild.guild_name);
+    try zbor.builder.writeArray(w, 2);
+    try zbor.builder.writeTextString(w, "guild-name");
+    try zbor.builder.writeTextString(w, guild.guild_name);
 
-    try w.writeArrayHeader(2);
-    try w.writeText("keyspace-root-hash");
-    try w.writeBytes(&guild.keyspace_root_hash);
+    try zbor.builder.writeArray(w, 2);
+    try zbor.builder.writeTextString(w, "keyspace-root-hash");
+    try zbor.builder.writeByteString(w, &guild.keyspace_root_hash);
 
-    return w.toOwned();
+    return ai.toOwnedSlice();
 }
 
-fn writePolicy(w: *cbor.Writer, p: v2.GuildPolicy) !void {
+fn writePolicy(w: *std.Io.Writer, p: v2.GuildPolicy) !void {
     // Emit a simple map { "public": [...], "guild-only": [...], "admin-only": [...] }.
     // Keys sorted canonically: "public"(6), "admin-only"(10), "guild-only"(10).
-    try w.writeTag(cbor.Tag.envelope);
-    try w.writeTag(cbor.Tag.leaf);
-    try w.writeMapHeader(5); // type, format-version, public, admin-only, guild-only
-    try w.writeText("type");
-    try w.writeText("jelly.guild-policy");
-    try w.writeText("public");
-    try w.writeArrayHeader(p.public.len);
-    for (p.public) |s| try w.writeText(s);
-    try w.writeText("admin-only");
-    try w.writeArrayHeader(p.admin_only.len);
-    for (p.admin_only) |s| try w.writeText(s);
-    try w.writeText("guild-only");
-    try w.writeArrayHeader(p.guild_only.len);
-    for (p.guild_only) |s| try w.writeText(s);
-    try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 5); // type, format-version, public, admin-only, guild-only
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.guild-policy");
+    try zbor.builder.writeTextString(w, "public");
+    try zbor.builder.writeArray(w, p.public.len);
+    for (p.public) |s| try zbor.builder.writeTextString(w, s);
+    try zbor.builder.writeTextString(w, "admin-only");
+    try zbor.builder.writeArray(w, p.admin_only.len);
+    for (p.admin_only) |s| try zbor.builder.writeTextString(w, s);
+    try zbor.builder.writeTextString(w, "guild-only");
+    try zbor.builder.writeArray(w, p.guild_only.len);
+    for (p.guild_only) |s| try zbor.builder.writeTextString(w, s);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 }
 
 // ============================================================================
@@ -132,19 +139,20 @@ pub fn encodeRelic(
     reveal_hint: ?[]const u8,
     signatures: []const protocol.Signature,
 ) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
 
-    try w.writeTag(cbor.Tag.envelope);
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
 
     var attribute_count: u64 = 0;
     if (reveal_hint != null) attribute_count += 1;
     if (relic.sealed_until != null) attribute_count += 1;
     for (signatures) |_| attribute_count += 1;
 
-    try w.writeArrayHeader(1 + attribute_count);
+    try zbor.builder.writeArray(w, 1 + attribute_count);
 
-    try w.writeTag(cbor.Tag.leaf);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
     // Core keys canonically sorted (len asc, lex within equal len):
     //   "type"(4), "identity"(8), "identity-pq"(11), "genesis-hash"(12),
     //   "unlock-guild"(12), "format-version"(14), "sealed-payload-hash"(19).
@@ -154,45 +162,45 @@ pub fn encodeRelic(
         protocol.FORMAT_VERSION_V3
     else
         protocol.FORMAT_VERSION_V2;
-    try w.writeMapHeader(core_len);
-    try w.writeText("type");
-    try w.writeText("jelly.dreamball.relic");
-    try w.writeText("identity");
-    try w.writeBytes(&identity);
+    try zbor.builder.writeMap(w, core_len);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.dreamball.relic");
+    try zbor.builder.writeTextString(w, "identity");
+    try zbor.builder.writeByteString(w, &identity);
     if (identity_pq) |pq| {
-        try w.writeText("identity-pq");
-        try w.writeBytes(&pq);
+        try zbor.builder.writeTextString(w, "identity-pq");
+        try zbor.builder.writeByteString(w, &pq);
     }
     // "genesis-hash" < "unlock-guild" lex (g < u) so genesis first at len 12.
-    try w.writeText("genesis-hash");
-    try w.writeBytes(&genesis_hash);
-    try w.writeText("unlock-guild");
-    try w.writeBytes(&relic.unlock_guild.bytes);
-    try w.writeText("format-version");
-    try w.writeUint(fv);
-    try w.writeText("sealed-payload-hash");
-    try w.writeBytes(&relic.sealed_payload_hash);
+    try zbor.builder.writeTextString(w, "genesis-hash");
+    try zbor.builder.writeByteString(w, &genesis_hash);
+    try zbor.builder.writeTextString(w, "unlock-guild");
+    try zbor.builder.writeByteString(w, &relic.unlock_guild.bytes);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(fv));
+    try zbor.builder.writeTextString(w, "sealed-payload-hash");
+    try zbor.builder.writeByteString(w, &relic.sealed_payload_hash);
 
     if (reveal_hint) |hint| {
-        try w.writeArrayHeader(2);
-        try w.writeText("reveal-hint");
-        try w.writeText(hint);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "reveal-hint");
+        try zbor.builder.writeTextString(w, hint);
     }
     if (relic.sealed_until) |t| {
-        try w.writeArrayHeader(2);
-        try w.writeText("sealed-until");
-        try w.writeTag(cbor.Tag.epoch_time);
-        try w.writeUint(@intCast(t));
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "sealed-until");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
     }
     for (signatures) |s| {
-        try w.writeArrayHeader(2);
-        try w.writeText("signed");
-        try w.writeArrayHeader(2);
-        try w.writeText(s.alg);
-        try w.writeBytes(s.value);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "signed");
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, s.alg);
+        try zbor.builder.writeByteString(w, s.value);
     }
 
-    return w.toOwned();
+    return ai.toOwnedSlice();
 }
 
 // ============================================================================
@@ -203,19 +211,20 @@ pub fn encodeTransmission(
     allocator: Allocator,
     t: v2.Transmission,
 ) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
 
-    try w.writeTag(cbor.Tag.envelope);
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
 
     var attribute_count: u64 = 1; // tool-envelope
     if (t.sender_fp != null) attribute_count += 1;
     if (t.transmitted_at != null) attribute_count += 1;
     for (t.signatures) |_| attribute_count += 1;
 
-    try w.writeArrayHeader(1 + attribute_count);
+    try zbor.builder.writeArray(w, 1 + attribute_count);
 
-    try w.writeTag(cbor.Tag.leaf);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
     // Core keys canonical (len asc, lex): "type"(4), "tool-fp"(7),
     //   "target-fp"(9), "via-guild"(9), "format-version"(14),
     //   "sender-identity"(15), "sender-identity-pq"(18).
@@ -229,52 +238,52 @@ pub fn encodeTransmission(
         protocol.FORMAT_VERSION_V3
     else
         protocol.FORMAT_VERSION_V2;
-    try w.writeMapHeader(core_len);
-    try w.writeText("type");
-    try w.writeText("jelly.transmission");
-    try w.writeText("tool-fp");
-    try w.writeBytes(&t.tool_fp.bytes);
-    try w.writeText("target-fp");
-    try w.writeBytes(&t.target_fp.bytes);
-    try w.writeText("via-guild");
-    try w.writeBytes(&t.via_guild.bytes);
-    try w.writeText("format-version");
-    try w.writeUint(fv);
+    try zbor.builder.writeMap(w, core_len);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.transmission");
+    try zbor.builder.writeTextString(w, "tool-fp");
+    try zbor.builder.writeByteString(w, &t.tool_fp.bytes);
+    try zbor.builder.writeTextString(w, "target-fp");
+    try zbor.builder.writeByteString(w, &t.target_fp.bytes);
+    try zbor.builder.writeTextString(w, "via-guild");
+    try zbor.builder.writeByteString(w, &t.via_guild.bytes);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(fv));
     if (t.sender_identity) |si| {
-        try w.writeText("sender-identity");
-        try w.writeBytes(&si);
+        try zbor.builder.writeTextString(w, "sender-identity");
+        try zbor.builder.writeByteString(w, &si);
     }
     if (t.sender_identity_pq) |spq| {
-        try w.writeText("sender-identity-pq");
-        try w.writeBytes(&spq);
+        try zbor.builder.writeTextString(w, "sender-identity-pq");
+        try zbor.builder.writeByteString(w, &spq);
     }
 
     // Attributes in sorted order: "sender-fp"(9), "signed"(6), "tool-envelope"(13), "transmitted-at"(14).
     // len-first ordering: "signed"(6) < "sender-fp"(9) < "tool-envelope"(13) < "transmitted-at"(14).
     for (t.signatures) |s| {
-        try w.writeArrayHeader(2);
-        try w.writeText("signed");
-        try w.writeArrayHeader(2);
-        try w.writeText(s.alg);
-        try w.writeBytes(s.value);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "signed");
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, s.alg);
+        try zbor.builder.writeByteString(w, s.value);
     }
     if (t.sender_fp) |fp| {
-        try w.writeArrayHeader(2);
-        try w.writeText("sender-fp");
-        try w.writeBytes(&fp.bytes);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "sender-fp");
+        try zbor.builder.writeByteString(w, &fp.bytes);
     }
-    try w.writeArrayHeader(2);
-    try w.writeText("tool-envelope");
+    try zbor.builder.writeArray(w, 2);
+    try zbor.builder.writeTextString(w, "tool-envelope");
     // Inline the tool envelope bytes verbatim (already dCBOR).
-    try w.appendSlice(t.tool_envelope);
+    try w.writeAll(t.tool_envelope);
     if (t.transmitted_at) |ts| {
-        try w.writeArrayHeader(2);
-        try w.writeText("transmitted-at");
-        try w.writeTag(cbor.Tag.epoch_time);
-        try w.writeUint(@intCast(ts));
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "transmitted-at");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(ts));
     }
 
-    return w.toOwned();
+    return ai.toOwnedSlice();
 }
 
 // ============================================================================
@@ -284,200 +293,188 @@ pub fn encodeTransmission(
 // ============================================================================
 
 pub fn encodeMemory(allocator: Allocator, m: v2.Memory) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
-    try w.writeTag(cbor.Tag.envelope);
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
 
     const attribute_count: u64 = m.nodes.len + m.connections.len + @as(u64, if (m.last_updated != null) 1 else 0);
-    try w.writeArrayHeader(1 + attribute_count);
+    try zbor.builder.writeArray(w, 1 + attribute_count);
 
-    try w.writeTag(cbor.Tag.leaf);
-    try w.writeMapHeader(2);
-    try w.writeText("type");
-    try w.writeText("jelly.memory");
-    try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.memory");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
     for (m.nodes) |n| {
-        try w.writeArrayHeader(2);
-        try w.writeText("node");
-        try writeMemoryNode(&w, n);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "node");
+        try writeMemoryNode(w, n);
     }
     for (m.connections) |c| {
-        try w.writeArrayHeader(2);
-        try w.writeText("connection");
-        try writeMemoryConnection(&w, c);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "connection");
+        try writeMemoryConnection(w, c);
     }
     if (m.last_updated) |t| {
-        try w.writeArrayHeader(2);
-        try w.writeText("last-updated");
-        try w.writeTag(cbor.Tag.epoch_time);
-        try w.writeUint(@intCast(t));
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "last-updated");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
     }
-    return w.toOwned();
+    return ai.toOwnedSlice();
 }
 
-fn writeMemoryNode(w: *cbor.Writer, n: v2.MemoryNode) !void {
-    try w.writeTag(cbor.Tag.envelope);
+fn writeMemoryNode(w: *std.Io.Writer, n: v2.MemoryNode) !void {
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
     var attribute_count: u64 = 0;
     if (n.content != null) attribute_count += 1;
     attribute_count += n.lookups.len;
     if (n.created != null) attribute_count += 1;
     if (n.last_recalled != null) attribute_count += 1;
-    try w.writeArrayHeader(1 + attribute_count);
+    try zbor.builder.writeArray(w, 1 + attribute_count);
 
-    try w.writeTag(cbor.Tag.leaf);
-    try w.writeMapHeader(3);
-    try w.writeText("id");
-    try w.writeUint(n.id);
-    try w.writeText("type");
-    try w.writeText("jelly.memory-node");
-    try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 3);
+    try zbor.builder.writeTextString(w, "id");
+    try zbor.builder.writeInt(w, @intCast(n.id));
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.memory-node");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
     if (n.content) |c| {
-        try w.writeArrayHeader(2);
-        try w.writeText("content");
-        try w.writeText(c);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "content");
+        try zbor.builder.writeTextString(w, c);
     }
     for (n.lookups) |lk| {
-        try w.writeArrayHeader(2);
-        try w.writeText("lookup");
-        try w.writeArrayHeader(2);
-        try w.writeText(lk.name);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "lookup");
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, lk.name);
         // Float: use 64-bit for simplicity. The protocol spec allows
         // half/single floats; we use f64 as the widest canonical form.
-        try writeF64(w, lk.value);
+        try zbor.builder.writeFloat(w, lk.value);
     }
     if (n.created) |t| {
-        try w.writeArrayHeader(2);
-        try w.writeText("created");
-        try w.writeTag(cbor.Tag.epoch_time);
-        try w.writeUint(@intCast(t));
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "created");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
     }
     if (n.last_recalled) |t| {
-        try w.writeArrayHeader(2);
-        try w.writeText("last-recalled");
-        try w.writeTag(cbor.Tag.epoch_time);
-        try w.writeUint(@intCast(t));
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "last-recalled");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
     }
 }
 
-fn writeMemoryConnection(w: *cbor.Writer, e: v2.MemoryConnection) !void {
-    try w.writeTag(cbor.Tag.envelope);
+fn writeMemoryConnection(w: *std.Io.Writer, e: v2.MemoryConnection) !void {
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
     var attribute_count: u64 = 1; // strength
     if (e.label != null) attribute_count += 1;
-    try w.writeArrayHeader(1 + attribute_count);
+    try zbor.builder.writeArray(w, 1 + attribute_count);
 
-    try w.writeTag(cbor.Tag.leaf);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
     // dCBOR canonical order: len ascending, then lex for equal lengths.
     // Keys: "to"(2), "from"(4), "kind"(4), "type"(4), "format-version"(14).
     // At length 4, lex order is "from" < "kind" < "type".
-    try w.writeMapHeader(5);
-    try w.writeText("to");
-    try w.writeUint(e.to);
-    try w.writeText("from");
-    try w.writeUint(e.from);
-    try w.writeText("kind");
-    try w.writeText(e.kind.toWireString());
-    try w.writeText("type");
-    try w.writeText("jelly.memory-connection");
-    try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try zbor.builder.writeMap(w, 5);
+    try zbor.builder.writeTextString(w, "to");
+    try zbor.builder.writeInt(w, @intCast(e.to));
+    try zbor.builder.writeTextString(w, "from");
+    try zbor.builder.writeInt(w, @intCast(e.from));
+    try zbor.builder.writeTextString(w, "kind");
+    try zbor.builder.writeTextString(w, e.kind.toWireString());
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.memory-connection");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
-    try w.writeArrayHeader(2);
-    try w.writeText("strength");
-    try writeF64(w, e.strength);
+    try zbor.builder.writeArray(w, 2);
+    try zbor.builder.writeTextString(w, "strength");
+    try zbor.builder.writeFloat(w, e.strength);
     if (e.label) |lbl| {
-        try w.writeArrayHeader(2);
-        try w.writeText("label");
-        try w.writeText(lbl);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "label");
+        try zbor.builder.writeTextString(w, lbl);
     }
 }
 
 pub fn encodeKnowledgeGraph(allocator: Allocator, kg: v2.KnowledgeGraph) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
-    try w.writeTag(cbor.Tag.envelope);
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
 
     var ac: u64 = kg.triples.len;
     if (kg.source != null) ac += 1;
-    try w.writeArrayHeader(1 + ac);
+    try zbor.builder.writeArray(w, 1 + ac);
 
-    try w.writeTag(cbor.Tag.leaf);
-    try w.writeMapHeader(2);
-    try w.writeText("type");
-    try w.writeText("jelly.knowledge-graph");
-    try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.knowledge-graph");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
     for (kg.triples) |t| {
-        try w.writeArrayHeader(2);
-        try w.writeText("triple");
-        try w.writeArrayHeader(3);
-        try w.writeText(t.from);
-        try w.writeText(t.label);
-        try w.writeText(t.to);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "triple");
+        try zbor.builder.writeArray(w, 3);
+        try zbor.builder.writeTextString(w, t.from);
+        try zbor.builder.writeTextString(w, t.label);
+        try zbor.builder.writeTextString(w, t.to);
     }
     if (kg.source) |s| {
-        try w.writeArrayHeader(2);
-        try w.writeText("source");
-        try w.writeText(s);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "source");
+        try zbor.builder.writeTextString(w, s);
     }
-    return w.toOwned();
+    return ai.toOwnedSlice();
 }
 
 pub fn encodeEmotionalRegister(allocator: Allocator, er: v2.EmotionalRegister) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
-    try w.writeTag(cbor.Tag.envelope);
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
 
     var ac: u64 = er.axes.len;
     if (er.observed_at != null) ac += 1;
-    try w.writeArrayHeader(1 + ac);
+    try zbor.builder.writeArray(w, 1 + ac);
 
-    try w.writeTag(cbor.Tag.leaf);
-    try w.writeMapHeader(2);
-    try w.writeText("type");
-    try w.writeText("jelly.emotional-register");
-    try w.writeText("format-version");
-    try w.writeUint(protocol.FORMAT_VERSION_V2);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "jelly.emotional-register");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
     for (er.axes) |ax| {
-        try w.writeArrayHeader(2);
-        try w.writeText("axis");
-        try w.writeMapHeader(4);
-        try w.writeText("max");
-        try writeF64(&w, ax.max);
-        try w.writeText("min");
-        try writeF64(&w, ax.min);
-        try w.writeText("name");
-        try w.writeText(ax.name);
-        try w.writeText("value");
-        try writeF64(&w, ax.value);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "axis");
+        try zbor.builder.writeMap(w, 4);
+        try zbor.builder.writeTextString(w, "max");
+        try zbor.builder.writeFloat(w, ax.max);
+        try zbor.builder.writeTextString(w, "min");
+        try zbor.builder.writeFloat(w, ax.min);
+        try zbor.builder.writeTextString(w, "name");
+        try zbor.builder.writeTextString(w, ax.name);
+        try zbor.builder.writeTextString(w, "value");
+        try zbor.builder.writeFloat(w, ax.value);
     }
     if (er.observed_at) |t| {
-        try w.writeArrayHeader(2);
-        try w.writeText("observed-at");
-        try w.writeTag(cbor.Tag.epoch_time);
-        try w.writeUint(@intCast(t));
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "observed-at");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
     }
-    return w.toOwned();
-}
-
-// ============================================================================
-// Float helper — the one documented floats-allowed corner of the protocol.
-// Uses IEEE 754 f64 (CBOR major type 7, additional info 27).
-// ============================================================================
-
-fn writeF64(w: *cbor.Writer, v: f64) !void {
-    // Major type 7, additional info 27 = float64.
-    const tag_byte: u8 = (7 << 5) | 27;
-    try w.buf.append(w.allocator, tag_byte);
-    var buf: [8]u8 = undefined;
-    const bits: u64 = @bitCast(v);
-    std.mem.writeInt(u64, &buf, bits, .big);
-    try w.buf.appendSlice(w.allocator, &buf);
+    return ai.toOwnedSlice();
 }
 
 // ============================================================================

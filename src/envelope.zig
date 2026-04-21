@@ -19,11 +19,16 @@
 //! `docs/decisions/2026-04-20-terminology-rename.md`), which is what
 //! every consumer of this file should use. Renamed user-facing
 //! identifiers: `MalformedAssertion` → `MalformedAttribute`.
+//!
+//! Implementation: CBOR encode/decode is via the `zbor` library. The
+//! dCBOR-canonical map ordering (shorter-first, then lex over encoded
+//! bytes) lives in `src/dcbor.zig` and is orthogonal to zbor.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const cbor = @import("cbor.zig");
+const zbor = @import("zbor");
+const dcbor = @import("dcbor.zig");
 const protocol = @import("protocol.zig");
 const Fingerprint = @import("fingerprint.zig").Fingerprint;
 
@@ -34,97 +39,26 @@ pub const ACT_TYPE: []const u8 = "jelly.act";
 pub const ASSET_TYPE: []const u8 = "jelly.asset";
 pub const SKILL_TYPE: []const u8 = "jelly.skill";
 
-/// One pre-serialized key/value pair. `key` is the text-encoded predicate;
-/// `value` is already dCBOR bytes. Used by the subject-map and assertion-list
-/// emitters for deterministic ordering.
-const Pair = struct { key: []const u8, value: []const u8 };
+const PairList = dcbor.PairList;
 
-fn pairLt(_: void, a: Pair, b: Pair) bool {
-    if (a.key.len != b.key.len) return a.key.len < b.key.len;
-    return std.mem.lessThan(u8, a.key, b.key);
-}
-
-const PairList = struct {
-    pairs: std.ArrayList(Pair),
-    allocator: Allocator,
-
-    fn init(allocator: Allocator) PairList {
-        return .{ .pairs = .empty, .allocator = allocator };
-    }
-
-    fn deinit(self: *PairList) void {
-        for (self.pairs.items) |p| {
-            self.allocator.free(p.key);
-            self.allocator.free(p.value);
-        }
-        self.pairs.deinit(self.allocator);
-    }
-
-    fn addOwned(self: *PairList, key: []const u8, value: []u8) !void {
-        const key_copy = try self.allocator.dupe(u8, key);
-        try self.pairs.append(self.allocator, .{ .key = key_copy, .value = value });
-    }
-
-    fn addText(self: *PairList, key: []const u8, text: []const u8) !void {
-        var w = cbor.Writer.init(self.allocator);
-        errdefer w.deinit();
-        try w.writeText(text);
-        const bytes = try w.toOwned();
-        try self.addOwned(key, bytes);
-    }
-
-    fn addUint(self: *PairList, key: []const u8, v: u64) !void {
-        var w = cbor.Writer.init(self.allocator);
-        errdefer w.deinit();
-        try w.writeUint(v);
-        const bytes = try w.toOwned();
-        try self.addOwned(key, bytes);
-    }
-
-    fn addBytes(self: *PairList, key: []const u8, b: []const u8) !void {
-        var w = cbor.Writer.init(self.allocator);
-        errdefer w.deinit();
-        try w.writeBytes(b);
-        const raw = try w.toOwned();
-        try self.addOwned(key, raw);
-    }
-
-    fn addEpoch(self: *PairList, key: []const u8, epoch: i64) !void {
-        var w = cbor.Writer.init(self.allocator);
-        errdefer w.deinit();
-        try w.writeTag(cbor.Tag.epoch_time);
-        try w.writeUint(@intCast(epoch));
-        const bytes = try w.toOwned();
-        try self.addOwned(key, bytes);
-    }
-
-    /// Consumes `inner_bytes`: the PairList takes ownership.
-    fn addRawOwned(self: *PairList, key: []const u8, inner_bytes: []u8) !void {
-        try self.addOwned(key, inner_bytes);
-    }
-
-    fn sort(self: *PairList) void {
-        std.sort.insertion(Pair, self.pairs.items, {}, pairLt);
-    }
-};
-
-/// Write a canonical dCBOR map from a sorted PairList into `w`.
-fn emitMap(w: *cbor.Writer, pairs: PairList) !void {
-    try w.writeMapHeader(pairs.pairs.items.len);
+/// Write a canonical dCBOR map from a sorted PairList into `writer`.
+fn emitMap(writer: *std.Io.Writer, pairs: PairList) !void {
+    try zbor.builder.writeMap(writer, pairs.pairs.items.len);
     for (pairs.pairs.items) |p| {
-        try w.writeText(p.key);
-        try w.appendSlice(p.value);
+        try zbor.builder.writeTextString(writer, p.key);
+        try writer.writeAll(p.value);
     }
 }
 
 /// Write a subject-only envelope: tag 200( tag 201({subject_map}) ).
 fn emitSubjectOnlyEnvelope(allocator: Allocator, subject_pairs: PairList) ![]u8 {
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
-    try w.writeTag(cbor.Tag.envelope);
-    try w.writeTag(cbor.Tag.leaf);
-    try emitMap(&w, subject_pairs);
-    return w.toOwned();
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try emitMap(w, subject_pairs);
+    return ai.toOwnedSlice();
 }
 
 /// Write an envelope with assertions:
@@ -134,20 +68,21 @@ fn emitEnvelope(allocator: Allocator, subject_pairs: PairList, assertion_pairs: 
         return emitSubjectOnlyEnvelope(allocator, subject_pairs);
     }
 
-    var w = cbor.Writer.init(allocator);
-    errdefer w.deinit();
-    try w.writeTag(cbor.Tag.envelope);
-    try w.writeArrayHeader(1 + assertion_pairs.pairs.items.len);
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(w, 1 + assertion_pairs.pairs.items.len);
 
-    try w.writeTag(cbor.Tag.leaf);
-    try emitMap(&w, subject_pairs);
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try emitMap(w, subject_pairs);
 
     for (assertion_pairs.pairs.items) |p| {
-        try w.writeArrayHeader(2);
-        try w.writeText(p.key);
-        try w.appendSlice(p.value);
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, p.key);
+        try w.writeAll(p.value);
     }
-    return w.toOwned();
+    return ai.toOwnedSlice();
 }
 
 // ============================================================================
@@ -313,12 +248,12 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     // Signatures emitted last; predicate "signed" repeated per algorithm.
     for (db.signatures) |sig| {
         // Object: 2-text-array [alg, value_bytes]. Encode inline into bytes.
-        var w = cbor.Writer.init(allocator);
-        errdefer w.deinit();
-        try w.writeArrayHeader(2);
-        try w.writeText(sig.alg);
-        try w.writeBytes(sig.value);
-        const obj_bytes = try w.toOwned();
+        var ai = std.Io.Writer.Allocating.init(allocator);
+        errdefer ai.deinit();
+        try zbor.builder.writeArray(&ai.writer, 2);
+        try zbor.builder.writeTextString(&ai.writer, sig.alg);
+        try zbor.builder.writeByteString(&ai.writer, sig.value);
+        const obj_bytes = try ai.toOwnedSlice();
         try asserts.addRawOwned("signed", obj_bytes);
     }
 
@@ -328,31 +263,219 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
 }
 
 // ============================================================================
+// Reader helpers — position-based cursor built on top of zbor primitives.
+//
+// zbor's DataItem API is item-based (parse → iterate). Our decoders walk a
+// linear stream (tag → array header → tag → map, etc.) so we keep a cursor
+// and validate/read one item at a time. Each of these helpers returns the
+// decoded value and advances `cursor` past the item — `zbor.advance` handles
+// the "past-this-item" step, and we verify the leading byte for the major
+// type we expect.
+// ============================================================================
+
+const ReaderError = error{
+    Truncated,
+    InvalidMajorType,
+    UnexpectedTag,
+    UnknownTag,
+    UnsupportedItem,
+};
+
+/// Peek the major type at `cursor` without advancing.
+fn peekMajor(bytes: []const u8, cursor: usize) ReaderError!u3 {
+    if (cursor >= bytes.len) return ReaderError.Truncated;
+    return @intCast(bytes[cursor] >> 5);
+}
+
+/// Read one CBOR data item starting at `cursor` into a DataItem, then advance
+/// `cursor` to the next item. Validates the bytes via zbor.
+fn readItem(bytes: []const u8, cursor: *usize) ReaderError!zbor.DataItem {
+    if (cursor.* >= bytes.len) return ReaderError.Truncated;
+    const start = cursor.*;
+    if (zbor.advance(bytes, cursor) == null) return ReaderError.Truncated;
+    const di = zbor.DataItem.new(bytes[start..cursor.*]) catch return ReaderError.UnsupportedItem;
+    return di;
+}
+
+/// Expect a tag at `cursor`; return the tag number and advance cursor to
+/// the start of the tagged item (leaving the tagged item unconsumed).
+fn readTagHead(bytes: []const u8, cursor: *usize) ReaderError!u64 {
+    if (cursor.* >= bytes.len) return ReaderError.Truncated;
+    const b = bytes[cursor.*];
+    const major: u3 = @intCast(b >> 5);
+    if (major != 6) return ReaderError.InvalidMajorType;
+    // Walk past the tag head only — not the tagged item.
+    // Tag head is 1 + len-of-arg bytes, same as map/array header.
+    cursor.* += 1;
+    const info: u5 = @intCast(b & 0x1F);
+    const tag_val: u64 = switch (info) {
+        0...23 => @as(u64, info),
+        24 => blk: {
+            if (cursor.* >= bytes.len) return ReaderError.Truncated;
+            const v = bytes[cursor.*];
+            cursor.* += 1;
+            break :blk @as(u64, v);
+        },
+        25 => blk: {
+            if (cursor.* + 2 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u16, bytes[cursor.*..][0..2], .big);
+            cursor.* += 2;
+            break :blk @as(u64, v);
+        },
+        26 => blk: {
+            if (cursor.* + 4 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u32, bytes[cursor.*..][0..4], .big);
+            cursor.* += 4;
+            break :blk @as(u64, v);
+        },
+        27 => blk: {
+            if (cursor.* + 8 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u64, bytes[cursor.*..][0..8], .big);
+            cursor.* += 8;
+            break :blk v;
+        },
+        else => return ReaderError.UnsupportedItem,
+    };
+    return tag_val;
+}
+
+/// Expect a tag equal to `want`; advance cursor past the tag head.
+fn expectTag(bytes: []const u8, cursor: *usize, want: u64) !void {
+    const got = try readTagHead(bytes, cursor);
+    if (got != want) return ReaderError.UnexpectedTag;
+}
+
+/// Read an array header at `cursor` and return the element count.
+fn readArrayHeader(bytes: []const u8, cursor: *usize) ReaderError!u64 {
+    if (cursor.* >= bytes.len) return ReaderError.Truncated;
+    const start = cursor.*;
+    var after_header = cursor.*;
+    // We need the header length: advance a fresh cursor past an empty-array
+    // stand-in to compute head size. Simpler: decode header directly.
+    const b = bytes[start];
+    const major: u3 = @intCast(b >> 5);
+    if (major != 4) return ReaderError.InvalidMajorType;
+    after_header += 1;
+    const info: u5 = @intCast(b & 0x1F);
+    const arg: u64 = switch (info) {
+        0...23 => @as(u64, info),
+        24 => blk: {
+            if (after_header >= bytes.len) return ReaderError.Truncated;
+            const v = bytes[after_header];
+            after_header += 1;
+            break :blk @as(u64, v);
+        },
+        25 => blk: {
+            if (after_header + 2 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u16, bytes[after_header..][0..2], .big);
+            after_header += 2;
+            break :blk @as(u64, v);
+        },
+        26 => blk: {
+            if (after_header + 4 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u32, bytes[after_header..][0..4], .big);
+            after_header += 4;
+            break :blk @as(u64, v);
+        },
+        27 => blk: {
+            if (after_header + 8 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u64, bytes[after_header..][0..8], .big);
+            after_header += 8;
+            break :blk v;
+        },
+        else => return ReaderError.UnsupportedItem,
+    };
+    cursor.* = after_header;
+    return arg;
+}
+
+/// Read a map header at `cursor` and return the pair count.
+fn readMapHeader(bytes: []const u8, cursor: *usize) ReaderError!u64 {
+    if (cursor.* >= bytes.len) return ReaderError.Truncated;
+    const start = cursor.*;
+    const b = bytes[start];
+    const major: u3 = @intCast(b >> 5);
+    if (major != 5) return ReaderError.InvalidMajorType;
+    // Same decode as array; hijack readArrayHeader's logic by temporarily
+    // treating it as an array. Inline for clarity.
+    var after_header = start + 1;
+    const info: u5 = @intCast(b & 0x1F);
+    const arg: u64 = switch (info) {
+        0...23 => @as(u64, info),
+        24 => blk: {
+            if (after_header >= bytes.len) return ReaderError.Truncated;
+            const v = bytes[after_header];
+            after_header += 1;
+            break :blk @as(u64, v);
+        },
+        25 => blk: {
+            if (after_header + 2 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u16, bytes[after_header..][0..2], .big);
+            after_header += 2;
+            break :blk @as(u64, v);
+        },
+        26 => blk: {
+            if (after_header + 4 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u32, bytes[after_header..][0..4], .big);
+            after_header += 4;
+            break :blk @as(u64, v);
+        },
+        27 => blk: {
+            if (after_header + 8 > bytes.len) return ReaderError.Truncated;
+            const v = std.mem.readInt(u64, bytes[after_header..][0..8], .big);
+            after_header += 8;
+            break :blk v;
+        },
+        else => return ReaderError.UnsupportedItem,
+    };
+    cursor.* = after_header;
+    return arg;
+}
+
+/// Read a text string and advance cursor past it. Returns a borrowed slice.
+fn readText(bytes: []const u8, cursor: *usize) ReaderError![]const u8 {
+    const di = try readItem(bytes, cursor);
+    if (di.getType() != .TextString) return ReaderError.InvalidMajorType;
+    return di.string() orelse ReaderError.UnsupportedItem;
+}
+
+/// Read a byte string and advance cursor past it. Returns a borrowed slice.
+fn readBytes(bytes: []const u8, cursor: *usize) ReaderError![]const u8 {
+    const di = try readItem(bytes, cursor);
+    if (di.getType() != .ByteString) return ReaderError.InvalidMajorType;
+    return di.string() orelse ReaderError.UnsupportedItem;
+}
+
+/// Read an unsigned integer and advance cursor past it.
+fn readUint(bytes: []const u8, cursor: *usize) ReaderError!u64 {
+    const di = try readItem(bytes, cursor);
+    if (di.getType() != .Int) return ReaderError.InvalidMajorType;
+    const v = di.int() orelse return ReaderError.UnsupportedItem;
+    if (v < 0) return ReaderError.InvalidMajorType;
+    return @intCast(v);
+}
+
+// ============================================================================
 // Decoder (subject only — sufficient for verify/show v0)
 // ============================================================================
 
 /// Decode subject-only round-trip companion for `encodeDreamBall`. Reads the
 /// subject map whether or not assertions follow.
 pub fn decodeDreamBallSubject(bytes: []const u8) !protocol.DreamBall {
-    var r = cbor.Reader.init(bytes);
-    try r.expectTag(cbor.Tag.envelope);
+    var cursor: usize = 0;
+    try expectTag(bytes, &cursor, dcbor.Tag.envelope);
 
-    // Peek the next head — if it's tag 201 we have a subject-only envelope;
-    // if it's an array, the first element is the tag-201 subject leaf.
-    const save_cursor = r.pos;
-    const next_byte = if (r.pos < r.bytes.len) r.bytes[r.pos] else return error.Truncated;
-    const next_major: u3 = @intCast(next_byte >> 5);
-
+    // Peek — if major 4 we have an array of [subject, assertions...];
+    // otherwise a subject-only envelope with tag 201 next.
+    const next_major = try peekMajor(bytes, cursor);
     if (next_major == 4) {
-        // Array: read header, then the first element is the leaf.
-        _ = try r.readHead(); // array header; length not needed for subject read
-        try r.expectTag(cbor.Tag.leaf);
+        _ = try readArrayHeader(bytes, &cursor);
+        try expectTag(bytes, &cursor, dcbor.Tag.leaf);
     } else {
-        r.pos = save_cursor;
-        try r.expectTag(cbor.Tag.leaf);
+        try expectTag(bytes, &cursor, dcbor.Tag.leaf);
     }
 
-    const map_len = try r.readMapHeader();
+    const map_len = try readMapHeader(bytes, &cursor);
 
     var out = protocol.DreamBall{
         .stage = .seed,
@@ -362,9 +485,9 @@ pub fn decodeDreamBallSubject(bytes: []const u8) !protocol.DreamBall {
 
     var i: u64 = 0;
     while (i < map_len) : (i += 1) {
-        const key = try r.readText();
+        const key = try readText(bytes, &cursor);
         if (std.mem.eql(u8, key, "type")) {
-            const t = try r.readText();
+            const t = try readText(bytes, &cursor);
             if (std.mem.eql(u8, t, DREAMBALL_TYPE)) {
                 // untyped — pass
             } else if (protocol.DreamBallType.fromWireString(t)) |dt| {
@@ -373,29 +496,29 @@ pub fn decodeDreamBallSubject(bytes: []const u8) !protocol.DreamBall {
                 return error.WrongType;
             }
         } else if (std.mem.eql(u8, key, "format-version")) {
-            const v = try r.readUint();
+            const v = try readUint(bytes, &cursor);
             if (v != protocol.FORMAT_VERSION and
                 v != protocol.FORMAT_VERSION_V2 and
                 v != protocol.FORMAT_VERSION_V3) return error.UnsupportedVersion;
         } else if (std.mem.eql(u8, key, "stage")) {
-            const s = try r.readText();
+            const s = try readText(bytes, &cursor);
             out.stage = protocol.Stage.fromString(s) orelse return error.BadStage;
         } else if (std.mem.eql(u8, key, "identity")) {
-            const b = try r.readBytes();
+            const b = try readBytes(bytes, &cursor);
             if (b.len != 32) return error.BadIdentity;
             @memcpy(&out.identity, b);
         } else if (std.mem.eql(u8, key, "identity-pq")) {
-            const b = try r.readBytes();
+            const b = try readBytes(bytes, &cursor);
             if (b.len != protocol.ML_DSA_87_PUBLIC_KEY_LEN) return error.BadIdentityPq;
             var pq: [protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = undefined;
             @memcpy(&pq, b);
             out.identity_pq = pq;
         } else if (std.mem.eql(u8, key, "genesis-hash")) {
-            const b = try r.readBytes();
+            const b = try readBytes(bytes, &cursor);
             if (b.len != 32) return error.BadGenesis;
             @memcpy(&out.genesis_hash, b);
         } else if (std.mem.eql(u8, key, "revision")) {
-            const v = try r.readUint();
+            const v = try readUint(bytes, &cursor);
             out.revision = @intCast(v);
         } else {
             return error.UnknownSubjectField;
@@ -443,88 +566,25 @@ pub const StripResult = struct {
     }
 };
 
-/// Compute the byte length of the CBOR item starting at `bytes[start]`,
-/// including the head and all nested content.
-fn itemLen(bytes: []const u8, start: usize) !usize {
-    if (start >= bytes.len) return error.Truncated;
-    const b = bytes[start];
-    const major: u3 = @intCast(b >> 5);
-    const info: u5 = @intCast(b & 0x1F);
-
-    // Head length by info value.
-    const arg_len: usize = switch (info) {
-        0...23 => 0,
-        24 => 1,
-        25 => 2,
-        26 => 4,
-        27 => 8,
-        else => return error.UnsupportedType,
-    };
-    if (start + 1 + arg_len > bytes.len) return error.Truncated;
-
-    // Decode the arg.
-    const arg: u64 = switch (info) {
-        0...23 => @as(u64, info),
-        24 => @as(u64, bytes[start + 1]),
-        25 => std.mem.readInt(u16, bytes[start + 1 ..][0..2], .big),
-        26 => std.mem.readInt(u32, bytes[start + 1 ..][0..4], .big),
-        27 => std.mem.readInt(u64, bytes[start + 1 ..][0..8], .big),
-        else => unreachable,
-    };
-
-    const head_end = start + 1 + arg_len;
-
-    return switch (major) {
-        0, 1, 7 => head_end - start, // uint / negint / simple
-        2, 3 => blk: { // byte string / text string
-            const len: usize = @intCast(arg);
-            if (head_end + len > bytes.len) return error.Truncated;
-            break :blk (head_end - start) + len;
-        },
-        4 => blk: { // array
-            var pos = head_end;
-            var i: u64 = 0;
-            while (i < arg) : (i += 1) {
-                const sub = try itemLen(bytes, pos);
-                pos += sub;
-            }
-            break :blk pos - start;
-        },
-        5 => blk: { // map
-            var pos = head_end;
-            var i: u64 = 0;
-            while (i < arg) : (i += 1) {
-                const k = try itemLen(bytes, pos);
-                pos += k;
-                const v = try itemLen(bytes, pos);
-                pos += v;
-            }
-            break :blk pos - start;
-        },
-        6 => blk: { // tag — wraps one further item
-            const inner = try itemLen(bytes, head_end);
-            break :blk (head_end - start) + inner;
-        },
-    };
-}
-
 pub const StripError = error{
     Truncated,
     UnsupportedType,
     NotEnvelope,
     MalformedAttribute,
     OutOfMemory,
+    // zbor.builder.* emit `error.WriteFailed` through `std.Io.Writer`.
+    WriteFailed,
 };
 
 pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripError!StripResult {
-    var r = cbor.Reader.init(bytes);
-    r.expectTag(cbor.Tag.envelope) catch return StripError.NotEnvelope;
-    const body_start = r.pos;
+    var cursor: usize = 0;
+    expectTag(bytes, &cursor, dcbor.Tag.envelope) catch return StripError.NotEnvelope;
+    const body_start = cursor;
 
-    const head = r.readHead() catch return StripError.Truncated;
-
-    // Subject-only envelope: there are no assertions to strip. Return a copy.
-    if (head.major != 4) {
+    // If the next item is not an array, this is a subject-only envelope —
+    // nothing to strip. Return a copy.
+    const next_major = peekMajor(bytes, cursor) catch return StripError.Truncated;
+    if (next_major != 4) {
         const copy = try allocator.dupe(u8, bytes);
         return .{
             .unsigned = copy,
@@ -533,13 +593,13 @@ pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripErr
         };
     }
 
-    const element_count: u64 = head.arg;
+    const element_count = readArrayHeader(bytes, &cursor) catch return StripError.Truncated;
     if (element_count == 0) return StripError.MalformedAttribute;
 
-    // First element is the tag-201 subject leaf. Skip past it.
-    const subject_start = r.pos;
-    const subject_len = itemLen(bytes, subject_start) catch return StripError.Truncated;
-    r.pos = subject_start + subject_len;
+    // First element is the tag-201 subject leaf. Compute its span.
+    const subject_start = cursor;
+    const subject_len = dcbor.itemLen(bytes, subject_start) catch return StripError.Truncated;
+    cursor = subject_start + subject_len;
 
     var kept_ranges: std.ArrayList([2]usize) = .empty; // [start, end)
     defer kept_ranges.deinit(allocator);
@@ -550,55 +610,54 @@ pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripErr
 
     var i: u64 = 1;
     while (i < element_count) : (i += 1) {
-        const elem_start = r.pos;
-        const elem_len = itemLen(bytes, elem_start) catch return StripError.Truncated;
+        const elem_start = cursor;
+        const elem_len = dcbor.itemLen(bytes, elem_start) catch return StripError.Truncated;
         const elem_end = elem_start + elem_len;
 
         // Expect the element to be a 2-array [predicate_text, object].
-        var ar = cbor.Reader.init(bytes[elem_start..elem_end]);
-        const h = ar.readHead() catch return StripError.MalformedAttribute;
-        if (h.major != 4 or h.arg != 2) return StripError.MalformedAttribute;
+        var inner_cursor: usize = elem_start;
+        const h = readArrayHeader(bytes, &inner_cursor) catch return StripError.MalformedAttribute;
+        if (h != 2) return StripError.MalformedAttribute;
 
-        const pred_start_rel = ar.pos;
-        const pred = ar.readText() catch return StripError.MalformedAttribute;
-        _ = pred_start_rel;
+        const pred = readText(bytes, &inner_cursor) catch return StripError.MalformedAttribute;
 
         if (std.mem.eql(u8, pred, "signed")) {
             // Object shape: [alg_text, value_bytes]. Parse to capture.
-            const obj_head = ar.readHead() catch return StripError.MalformedAttribute;
-            if (obj_head.major != 4 or obj_head.arg != 2) return StripError.MalformedAttribute;
-            const alg = ar.readText() catch return StripError.MalformedAttribute;
-            const val = ar.readBytes() catch return StripError.MalformedAttribute;
+            const obj_arr_len = readArrayHeader(bytes, &inner_cursor) catch return StripError.MalformedAttribute;
+            if (obj_arr_len != 2) return StripError.MalformedAttribute;
+            const alg = readText(bytes, &inner_cursor) catch return StripError.MalformedAttribute;
+            const val = readBytes(bytes, &inner_cursor) catch return StripError.MalformedAttribute;
             try captured.append(allocator, .{ .alg = alg, .value = val });
             // Do NOT add to kept_ranges — this assertion is stripped.
         } else {
             try kept_ranges.append(allocator, .{ elem_start, elem_end });
         }
 
-        r.pos = elem_end;
+        cursor = elem_end;
     }
 
     // Rebuild the envelope.
     const new_count = kept_ranges.items.len;
-    var out = cbor.Writer.init(allocator);
-    errdefer out.deinit();
-    try out.writeTag(cbor.Tag.envelope);
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
     if (new_count == 1) {
         // Only the subject — emit as subject-only (no array wrapper) so the
         // canonical form matches what the encoder would have produced for a
         // DreamBall with signatures=[] and no other assertions.
         const r_subj = kept_ranges.items[0];
-        try out.appendSlice(bytes[r_subj[0]..r_subj[1]]);
+        try w.writeAll(bytes[r_subj[0]..r_subj[1]]);
     } else {
-        try out.writeArrayHeader(new_count);
+        try zbor.builder.writeArray(w, new_count);
         for (kept_ranges.items) |rr| {
-            try out.appendSlice(bytes[rr[0]..rr[1]]);
+            try w.writeAll(bytes[rr[0]..rr[1]]);
         }
     }
     // silence unused warning on body_start
     _ = body_start;
 
-    const unsigned = try out.toOwned();
+    const unsigned = try ai.toOwnedSlice();
     const sigs = try captured.toOwnedSlice(allocator);
     return .{ .unsigned = unsigned, .signatures = sigs, .allocator = allocator };
 }
@@ -621,47 +680,42 @@ pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripErr
 // decode for those lands next.
 // ============================================================================
 
-const DecodeContext = struct {
-    arena: Allocator,
-    bytes: []const u8,
-};
-
 /// Walk a subject's CBOR map, decoding known keys into a DreamBall's
 /// subject fields. Sets `out.dreamball_type` on typed subjects.
-fn readSubjectMap(r: *cbor.Reader, out: *protocol.DreamBall) !void {
-    const map_len = try r.readMapHeader();
+fn readSubjectMap(bytes: []const u8, cursor: *usize, out: *protocol.DreamBall) !void {
+    const map_len = try readMapHeader(bytes, cursor);
     var i: u64 = 0;
     while (i < map_len) : (i += 1) {
-        const key = try r.readText();
+        const key = try readText(bytes, cursor);
         if (std.mem.eql(u8, key, "type")) {
-            const t = try r.readText();
+            const t = try readText(bytes, cursor);
             if (!std.mem.eql(u8, t, DREAMBALL_TYPE)) {
                 out.dreamball_type = protocol.DreamBallType.fromWireString(t) orelse return error.UnknownType;
             }
         } else if (std.mem.eql(u8, key, "format-version")) {
-            const v = try r.readUint();
+            const v = try readUint(bytes, cursor);
             if (v != protocol.FORMAT_VERSION and
                 v != protocol.FORMAT_VERSION_V2 and
                 v != protocol.FORMAT_VERSION_V3) return error.UnsupportedVersion;
         } else if (std.mem.eql(u8, key, "stage")) {
-            const s = try r.readText();
+            const s = try readText(bytes, cursor);
             out.stage = protocol.Stage.fromString(s) orelse return error.BadStage;
         } else if (std.mem.eql(u8, key, "identity")) {
-            const b = try r.readBytes();
+            const b = try readBytes(bytes, cursor);
             if (b.len != 32) return error.BadIdentity;
             @memcpy(&out.identity, b);
         } else if (std.mem.eql(u8, key, "identity-pq")) {
-            const b = try r.readBytes();
+            const b = try readBytes(bytes, cursor);
             if (b.len != protocol.ML_DSA_87_PUBLIC_KEY_LEN) return error.BadIdentityPq;
             var pq: [protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = undefined;
             @memcpy(&pq, b);
             out.identity_pq = pq;
         } else if (std.mem.eql(u8, key, "genesis-hash")) {
-            const b = try r.readBytes();
+            const b = try readBytes(bytes, cursor);
             if (b.len != 32) return error.BadGenesis;
             @memcpy(&out.genesis_hash, b);
         } else if (std.mem.eql(u8, key, "revision")) {
-            out.revision = @intCast(try r.readUint());
+            out.revision = @intCast(try readUint(bytes, cursor));
         } else {
             // Unknown subject keys are rejected — they are load-bearing.
             return error.UnknownSubjectField;
@@ -669,39 +723,41 @@ fn readSubjectMap(r: *cbor.Reader, out: *protocol.DreamBall) !void {
     }
 }
 
-fn decodeAssetFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Asset {
-    var r = cbor.Reader.init(env_bytes);
-    try r.expectTag(cbor.Tag.envelope);
-
-    // Envelope may be subject-only (tag 201) or array [subject, assertions...]
-    const save = r.pos;
-    const head_byte = env_bytes[r.pos];
-    const major: u3 = @intCast(head_byte >> 5);
+/// Consume the envelope/array/leaf prefix of an inner envelope (Asset, Skill,
+/// Look, Feel, Act, or the top-level DreamBall). On return, `cursor` points
+/// at the subject map header and the number of *following* assertion
+/// elements is returned. For subject-only envelopes the count is 0.
+fn enterEnvelope(bytes: []const u8, cursor: *usize) !u64 {
+    try expectTag(bytes, cursor, dcbor.Tag.envelope);
+    const next_major = try peekMajor(bytes, cursor.*);
     var assertion_count: u64 = 0;
-    if (major == 4) {
-        const head = try r.readHead();
-        assertion_count = head.arg - 1;
-    } else {
-        r.pos = save;
+    if (next_major == 4) {
+        const total = try readArrayHeader(bytes, cursor);
+        assertion_count = total - 1;
     }
+    try expectTag(bytes, cursor, dcbor.Tag.leaf);
+    return assertion_count;
+}
 
-    try r.expectTag(cbor.Tag.leaf);
+fn decodeAssetFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Asset {
+    var cursor: usize = 0;
+    const assertion_count = try enterEnvelope(env_bytes, &cursor);
 
     var media_type: []const u8 = "";
     var hash: [32]u8 = [_]u8{0} ** 32;
-    const subj_len = try r.readMapHeader();
+    const subj_len = try readMapHeader(env_bytes, &cursor);
     var i: u64 = 0;
     while (i < subj_len) : (i += 1) {
-        const key = try r.readText();
+        const key = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, key, "type")) {
-            _ = try r.readText();
+            _ = try readText(env_bytes, &cursor);
         } else if (std.mem.eql(u8, key, "format-version")) {
-            _ = try r.readUint();
+            _ = try readUint(env_bytes, &cursor);
         } else if (std.mem.eql(u8, key, "media-type")) {
-            const v = try r.readText();
+            const v = try readText(env_bytes, &cursor);
             media_type = try arena.dupe(u8, v);
         } else if (std.mem.eql(u8, key, "hash")) {
-            const v = try r.readBytes();
+            const v = try readBytes(env_bytes, &cursor);
             if (v.len != 32) return error.BadHash;
             @memcpy(&hash, v);
         } else return error.UnknownAssetField;
@@ -714,19 +770,19 @@ fn decodeAssetFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.As
 
     var a_i: u64 = 0;
     while (a_i < assertion_count) : (a_i += 1) {
-        const h = try r.readHead();
-        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
-        const pred = try r.readText();
+        const h = try readArrayHeader(env_bytes, &cursor);
+        if (h != 2) return error.BadAssertion;
+        const pred = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, pred, "url")) {
-            const v = try r.readText();
+            const v = try readText(env_bytes, &cursor);
             try urls.append(arena, try arena.dupe(u8, v));
         } else if (std.mem.eql(u8, pred, "embedded")) {
-            const v = try r.readBytes();
+            const v = try readBytes(env_bytes, &cursor);
             embedded = try arena.dupe(u8, v);
         } else if (std.mem.eql(u8, pred, "size")) {
-            size = try r.readUint();
+            size = try readUint(env_bytes, &cursor);
         } else if (std.mem.eql(u8, pred, "note")) {
-            const v = try r.readText();
+            const v = try readText(env_bytes, &cursor);
             note = try arena.dupe(u8, v);
         } else return error.UnknownAssetAssertion;
     }
@@ -742,33 +798,20 @@ fn decodeAssetFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.As
 }
 
 fn decodeSkillFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Skill {
-    var r = cbor.Reader.init(env_bytes);
-    try r.expectTag(cbor.Tag.envelope);
-
-    const save = r.pos;
-    const head_byte = env_bytes[r.pos];
-    const major: u3 = @intCast(head_byte >> 5);
-    var assertion_count: u64 = 0;
-    if (major == 4) {
-        const head = try r.readHead();
-        assertion_count = head.arg - 1;
-    } else {
-        r.pos = save;
-    }
-
-    try r.expectTag(cbor.Tag.leaf);
+    var cursor: usize = 0;
+    const assertion_count = try enterEnvelope(env_bytes, &cursor);
 
     var name: []const u8 = "";
-    const subj_len = try r.readMapHeader();
+    const subj_len = try readMapHeader(env_bytes, &cursor);
     var i: u64 = 0;
     while (i < subj_len) : (i += 1) {
-        const key = try r.readText();
+        const key = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, key, "type")) {
-            _ = try r.readText();
+            _ = try readText(env_bytes, &cursor);
         } else if (std.mem.eql(u8, key, "format-version")) {
-            _ = try r.readUint();
+            _ = try readUint(env_bytes, &cursor);
         } else if (std.mem.eql(u8, key, "name")) {
-            name = try arena.dupe(u8, try r.readText());
+            name = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else return error.UnknownSkillField;
     }
 
@@ -780,22 +823,22 @@ fn decodeSkillFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Sk
 
     var a_i: u64 = 0;
     while (a_i < assertion_count) : (a_i += 1) {
-        const h = try r.readHead();
-        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
-        const pred = try r.readText();
+        const h = try readArrayHeader(env_bytes, &cursor);
+        if (h != 2) return error.BadAssertion;
+        const pred = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, pred, "trigger")) {
-            trigger = try arena.dupe(u8, try r.readText());
+            trigger = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "body")) {
-            body = try arena.dupe(u8, try r.readText());
+            body = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "asset")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             asset = try decodeAssetFromEnvelope(arena, sub);
         } else if (std.mem.eql(u8, pred, "requires")) {
-            try requires.append(arena, try arena.dupe(u8, try r.readText()));
+            try requires.append(arena, try arena.dupe(u8, try readText(env_bytes, &cursor)));
         } else if (std.mem.eql(u8, pred, "note")) {
-            note = try arena.dupe(u8, try r.readText());
+            note = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else return error.UnknownSkillAssertion;
     }
 
@@ -810,29 +853,17 @@ fn decodeSkillFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Sk
 }
 
 fn decodeLookFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Look {
-    var r = cbor.Reader.init(env_bytes);
-    try r.expectTag(cbor.Tag.envelope);
+    var cursor: usize = 0;
+    const assertion_count = try enterEnvelope(env_bytes, &cursor);
 
-    const save = r.pos;
-    const head_byte = env_bytes[r.pos];
-    const major: u3 = @intCast(head_byte >> 5);
-    var assertion_count: u64 = 0;
-    if (major == 4) {
-        const head = try r.readHead();
-        assertion_count = head.arg - 1;
-    } else {
-        r.pos = save;
-    }
-
-    try r.expectTag(cbor.Tag.leaf);
-    const subj_len = try r.readMapHeader();
+    const subj_len = try readMapHeader(env_bytes, &cursor);
     var i: u64 = 0;
     while (i < subj_len) : (i += 1) {
-        const key = try r.readText();
+        const key = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, key, "type")) {
-            _ = try r.readText();
+            _ = try readText(env_bytes, &cursor);
         } else if (std.mem.eql(u8, key, "format-version")) {
-            _ = try r.readUint();
+            _ = try readUint(env_bytes, &cursor);
         } else return error.UnknownLookField;
     }
 
@@ -843,23 +874,23 @@ fn decodeLookFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Loo
 
     var a_i: u64 = 0;
     while (a_i < assertion_count) : (a_i += 1) {
-        const h = try r.readHead();
-        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
-        const pred = try r.readText();
+        const h = try readArrayHeader(env_bytes, &cursor);
+        if (h != 2) return error.BadAssertion;
+        const pred = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, pred, "asset")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             try assets.append(arena, try decodeAssetFromEnvelope(arena, sub));
         } else if (std.mem.eql(u8, pred, "preview")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             preview = try decodeAssetFromEnvelope(arena, sub);
         } else if (std.mem.eql(u8, pred, "background")) {
-            background = try arena.dupe(u8, try r.readText());
+            background = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "note")) {
-            note = try arena.dupe(u8, try r.readText());
+            note = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else return error.UnknownLookAssertion;
     }
 
@@ -872,29 +903,17 @@ fn decodeLookFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Loo
 }
 
 fn decodeFeelFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Feel {
-    var r = cbor.Reader.init(env_bytes);
-    try r.expectTag(cbor.Tag.envelope);
+    var cursor: usize = 0;
+    const assertion_count = try enterEnvelope(env_bytes, &cursor);
 
-    const save = r.pos;
-    const head_byte = env_bytes[r.pos];
-    const major: u3 = @intCast(head_byte >> 5);
-    var assertion_count: u64 = 0;
-    if (major == 4) {
-        const head = try r.readHead();
-        assertion_count = head.arg - 1;
-    } else {
-        r.pos = save;
-    }
-
-    try r.expectTag(cbor.Tag.leaf);
-    const subj_len = try r.readMapHeader();
+    const subj_len = try readMapHeader(env_bytes, &cursor);
     var i: u64 = 0;
     while (i < subj_len) : (i += 1) {
-        const key = try r.readText();
+        const key = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, key, "type")) {
-            _ = try r.readText();
+            _ = try readText(env_bytes, &cursor);
         } else if (std.mem.eql(u8, key, "format-version")) {
-            _ = try r.readUint();
+            _ = try readUint(env_bytes, &cursor);
         } else return error.UnknownFeelField;
     }
 
@@ -906,19 +925,19 @@ fn decodeFeelFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Fee
 
     var a_i: u64 = 0;
     while (a_i < assertion_count) : (a_i += 1) {
-        const h = try r.readHead();
-        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
-        const pred = try r.readText();
+        const h = try readArrayHeader(env_bytes, &cursor);
+        if (h != 2) return error.BadAssertion;
+        const pred = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, pred, "personality")) {
-            personality = try arena.dupe(u8, try r.readText());
+            personality = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "voice")) {
-            voice = try arena.dupe(u8, try r.readText());
+            voice = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "value")) {
-            try values.append(arena, try arena.dupe(u8, try r.readText()));
+            try values.append(arena, try arena.dupe(u8, try readText(env_bytes, &cursor)));
         } else if (std.mem.eql(u8, pred, "tempo")) {
-            tempo = try arena.dupe(u8, try r.readText());
+            tempo = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "note")) {
-            note = try arena.dupe(u8, try r.readText());
+            note = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else return error.UnknownFeelAssertion;
     }
 
@@ -932,29 +951,17 @@ fn decodeFeelFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Fee
 }
 
 fn decodeActFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Act {
-    var r = cbor.Reader.init(env_bytes);
-    try r.expectTag(cbor.Tag.envelope);
+    var cursor: usize = 0;
+    const assertion_count = try enterEnvelope(env_bytes, &cursor);
 
-    const save = r.pos;
-    const head_byte = env_bytes[r.pos];
-    const major: u3 = @intCast(head_byte >> 5);
-    var assertion_count: u64 = 0;
-    if (major == 4) {
-        const head = try r.readHead();
-        assertion_count = head.arg - 1;
-    } else {
-        r.pos = save;
-    }
-
-    try r.expectTag(cbor.Tag.leaf);
-    const subj_len = try r.readMapHeader();
+    const subj_len = try readMapHeader(env_bytes, &cursor);
     var i: u64 = 0;
     while (i < subj_len) : (i += 1) {
-        const key = try r.readText();
+        const key = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, key, "type")) {
-            _ = try r.readText();
+            _ = try readText(env_bytes, &cursor);
         } else if (std.mem.eql(u8, key, "format-version")) {
-            _ = try r.readUint();
+            _ = try readUint(env_bytes, &cursor);
         } else return error.UnknownActField;
     }
 
@@ -967,27 +974,27 @@ fn decodeActFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Act 
 
     var a_i: u64 = 0;
     while (a_i < assertion_count) : (a_i += 1) {
-        const h = try r.readHead();
-        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
-        const pred = try r.readText();
+        const h = try readArrayHeader(env_bytes, &cursor);
+        if (h != 2) return error.BadAssertion;
+        const pred = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, pred, "model")) {
-            model = try arena.dupe(u8, try r.readText());
+            model = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "system-prompt")) {
-            system_prompt = try arena.dupe(u8, try r.readText());
+            system_prompt = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "skill")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             try skills.append(arena, try decodeSkillFromEnvelope(arena, sub));
         } else if (std.mem.eql(u8, pred, "script")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             try scripts.append(arena, try decodeAssetFromEnvelope(arena, sub));
         } else if (std.mem.eql(u8, pred, "tool")) {
-            try tools.append(arena, try arena.dupe(u8, try r.readText()));
+            try tools.append(arena, try arena.dupe(u8, try readText(env_bytes, &cursor)));
         } else if (std.mem.eql(u8, pred, "note")) {
-            note = try arena.dupe(u8, try r.readText());
+            note = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else return error.UnknownActAssertion;
     }
 
@@ -1004,28 +1011,15 @@ fn decodeActFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Act 
 /// Full DreamBall decoder — subject + every assertion we know how to
 /// interpret. Unknown assertions are rejected (fail-loud).
 pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamBall {
-    var r = cbor.Reader.init(env_bytes);
-    try r.expectTag(cbor.Tag.envelope);
-
-    const save = r.pos;
-    const head_byte = env_bytes[r.pos];
-    const major: u3 = @intCast(head_byte >> 5);
-    var assertion_count: u64 = 0;
-    if (major == 4) {
-        const head = try r.readHead();
-        assertion_count = head.arg - 1;
-    } else {
-        r.pos = save;
-    }
-
-    try r.expectTag(cbor.Tag.leaf);
+    var cursor: usize = 0;
+    const assertion_count = try enterEnvelope(env_bytes, &cursor);
 
     var out = protocol.DreamBall{
         .stage = .seed,
         .identity = [_]u8{0} ** 32,
         .genesis_hash = [_]u8{0} ** 32,
     };
-    try readSubjectMap(&r, &out);
+    try readSubjectMap(env_bytes, &cursor, &out);
 
     var name: ?[]const u8 = null;
     var created: ?i64 = null;
@@ -1038,66 +1032,66 @@ pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamB
 
     var a_i: u64 = 0;
     while (a_i < assertion_count) : (a_i += 1) {
-        const h = try r.readHead();
-        if (h.major != 4 or h.arg != 2) return error.BadAssertion;
-        const pred = try r.readText();
+        const h = try readArrayHeader(env_bytes, &cursor);
+        if (h != 2) return error.BadAssertion;
+        const pred = try readText(env_bytes, &cursor);
         if (std.mem.eql(u8, pred, "name")) {
-            name = try arena.dupe(u8, try r.readText());
+            name = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "note")) {
-            note = try arena.dupe(u8, try r.readText());
+            note = try arena.dupe(u8, try readText(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "created")) {
-            try r.expectTag(cbor.Tag.epoch_time);
-            created = @intCast(try r.readUint());
+            try expectTag(env_bytes, &cursor, dcbor.Tag.epoch_time);
+            created = @intCast(try readUint(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "updated")) {
-            try r.expectTag(cbor.Tag.epoch_time);
-            updated = @intCast(try r.readUint());
+            try expectTag(env_bytes, &cursor, dcbor.Tag.epoch_time);
+            updated = @intCast(try readUint(env_bytes, &cursor));
         } else if (std.mem.eql(u8, pred, "contains")) {
-            const b = try r.readBytes();
+            const b = try readBytes(env_bytes, &cursor);
             if (b.len != 32) return error.BadFingerprint;
             var fp: Fingerprint = undefined;
             @memcpy(&fp.bytes, b);
             try contains.append(arena, fp);
         } else if (std.mem.eql(u8, pred, "derived-from")) {
-            const b = try r.readBytes();
+            const b = try readBytes(env_bytes, &cursor);
             if (b.len != 32) return error.BadFingerprint;
             var fp: Fingerprint = undefined;
             @memcpy(&fp.bytes, b);
             try derived_from.append(arena, fp);
         } else if (std.mem.eql(u8, pred, "guild")) {
-            const b = try r.readBytes();
+            const b = try readBytes(env_bytes, &cursor);
             if (b.len != 32) return error.BadFingerprint;
             var fp: Fingerprint = undefined;
             @memcpy(&fp.bytes, b);
             try guilds.append(arena, fp);
         } else if (std.mem.eql(u8, pred, "signed")) {
-            const sh = try r.readHead();
-            if (sh.major != 4 or sh.arg != 2) return error.BadAssertion;
-            const alg = try r.readText();
-            const val = try r.readBytes();
+            const sh = try readArrayHeader(env_bytes, &cursor);
+            if (sh != 2) return error.BadAssertion;
+            const alg = try readText(env_bytes, &cursor);
+            const val = try readBytes(env_bytes, &cursor);
             try sigs.append(arena, .{
                 .alg = try arena.dupe(u8, alg),
                 .value = try arena.dupe(u8, val),
             });
         } else if (std.mem.eql(u8, pred, "look")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             out.look = try decodeLookFromEnvelope(arena, sub);
         } else if (std.mem.eql(u8, pred, "feel")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             out.feel = try decodeFeelFromEnvelope(arena, sub);
         } else if (std.mem.eql(u8, pred, "act")) {
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            const sub = env_bytes[r.pos .. r.pos + len];
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
             out.act = try decodeActFromEnvelope(arena, sub);
         } else {
             // Skip unknown assertions by walking past the object — keeps us
             // forward-compatible with v2.x envelopes that add new slots.
-            const len = itemLen(env_bytes, r.pos) catch return error.Truncated;
-            r.pos += len;
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            cursor += len;
         }
     }
 

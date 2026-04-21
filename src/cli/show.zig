@@ -5,12 +5,12 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const dreamball = @import("dreamball");
+const zbor = @import("zbor");
 const io = @import("../io.zig");
 const args_mod = @import("args.zig");
 const helpers = @import("helpers.zig");
 const identity_envelope = dreamball.identity_envelope;
 const base58 = dreamball.base58;
-const cbor = dreamball.cbor;
 
 const SPECS = [_]args_mod.Spec{
     .{ .long = "format" },
@@ -94,8 +94,10 @@ fn renderIdentity(gpa: Allocator, identity: identity_envelope.Identity, w: *std.
         while (i < limit) : (i += 1) {
             if (i > 0) try w.print(", ", .{});
             const ua = identity.unknown_assertions[i];
-            var r = cbor.Reader.init(ua.predicate_cbor);
-            const pred_str = r.readText() catch "<non-text>";
+            const pred_str = blk: {
+                const di = zbor.DataItem.new(ua.predicate_cbor) catch break :blk "<non-cbor>";
+                break :blk di.string() orelse "<non-text>";
+            };
             try w.print("{s}", .{pred_str});
         }
         if (ua_len > 5) try w.print(", \u{2026}", .{});
