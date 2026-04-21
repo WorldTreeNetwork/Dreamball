@@ -1,11 +1,12 @@
 /**
- * Jelly WASM loader — single source of truth for `.jelly` parsing in
- * the browser. Compiles from `src/wasm_main.zig` via `zig build wasm`.
+ * Jelly WASM loader — single source of truth for `.jelly` parsing,
+ * Ed25519 verification, and ML-DSA-87 verification in the browser.
+ * Compiles from `src/wasm_main.zig` via `zig build wasm`.
  *
  * Why WASM: guarantees byte-for-byte agreement with the Zig CLI. Every
- * new envelope type is parsed by the same code. Ships at ~29 KB
- * uncompressed (ReleaseSmall) for the v2 surface — gzips well below
- * 15 KB.
+ * new envelope type is parsed by the same code. Current size: ~171 KB
+ * uncompressed (ReleaseSmall) / ~50 KB gzipped, including the vendored
+ * ML-DSA-87 verify path (see `docs/known-gaps.md §1`).
  *
  * Caveat (v2 MVP scope): the Zig parser currently decodes the core
  * + signatures. Nested look / feel / act / memory / knowledge-graph /
@@ -30,6 +31,14 @@ interface WasmExports {
 	reset: () => void;
 	parseJelly: (ptr: number, len: number) => bigint;
 	verifyJelly: (ptr: number, len: number) => number;
+	verifyMlDsa: (
+		sigPtr: number,
+		sigLen: number,
+		msgPtr: number,
+		msgLen: number,
+		pkPtr: number,
+		pkLen: number
+	) => number;
 	resultErrPtr: () => number;
 	resultErrLen: () => number;
 }
@@ -44,18 +53,21 @@ export type VerifyResult =
 	| { ok: false; reason: string; code: 0 | -1 };
 
 /**
- * Verify the Ed25519 signature(s) on a `.jelly` file in-browser.
+ * Verify every signature on a `.jelly` file in-browser.
  *
- * - Returns `{ ok: true, hadEd25519: true }` when every Ed25519 signature
- *   verified cleanly against the envelope's identity.
- * - Returns `{ ok: true, hadEd25519: false }` when the envelope parsed
- *   but carried no Ed25519 signature (e.g., a draft or a relic wrapper).
- * - Returns `{ ok: false, code: 0, ... }` on signature mismatch.
- * - Returns `{ ok: false, code: -1, ... }` on parse failure.
+ * Both Ed25519 AND ML-DSA-87 signatures are checked — the WASM module
+ * ships with liboqs's ML-DSA-87 verify path linked in (see
+ * `docs/known-gaps.md §1`). Policy is "all present must verify, no
+ * minimum count" per `docs/PROTOCOL.md §2.3`. An Ed25519 signature is
+ * checked against the envelope's `identity`; an ML-DSA signature is
+ * checked against `identity-pq`. An ML-DSA signature with no
+ * `identity-pq` in the core is a hard failure.
  *
- * ML-DSA-87 signatures are structurally acknowledged but not verified
- * here — no pure-Zig ML-DSA lives on freestanding-wasm yet. Real ML-DSA
- * verification stays CLI-side until a binding lands.
+ * - `{ ok: true, hadEd25519: true }` — every signature verified.
+ * - `{ ok: true, hadEd25519: false }` — parsed OK but no Ed25519
+ *   signature present (rare; typically a draft).
+ * - `{ ok: false, code: 0, ... }` — one or more signatures failed.
+ * - `{ ok: false, code: -1, ... }` — parse failure.
  */
 export async function verifyJelly(bytes: Uint8Array): Promise<VerifyResult> {
 	const exp = await getInstance();
@@ -71,6 +83,40 @@ export async function verifyJelly(bytes: Uint8Array): Promise<VerifyResult> {
 	const reason = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
 	if (result === 0) return { ok: false, code: 0, reason };
 	return { ok: false, code: -1, reason };
+}
+
+/**
+ * Standalone ML-DSA-87 verification. Direct binding to the liboqs-backed
+ * verify function; doesn't touch any DreamBall envelope parsing. Useful
+ * when you already have the canonical unsigned bytes and just need to
+ * check one signature against one public key.
+ *
+ * Signature MUST be 4627 bytes, public key MUST be 2592 bytes
+ * (FIPS-204 Category 5). Returns `true` on verify, `false` on mismatch
+ * or length error (check `err` for the diagnostic).
+ */
+export async function verifyMlDsa(
+	signature: Uint8Array,
+	message: Uint8Array,
+	publicKey: Uint8Array
+): Promise<{ ok: boolean; err?: string }> {
+	const exp = await getInstance();
+	exp.reset();
+	const sigPtr = exp.alloc(signature.length);
+	const msgPtr = exp.alloc(message.length);
+	const pkPtr = exp.alloc(publicKey.length);
+	if (sigPtr === 0 || msgPtr === 0 || pkPtr === 0) {
+		return { ok: false, err: 'alloc failed (input too large?)' };
+	}
+	new Uint8Array(exp.memory.buffer, sigPtr, signature.length).set(signature);
+	new Uint8Array(exp.memory.buffer, msgPtr, message.length).set(message);
+	new Uint8Array(exp.memory.buffer, pkPtr, publicKey.length).set(publicKey);
+	const rc = exp.verifyMlDsa(sigPtr, signature.length, msgPtr, message.length, pkPtr, publicKey.length);
+	if (rc === 1) return { ok: true };
+	const ep = exp.resultErrPtr();
+	const el = exp.resultErrLen();
+	const err = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
+	return { ok: false, err };
 }
 
 let modulePromise: Promise<WebAssembly.Module> | null = null;

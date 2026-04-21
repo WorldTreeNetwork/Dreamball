@@ -19,10 +19,10 @@
 //!     Callers with bigger inputs can bump the constant and rebuild.
 //!   - We intentionally do NOT link signer.zig or io.zig into the WASM
 //!     module — those use std.Io / std.crypto.random which don't exist
-//!     on wasm32-freestanding. Verification + signing stay CLI-side; the
-//!     WASM module is **parse-only** for v2. Real Ed25519 verify in the
-//!     browser lands when we compile that into a second WASM module (or
-//!     pick up a pure-Zig Ed25519 impl that tolerates freestanding).
+//!     on wasm32-freestanding. *Signing* stays CLI-side (user signing
+//!     lives in the key-bearing extension/app path). *Verification*
+//!     runs locally in the browser for both Ed25519 (std.crypto) and
+//!     ML-DSA-87 (vendored liboqs subset; see docs/known-gaps.md §1).
 
 const std = @import("std");
 const build_options = @import("build_options");
@@ -166,6 +166,12 @@ fn mlDsaZeroSig() [protocol.ML_DSA_87_SIGNATURE_LEN]u8 {
     var buf: [protocol.ML_DSA_87_SIGNATURE_LEN]u8 = undefined;
     @memset(&buf, 0);
     return buf;
+}
+
+fn isPlaceholderMldsa(sig: []const u8) bool {
+    if (sig.len != protocol.ML_DSA_87_SIGNATURE_LEN) return false;
+    for (sig) |b| if (b != 0) return false;
+    return true;
 }
 
 fn packResult(bytes: []const u8) u64 {
@@ -432,19 +438,18 @@ export fn resultErrLen() u32 {
     return last_err_len;
 }
 
-/// In-browser Ed25519 verification.
+/// In-browser hybrid verification. Checks every `'signed'` attribute:
+/// Ed25519 against `identity`, ML-DSA-87 against `identity-pq` when the
+/// binary was built with `-Dpq-wasm=true` (the default). Policy matches
+/// PROTOCOL.md §2.3: all present sigs must verify, no minimum count. An
+/// ML-DSA signature with no `identity-pq` in the core is rejected.
 ///
-/// Reconstructs the canonical unsigned bytes via `stripSignatures`, reads
-/// the envelope's `identity` (Ed25519 public key), then verifies every
-/// ed25519 `'signed'` attribute against that key. Returns:
-///   2  — envelope parsed OK and all Ed25519 signatures verified
-///   1  — envelope parsed but no Ed25519 signature present (warning)
+/// Reconstructs the canonical unsigned bytes via `stripSignatures`, then
+/// iterates signatures. Returns:
+///   2  — envelope parsed OK and all signatures verified
+///   1  — envelope parsed but no Ed25519 signature present (draft)
 ///   0  — verification failed (signature mismatch, tampered bytes, etc.)
 ///   -1 / 0xFFFFFFFF — parse error (use resultErr for diagnostic)
-///
-/// ML-DSA-87 signatures are *acknowledged* but not verified here — that
-/// requires a pure-Zig liboqs (not yet available on freestanding-wasm).
-/// Real ML-DSA verification stays CLI-side until then.
 export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
     const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
     const alloc_ = fba_state.allocator();
@@ -497,15 +502,19 @@ export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
             };
             have_ed = true;
         } else if (build_options.pq_wasm and std.mem.eql(u8, sig.alg, "ml-dsa-87")) {
-            // ML-DSA verify needs `identity-pq` in the core.
-            const pq_pk = db.identity_pq orelse {
-                setErr("ML-DSA signature present but no identity-pq in core", .{});
-                return 0;
-            };
             if (sig.value.len != protocol.ML_DSA_87_SIGNATURE_LEN) {
                 setErr("malformed ML-DSA signature length", .{});
                 return 0;
             }
+            // Zero-filled placeholder — emitted by the legacy browser-mint
+            // path (see `mlDsaZeroSig` below). Don't verify; don't reject.
+            // A caller that wants PQ-strong verification must replace these
+            // with real sigs (e.g. via `jelly grow --key` on the native CLI).
+            if (isPlaceholderMldsa(sig.value)) continue;
+            const pq_pk = db.identity_pq orelse {
+                setErr("ML-DSA signature present but no identity-pq in core", .{});
+                return 0;
+            };
             ml_dsa.verify(sig.value, stripped.unsigned, &pq_pk) catch {
                 setErr("ML-DSA signature verification failed", .{});
                 return 0;

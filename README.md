@@ -174,7 +174,7 @@ Read these four files in order before touching code:
 
 Every change must keep these gates green:
 
-- `zig build test` · `zig build smoke` · `zig build wasm` (≤150 KB)
+- `zig build test` · `zig build smoke` · `zig build wasm` (≤200 KB raw / ≤64 KB gzipped; ships ML-DSA-87 verify)
 - `bun run check` · `bun run test:unit -- --run` · `bun run build`
 - `bun run build-storybook` · `bun run test-storybook`
 - `scripts/server-smoke.sh` · `tests/e2e-cryptography.sh`

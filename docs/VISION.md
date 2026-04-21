@@ -531,10 +531,18 @@ What this buys us:
 What this *costs*:
 
 - **Blocking I/O stays out of WASM.** File reads, HTTP fetches, and
-  ML-DSA delegation (which requires a network hop to `recrypt-server`)
-  live in the host. The protocol core stays pure.
-- **WASM binary size is a real budget.** Currently 109 KB; the plan caps
-  at 150 KB. Additional features must earn their bytes.
+  ML-DSA *signing* (which would need host entropy on every call) live
+  in the host. The protocol core stays pure.
+- **ML-DSA *verify* is pure and ships with the WASM.** The vendored
+  liboqs subset (`vendor/liboqs/`) compiles clean for
+  wasm32-freestanding via four shim headers and a static-arena
+  allocator, so browsers verify hybrid Ed25519 + ML-DSA-87 signatures
+  locally — no network hop, no recrypt-server dependency. See
+  `docs/known-gaps.md §1` for the measurement.
+- **WASM binary size is a real budget.** Current cap: 200 KB raw /
+  64 KB gzipped. ML-DSA verify added +28.7 KB raw / +9.9 KB gzipped
+  over the Ed25519-only baseline. Additional features must earn
+  their bytes.
 
 The design decision is locked in ADR-1 of the v2.1 plan. The practical
 evidence that it works is in `src/lib/wasm/write-ops.test.ts` and

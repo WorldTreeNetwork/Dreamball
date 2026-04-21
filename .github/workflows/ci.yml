@@ -24,11 +24,13 @@ jobs:
         run: zig build test --summary all
       - name: zig build wasm
         run: zig build wasm
-      - name: Confirm jelly.wasm ≤ 150 KB
+      - name: Confirm jelly.wasm ≤ 200 KB raw, ≤ 64 KB gzipped
         run: |
-          size=$(wc -c < src/lib/wasm/jelly.wasm)
-          echo "jelly.wasm is ${size} bytes"
-          test "$size" -le 153600
+          raw=$(wc -c < src/lib/wasm/jelly.wasm)
+          gz=$(gzip -9c src/lib/wasm/jelly.wasm | wc -c)
+          echo "jelly.wasm is ${raw} bytes raw, ${gz} bytes gzipped"
+          test "$raw" -le 204800
+          test "$gz" -le 65536
       - name: zig build smoke
         run: zig build smoke
       - name: Upload jelly.wasm artifact

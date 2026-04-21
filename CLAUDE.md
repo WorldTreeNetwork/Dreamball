@@ -72,7 +72,7 @@ Zig 0.16.0 + Bun. See `README.md` for the full command list.
 - `zig build` — compile library + `jelly` CLI
 - `zig build test` — unit tests (≥ 51 passing)
 - `zig build smoke` — CLI end-to-end integration test
-- `zig build wasm` — produce `src/lib/wasm/jelly.wasm` (≤ 150 KB)
+- `zig build wasm` — produce `src/lib/wasm/jelly.wasm` (≤ 200 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify)
 - `zig build schemagen` — regenerate `src/lib/generated/*.ts`
 
 **Bun side:**

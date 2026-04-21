@@ -44,10 +44,11 @@
                     └────────────────┘
 
                               ┌───────────────────────┐
-                              │   recrypt-server      │ ◀── ML-DSA-87 signing
-                              │   (Rust, liboqs)      │     Guild keyspace
-                              │                       │     proxy-recryption
+                              │   recrypt-server      │ ◀── Guild keyspace
+                              │   (Rust)              │     proxy-recryption
                               └───────────────────────┘
+                              (ML-DSA-87 is vendored liboqs inside the
+                               jelly CLI + jelly.wasm — no HTTP hop.)
 ```
 
 ---
@@ -80,7 +81,7 @@ chose WASM over FFI and over subprocess.
 | **Browser** (Svelte + Threlte) | `.jelly` bytes via `fetch`, user input | Rendered views, user interactions, signed commits | The consumer surface. Runs `jelly.wasm` for parse + verify + validate. |
 | **`jelly-server`** (Bun + Elysia) | HTTP requests, filesystem `.jelly` store, `recrypt-server` | HTTP JSON responses, Eden-typed client calls | The authoring service + API. Runs the same `jelly.wasm` for write ops. |
 | **`jelly` MCP server** (Bun, stdio) | JSON-RPC over stdio from Claude Code / any MCP client | MCP tool responses wrapping CLI commands | The scripting surface for AI agents. |
-| **`recrypt-server`** (Rust) | HTTP requests for signing + proxy-recryption | ML-DSA-87 signatures, recrypted keys | The post-quantum trust anchor. Shared across the IdentiKey family. |
+| **`recrypt-server`** (Rust) | HTTP requests for Guild keyspace proxy-recryption | Recrypted keys for sealed-relic unlock and guild-scoped transmission | The Guild proxy-recryption anchor. Shared across the IdentiKey family. (ML-DSA-87 signing + verify are vendored into the jelly CLI and jelly.wasm — no HTTP hop.) |
 
 Each runtime holds different capabilities but shares the same wire format.
 
@@ -99,15 +100,21 @@ three tiers; runtimes pick which applies:
 
 ### Tier 2 — Ed25519 + ML-DSA-87 (hybrid, production-grade)
 
-- Ed25519 as in Tier 1, plus real post-quantum signatures via
-  `recrypt-server`'s `POST /sign/ml-dsa` endpoint.
+- Ed25519 as in Tier 1, plus real post-quantum signatures via the
+  vendored liboqs subset linked directly into the `jelly` CLI (see
+  `src/ml_dsa.zig`). No HTTP hop, no `recrypt-server` dependency for
+  signing — the native binary holds ML-DSA-87 locally.
 - Required by the `DreamBall.isFullySigned(.strict)` policy.
-- Two-hop signing flow: WASM signs with Ed25519, `jelly-server` relays
-  the unsigned bytes to `recrypt-server` for ML-DSA, attaches both
-  signatures, returns the envelope.
-- Browser verification of ML-DSA is optional and also delegated to
-  `recrypt-server` when configured; otherwise verify is Ed25519-only
-  with a loud warning.
+- Signing flow on the server: `jelly-server` subprocesses the native
+  `jelly` binary, which signs with both Ed25519 + ML-DSA-87 in one
+  pass using the hybrid key file format (see `src/key_file.zig`).
+- **Browser verification runs locally.** `jelly.wasm` ships the
+  ML-DSA-87 verify path too (same vendored liboqs subset, compiled
+  for wasm32-freestanding via shim headers in
+  `vendor/liboqs/wasm_shims/`). Both sigs check against the
+  envelope's `identity` / `identity-pq` core fields. No network hop
+  required for verify. See `docs/known-gaps.md §1` for the size
+  measurement (+28.7 KB raw / +9.9 KB gzipped over Ed25519-only).
 
 ### Tier 3 — Encrypted transport (DragonBall + recrypt proxy-recryption)
 
@@ -131,20 +138,17 @@ from the runtime.
 ```
   1.  client → POST /dreamballs { type: 'agent', name: 'Curious' }
                        │
-  2.  jelly-server → getWasm().mintDreamBall(...)
-                       │ (uses env.getRandomBytes from Bun's crypto)
-                       ▼
-  3.  Ed25519 keypair generated inside WASM, Ed25519 signature attached
-                       │
-  4.  jelly-server → POST /sign/ml-dsa (recrypt-server)
+  2.  jelly-server subprocesses `jelly mint --type agent --name ...`
                        │
                        ▼
-  5.  ML-DSA-87 signature returned
+  3.  Native CLI generates a hybrid Ed25519 + ML-DSA-87 keypair,
+       signs the envelope with both, writes <fp>.jelly + <fp>.jelly.key
+       (7560-byte hybrid format, DJELLY magic + both secrets)
                        │
-  6.  jelly-server attaches ML-DSA, re-encodes envelope, persists to
+  4.  jelly-server reads the envelope + key file, moves them to
        data/dreamballs/<fp>.jelly, data/keys/<fp>.key (0600)
                        │
-  7.  client ← 200 { fingerprint, dreamball, secret_key_b58 }
+  5.  client ← 200 { fingerprint, dreamball, secret_key_b58 }
 ```
 
 After this mint response, the server will never emit `secret_key_b58`
@@ -166,7 +170,8 @@ again. The client holds the secret; server-side it stays on-disk at
   5.  renderer receives typed DreamBall → picks lens → renders
                        │
   6.  (optional) browser → verifyJelly(bytes)
-                       │  ↳ Ed25519 locally; ML-DSA optionally via recrypt-server
+                       │  ↳ both Ed25519 AND ML-DSA-87 verified locally
+                       │    (no network hop; see ADR-3 below)
 ```
 
 ### 5.3 Unlock a sealed Relic (Tier 3)
@@ -308,8 +313,10 @@ argv injection surface), full Rust rewrite (scope creep).
 
 **Consequences.** Any op that needs blocking I/O stays out of WASM —
 but the protocol core is all pure functions + randomness, so this
-constraint doesn't bind. File I/O, network calls, and ML-DSA signing
-happen in the host.
+constraint doesn't bind. File I/O and network calls happen in the
+host. ML-DSA-87 *signing* stays on the native CLI by design (user
+signing lives in the key-bearing extension/app path); ML-DSA-87
+*verify* runs in WASM locally (see ADR-3).
 
 ### ADR-2: Elysia + Eden + Valibot for `jelly-server`
 
@@ -325,21 +332,39 @@ Standard-Schema integration.
 suboptimal). Free Swagger docs. Free MCP docs generation from the same
 route table.
 
-### ADR-3: ML-DSA-87 via recrypt-server delegation
+### ADR-3: ML-DSA-87 via vendored liboqs (native + WASM)
 
-**Decision.** Real ML-DSA-87 signing + verification is delegated to
-`recrypt-server` (Rust + liboqs via `oqs` crate) over HTTP.
-`jelly-server` orchestrates the two-hop signing flow.
+**Decision (revised 2026-04-21).** The vendored liboqs subset under
+`vendor/liboqs/` is the post-quantum engine for both runtimes.
 
-**Alternatives rejected.** liboqs-wasm via Emscripten (adds ~1.5 MB to
-WASM bundle), pure-Zig ML-DSA port (community projects exist but
-quality varies; correctness bugs here are catastrophic), skipping
-ML-DSA (breaks the hybrid-PQ promise in `PROTOCOL.md`).
+- **Native CLI** links the liboqs C sources directly — ~4500 LoC of
+  dilithium ref impl + XKCP SHAKE. No HTTP hop, no
+  `recrypt-server` dependency for signing. `jelly mint` / `grow` /
+  `transmit` / `seal-relic` all sign locally with Ed25519 +
+  ML-DSA-87.
+- **WASM** (`jelly.wasm`) links the same C sources for wasm32-freestanding
+  via four shim headers (`<string.h>`, `<stdlib.h>`, `<stdio.h>`,
+  `<limits.h>` in `vendor/liboqs/wasm_shims/`) and a static-arena
+  allocator (`vendor/liboqs/src/dreamball_stubs_wasm.c`). The linker's
+  dead-code elimination drops the sign + keypair paths, leaving only
+  the verify-reachable subset. Result: +28.7 KB raw / +9.9 KB gzipped
+  over the Ed25519-only baseline. Browser verification is local and
+  hybrid — no network hop required.
 
-**Consequences.** Real ML-DSA requires network access to
-`recrypt-server`. Offline signing is Ed25519-only. Browser ML-DSA
-verification is Growth-tier, scheduled for when either liboqs-wasm
-matures or a trustworthy pure-Zig port appears.
+**Prior decision (superseded).** An earlier version of this ADR
+delegated ML-DSA to `recrypt-server` over HTTP. The motivation was a
+pessimistic ~250–400 KB WASM size estimate from Emscripten's full
+liboqs build. The verify-only spike landed at ~28 KB raw, making local
+verify strictly preferable. Signing was already local on the native
+side once we vendored liboqs in `7cdf5eb`. `recrypt-server` still
+exposes `POST /sign/ml-dsa` / `POST /verify/ml-dsa` endpoints for
+cross-project use, but Dreamball does not call them.
+
+**Consequences.** Offline signing works end-to-end via the native
+CLI; offline verification works end-to-end in any runtime. The
+protocol's hybrid-PQ promise is fulfilled without a
+network-dependent trust anchor. Browser bundle cost is a one-time
++10 KB over the wire.
 
 ### ADR-4: Storybook as the developer testing environment
 

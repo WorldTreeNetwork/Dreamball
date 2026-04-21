@@ -4,15 +4,18 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Build options. `-Dpq-wasm=true` links the ML-DSA-87 VERIFY path
-    // (vendored liboqs) into the WASM module so the browser can check
-    // post-quantum signatures locally. Off by default — the baseline WASM
-    // binary stays under the 150 KB budget.
+    // Build options. ML-DSA-87 VERIFY is linked into the WASM module by
+    // default — the DreamBall protocol is hybrid-signed and every node the
+    // browser might receive carries a PQ signature that deserves local
+    // verification. The spike (docs/known-gaps.md §1) measured the delta
+    // at +28.7 KB raw / +9.9 KB gzipped, well inside the 200 KB budget.
+    // Pass `-Dpq-wasm=false` only for the Ed25519-only build used to size
+    // regressions against the spike baseline.
     const pq_wasm = b.option(
         bool,
         "pq-wasm",
-        "Link ML-DSA-87 verify into jelly.wasm (freestanding). Default: false.",
-    ) orelse false;
+        "Link ML-DSA-87 verify into jelly.wasm. Default: true.",
+    ) orelse true;
 
     const build_opts = b.addOptions();
     build_opts.addOption(bool, "pq_wasm", pq_wasm);
