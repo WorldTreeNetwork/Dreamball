@@ -92,7 +92,6 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     db.updated = io.unixSeconds();
     if (db.stage == .seed) db.stage = .dreamball;
 
-    // Re-sign with hybrid (or legacy) key.
     const sign = @import("sign.zig");
     const signed = try sign.signEnvelope(gpa, &db, key_path);
     defer gpa.free(signed);

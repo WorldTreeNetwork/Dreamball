@@ -60,7 +60,6 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     db.revision += 1;
     db.updated = io.unixSeconds();
 
-    // Re-sign with hybrid (or legacy) key.
     const sign = @import("sign.zig");
     const signed = try sign.signEnvelope(gpa, &db, key_path);
     defer gpa.free(signed);

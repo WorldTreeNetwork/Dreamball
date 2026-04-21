@@ -148,10 +148,11 @@ simpler deployment.
   signer's 2592-byte ML-DSA-87 public key so verifiers can check
   the PQ signature without out-of-band metadata. v1/v2 nodes
   continue to verify unchanged.
-- Key file extended to a 7560-byte hybrid shape (magic `"DJELLY\n"`
-  + version byte + Ed25519 secret + ML-DSA public + ML-DSA secret).
-  Legacy 64-byte Ed25519-only key files are still accepted; the
-  CLI degrades to Ed25519-only signing when one is passed.
+- Key file is a raw `recrypt.identity` Gordian Envelope (CBOR tag
+  200) carrying both Ed25519 and ML-DSA-87 keypairs. See
+  `docs/decisions/2026-04-21-identity-envelope.md` for the adoption
+  rationale. No legacy-format support — Dreamball is pre-release,
+  so any older `.key` files regenerate with a fresh `jelly mint`.
 - `jelly mint` generates a hybrid keypair, embeds `identity-pq`
   in the core, and emits both signatures.
 - `jelly grow`, `jelly join-guild`, `jelly transmit` re-sign with

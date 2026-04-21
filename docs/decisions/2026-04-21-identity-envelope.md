@@ -16,7 +16,7 @@ The recrypt identity envelope (specified in `recrypt/docs/wallet-envelope-format
 
 ## Decision
 
-We adopt `recrypt.identity` Gordian Envelope as the sole format for Dreamball's per-DreamBall key material. We replace the ad-hoc `DJELLY\n` layout with raw envelope bytes on disk, while maintaining backward compatibility with legacy ed25519-only 64-byte files. The interop contract is recrypt's determinism spec + canonical fixtures; we vendor those fixtures and enforce byte-identical round-trip in our tests.
+We adopt `recrypt.identity` Gordian Envelope as the sole format for Dreamball's per-DreamBall key material. We replace the ad-hoc `DJELLY\n` layout with raw envelope bytes on disk. No legacy-format support — Dreamball is pre-release, any older `.key` files are regenerated with a fresh `jelly mint`. The interop contract is recrypt's determinism spec + canonical fixtures; we vendor those fixtures and enforce byte-identical round-trip in our tests.
 
 ## Drivers
 
@@ -51,9 +51,9 @@ This is the smallest surface that unblocks cross-tool identity exchange and posi
 
 - **Zig-side self-signature emission is deferred.** The envelope format supports `'signed'` assertions (CBOR tag 40020 + KnownValue(3)). Emitting those requires additional encoding machinery and only makes sense when a consumer needs them (e.g., wallet-container adoption or cross-tool signature verification). For MVP, we parse and preserve unsigned envelopes fine; signing is left as a follow-up.
 
-- **Key file swap is transparent to callers.** `src/key_file.zig` remains the public interface; the envelope codec is an internal detail. Callers read envelopes without knowing they are envelopes. Legacy ed25519-only 64-byte files continue to parse. The `DJELLY\n` format is rejected with a clear error directing users to regenerate.
+- **Key file swap is transparent to callers.** `src/key_file.zig` remains the public interface; the envelope codec is an internal detail. `decode` / `readFromPath` return `signer.HybridSigningKeys` directly — the envelope plumbing does not leak into call sites.
 
-- **No deployed artefacts to migrate.** Per project policy (`docs/known-gaps.md §6), no migration of existing `.key` files. The CLI rejects `DJELLY\n` files and instructs the user to run `jelly mint` to generate a fresh key.
+- **No legacy compatibility.** Dreamball is pre-release; we don't carry support for any older key-file shape. Anything other than a well-formed `recrypt.identity` envelope (with both ed25519 and ML-DSA secrets populated) is rejected as `error.BadKeyFile` / `error.EnvelopeMissingEd25519Secret` / `error.EnvelopeMissingMlDsaSecret`. Users regenerate with `jelly mint`.
 
 ## Follow-ups
 

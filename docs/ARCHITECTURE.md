@@ -143,7 +143,7 @@ from the runtime.
                        ▼
   3.  Native CLI generates a hybrid Ed25519 + ML-DSA-87 keypair,
        signs the envelope with both, writes <fp>.jelly + <fp>.jelly.key
-       (7560-byte hybrid format, DJELLY magic + both secrets)
+       (key file = raw recrypt.identity envelope, CBOR tag 200)
                        │
   4.  jelly-server reads the envelope + key file, moves them to
        data/dreamballs/<fp>.jelly, data/keys/<fp>.key (0600)
@@ -153,11 +153,10 @@ from the runtime.
 
 Per-DreamBall signing-key material is stored as a raw `recrypt.identity`
 Gordian Envelope (CBOR tag 200, dCBOR canonical form). The envelope carries
-ed25519 + ML-DSA-87 keypairs as optional-but-populated assertions; PRE keys
-are absent (Dreamball's signing flow doesn't participate in proxy recryption
-directly). Legacy 64-byte ed25519-only files are still read; the retired
-`DJELLY\n` hybrid layout is rejected on load. See
-`docs/decisions/2026-04-21-identity-envelope.md` and
+ed25519 + ML-DSA-87 keypairs as populated assertions; PRE keys are absent
+(Dreamball's signing flow doesn't participate in proxy recryption directly).
+`decode` requires both ed25519 and ML-DSA secrets present and rejects
+anything else. See `docs/decisions/2026-04-21-identity-envelope.md` and
 `vendor/recrypt-identity-fixtures/` for the interop contract.
 
 After this mint response, the server will never emit `secret_key_b58`

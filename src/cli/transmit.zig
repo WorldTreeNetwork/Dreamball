@@ -51,71 +51,46 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         return 2;
     }
 
-    const loaded_keys = try dreamball.key_file.readFromPath(gpa, sender_key);
+    const keys = try dreamball.key_file.readFromPath(gpa, sender_key);
     const tool_fp = tool_db.fingerprint();
     var target_fp: dreamball.Fingerprint = undefined;
     @memcpy(&target_fp.bytes, target_fp_bytes);
     var via_guild: dreamball.Fingerprint = undefined;
     @memcpy(&via_guild.bytes, guild_fp_bytes);
-    const ed_pub = switch (loaded_keys) {
-        .hybrid => |h| h.ed25519_public,
-        .ed25519_only => |e| e.ed25519_public,
-    };
-    const sender_fp = dreamball.Fingerprint.fromEd25519(ed_pub);
+    const sender_fp = dreamball.Fingerprint.fromEd25519(keys.ed25519_public);
 
     var t = dreamball.protocol_v2.Transmission{
         .tool_fp = tool_fp,
         .target_fp = target_fp,
         .via_guild = via_guild,
-        .sender_identity = ed_pub,
-        .sender_identity_pq = switch (loaded_keys) {
-            .hybrid => |h| h.mldsa_public,
-            .ed25519_only => null,
-        },
+        .sender_identity = keys.ed25519_public,
+        .sender_identity_pq = keys.mldsa_public,
         .sender_fp = sender_fp,
         .transmitted_at = io.unixSeconds(),
         .tool_envelope = tool_bytes,
     };
 
-    // Sign the unsigned transmission bytes. With sender-identity (and
-    // optionally sender-identity-pq) now embedded in the core, the
-    // receipt is self-verifying — no pubkey-bundle lookup required.
+    // Sign the unsigned transmission bytes. With sender-identity and
+    // sender-identity-pq embedded in the core, the receipt is self-
+    // verifying — no pubkey-bundle lookup required.
     const unsigned = try dreamball.envelope_v2.encodeTransmission(gpa, t);
     defer gpa.free(unsigned);
 
-    switch (loaded_keys) {
-        .hybrid => |keys| {
-            const ed_sig = try dreamball.signer.signEd25519(unsigned, keys.classical());
-            const mldsa_sig = try dreamball.signer.signMlDsa(gpa, unsigned, keys);
-            defer gpa.free(mldsa_sig);
-            const sigs = [_]dreamball.protocol.Signature{
-                .{ .alg = "ed25519", .value = &ed_sig },
-                .{ .alg = "ml-dsa-87", .value = mldsa_sig },
-            };
-            t.signatures = &sigs;
-            const signed = try dreamball.envelope_v2.encodeTransmission(gpa, t);
-            defer gpa.free(signed);
-            try helpers.writeFile(out_path, signed);
-            try io.printStdout(
-                "transmitted {s} → {s} via guild {s}\nreceipt: {s} ({d} bytes)\n",
-                .{ tool_path, target_b58, guild_b58, out_path, signed.len },
-            );
-        },
-        .ed25519_only => |keys| {
-            const ed_sig = try dreamball.signer.signEd25519(unsigned, keys);
-            const sigs = [_]dreamball.protocol.Signature{
-                .{ .alg = "ed25519", .value = &ed_sig },
-            };
-            t.signatures = &sigs;
-            const signed = try dreamball.envelope_v2.encodeTransmission(gpa, t);
-            defer gpa.free(signed);
-            try helpers.writeFile(out_path, signed);
-            try io.printStdout(
-                "transmitted {s} → {s} via guild {s}\nreceipt: {s} ({d} bytes)\n",
-                .{ tool_path, target_b58, guild_b58, out_path, signed.len },
-            );
-        },
-    }
+    const ed_sig = try dreamball.signer.signEd25519(unsigned, keys.classical());
+    const mldsa_sig = try dreamball.signer.signMlDsa(gpa, unsigned, keys);
+    defer gpa.free(mldsa_sig);
+    const sigs = [_]dreamball.protocol.Signature{
+        .{ .alg = "ed25519", .value = &ed_sig },
+        .{ .alg = "ml-dsa-87", .value = mldsa_sig },
+    };
+    t.signatures = &sigs;
+    const signed = try dreamball.envelope_v2.encodeTransmission(gpa, t);
+    defer gpa.free(signed);
+    try helpers.writeFile(out_path, signed);
+    try io.printStdout(
+        "transmitted {s} → {s} via guild {s}\nreceipt: {s} ({d} bytes)\n",
+        .{ tool_path, target_b58, guild_b58, out_path, signed.len },
+    );
 
     // TODO-CRYPTO: replace before prod — real transmission requires recrypt
     // proxy-recryption so the receiver can decrypt the Tool's secrets.
