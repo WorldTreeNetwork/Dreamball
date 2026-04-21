@@ -125,108 +125,21 @@ pub const Error = error{
 } || std.mem.Allocator.Error;
 
 // ============================================================================
-// Local cursor-based readers (same shape as envelope.zig).
+// Cursor-based readers come from dcbor.zig (shared with envelope.zig).
+// `readBytesItem` is kept as a local alias for naming parity with the
+// original local helper; it forwards straight to `dcbor.readBytes`.
 // ============================================================================
 
-/// Peek the major type at `cursor` without advancing.
-fn peekMajor(bytes: []const u8, cursor: usize) !u3 {
-    if (cursor >= bytes.len) return Error.Malformed;
-    return @intCast(bytes[cursor] >> 5);
-}
-
-/// Decode one head (major + arg) and advance cursor past it. Does not consume
-/// any tagged item / string content / array members.
-fn readHead(bytes: []const u8, cursor: *usize) !struct { major: u3, arg: u64 } {
-    if (cursor.* >= bytes.len) return Error.Malformed;
-    const b = bytes[cursor.*];
-    cursor.* += 1;
-    const major: u3 = @intCast(b >> 5);
-    const info: u5 = @intCast(b & 0x1F);
-    const arg: u64 = switch (info) {
-        0...23 => @as(u64, info),
-        24 => blk: {
-            if (cursor.* >= bytes.len) return Error.Malformed;
-            const v = bytes[cursor.*];
-            cursor.* += 1;
-            break :blk @as(u64, v);
-        },
-        25 => blk: {
-            if (cursor.* + 2 > bytes.len) return Error.Malformed;
-            const v = std.mem.readInt(u16, bytes[cursor.*..][0..2], .big);
-            cursor.* += 2;
-            break :blk @as(u64, v);
-        },
-        26 => blk: {
-            if (cursor.* + 4 > bytes.len) return Error.Malformed;
-            const v = std.mem.readInt(u32, bytes[cursor.*..][0..4], .big);
-            cursor.* += 4;
-            break :blk @as(u64, v);
-        },
-        27 => blk: {
-            if (cursor.* + 8 > bytes.len) return Error.Malformed;
-            const v = std.mem.readInt(u64, bytes[cursor.*..][0..8], .big);
-            cursor.* += 8;
-            break :blk v;
-        },
-        else => return Error.Malformed,
-    };
-    return .{ .major = major, .arg = arg };
-}
-
-fn readArrayHeader(bytes: []const u8, cursor: *usize) !u64 {
-    const h = try readHead(bytes, cursor);
-    if (h.major != 4) return Error.MalformedAssertion;
-    return h.arg;
-}
-
-fn readMapHeader(bytes: []const u8, cursor: *usize) !u64 {
-    const h = try readHead(bytes, cursor);
-    if (h.major != 5) return Error.MalformedAssertion;
-    return h.arg;
-}
-
-fn expectTag(bytes: []const u8, cursor: *usize, want: u64) !void {
-    const h = try readHead(bytes, cursor);
-    if (h.major != 6) return Error.MalformedAssertion;
-    if (h.arg != want) return Error.WrongEnvelopeType;
-}
-
-fn readTag(bytes: []const u8, cursor: *usize) !u64 {
-    const h = try readHead(bytes, cursor);
-    if (h.major != 6) return Error.MalformedAssertion;
-    return h.arg;
-}
-
-fn readText(bytes: []const u8, cursor: *usize) ![]const u8 {
-    const h = try readHead(bytes, cursor);
-    if (h.major != 3) return Error.MalformedAssertion;
-    const len: usize = @intCast(h.arg);
-    if (cursor.* + len > bytes.len) return Error.Malformed;
-    const s = bytes[cursor.* .. cursor.* + len];
-    cursor.* += len;
-    return s;
-}
-
-fn readBytesItem(bytes: []const u8, cursor: *usize) ![]const u8 {
-    const h = try readHead(bytes, cursor);
-    if (h.major != 2) return Error.MalformedAssertion;
-    const len: usize = @intCast(h.arg);
-    if (cursor.* + len > bytes.len) return Error.Malformed;
-    const s = bytes[cursor.* .. cursor.* + len];
-    cursor.* += len;
-    return s;
-}
-
-fn readUint(bytes: []const u8, cursor: *usize) !u64 {
-    const h = try readHead(bytes, cursor);
-    if (h.major != 0) return Error.MalformedAssertion;
-    return h.arg;
-}
-
-fn skipItem(bytes: []const u8, cursor: *usize) !void {
-    if (cursor.* >= bytes.len) return Error.Malformed;
-    if (zbor.advance(bytes, cursor) == null) return Error.Malformed;
-}
+const readHead = dcbor.readHead;
+const peekMajor = dcbor.peekMajor;
+const readArrayHeader = dcbor.readArrayHeader;
+const readMapHeader = dcbor.readMapHeader;
+const readTag = dcbor.readTag;
+const expectTag = dcbor.expectTag;
+const readText = dcbor.readText;
+const readBytesItem = dcbor.readBytes;
+const readUint = dcbor.readUint;
+const skipItem = dcbor.skipItem;
 
 // ============================================================================
 // Assertion encoding helpers
@@ -431,6 +344,11 @@ pub fn encode(allocator: Allocator, identity: Identity) ![]u8 {
 /// All owned fields use `allocator.dupe` so the input bytes can be freed.
 /// Caller must call `identity.deinit(allocator)` when done.
 pub fn decode(allocator: Allocator, bytes: []const u8) !Identity {
+    // Validate the whole envelope is dCBOR-canonical before we touch it. This
+    // rejects hostile inputs with padded integers or indefinite-length items
+    // up front, so every later cursor read can trust the byte stream.
+    try dcbor.verifyCanonical(bytes);
+
     var cursor: usize = 0;
 
     // tag(200)

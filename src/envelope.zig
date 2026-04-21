@@ -263,197 +263,20 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
 }
 
 // ============================================================================
-// Reader helpers — position-based cursor built on top of zbor primitives.
-//
-// zbor's DataItem API is item-based (parse → iterate). Our decoders walk a
-// linear stream (tag → array header → tag → map, etc.) so we keep a cursor
-// and validate/read one item at a time. Each of these helpers returns the
-// decoded value and advances `cursor` past the item — `zbor.advance` handles
-// the "past-this-item" step, and we verify the leading byte for the major
-// type we expect.
+// Reader helpers — shared with identity_envelope.zig via dcbor.zig.
+// These decoders walk a linear stream (tag → array header → map, etc.) and
+// inherit dCBOR canonical-form enforcement (smallest-form integers,
+// indefinite-length rejection) from `dcbor.readHead`.
 // ============================================================================
 
-const ReaderError = error{
-    Truncated,
-    InvalidMajorType,
-    UnexpectedTag,
-    UnknownTag,
-    UnsupportedItem,
-};
-
-/// Peek the major type at `cursor` without advancing.
-fn peekMajor(bytes: []const u8, cursor: usize) ReaderError!u3 {
-    if (cursor >= bytes.len) return ReaderError.Truncated;
-    return @intCast(bytes[cursor] >> 5);
-}
-
-/// Read one CBOR data item starting at `cursor` into a DataItem, then advance
-/// `cursor` to the next item. Validates the bytes via zbor.
-fn readItem(bytes: []const u8, cursor: *usize) ReaderError!zbor.DataItem {
-    if (cursor.* >= bytes.len) return ReaderError.Truncated;
-    const start = cursor.*;
-    if (zbor.advance(bytes, cursor) == null) return ReaderError.Truncated;
-    const di = zbor.DataItem.new(bytes[start..cursor.*]) catch return ReaderError.UnsupportedItem;
-    return di;
-}
-
-/// Expect a tag at `cursor`; return the tag number and advance cursor to
-/// the start of the tagged item (leaving the tagged item unconsumed).
-fn readTagHead(bytes: []const u8, cursor: *usize) ReaderError!u64 {
-    if (cursor.* >= bytes.len) return ReaderError.Truncated;
-    const b = bytes[cursor.*];
-    const major: u3 = @intCast(b >> 5);
-    if (major != 6) return ReaderError.InvalidMajorType;
-    // Walk past the tag head only — not the tagged item.
-    // Tag head is 1 + len-of-arg bytes, same as map/array header.
-    cursor.* += 1;
-    const info: u5 = @intCast(b & 0x1F);
-    const tag_val: u64 = switch (info) {
-        0...23 => @as(u64, info),
-        24 => blk: {
-            if (cursor.* >= bytes.len) return ReaderError.Truncated;
-            const v = bytes[cursor.*];
-            cursor.* += 1;
-            break :blk @as(u64, v);
-        },
-        25 => blk: {
-            if (cursor.* + 2 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u16, bytes[cursor.*..][0..2], .big);
-            cursor.* += 2;
-            break :blk @as(u64, v);
-        },
-        26 => blk: {
-            if (cursor.* + 4 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u32, bytes[cursor.*..][0..4], .big);
-            cursor.* += 4;
-            break :blk @as(u64, v);
-        },
-        27 => blk: {
-            if (cursor.* + 8 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u64, bytes[cursor.*..][0..8], .big);
-            cursor.* += 8;
-            break :blk v;
-        },
-        else => return ReaderError.UnsupportedItem,
-    };
-    return tag_val;
-}
-
-/// Expect a tag equal to `want`; advance cursor past the tag head.
-fn expectTag(bytes: []const u8, cursor: *usize, want: u64) !void {
-    const got = try readTagHead(bytes, cursor);
-    if (got != want) return ReaderError.UnexpectedTag;
-}
-
-/// Read an array header at `cursor` and return the element count.
-fn readArrayHeader(bytes: []const u8, cursor: *usize) ReaderError!u64 {
-    if (cursor.* >= bytes.len) return ReaderError.Truncated;
-    const start = cursor.*;
-    var after_header = cursor.*;
-    // We need the header length: advance a fresh cursor past an empty-array
-    // stand-in to compute head size. Simpler: decode header directly.
-    const b = bytes[start];
-    const major: u3 = @intCast(b >> 5);
-    if (major != 4) return ReaderError.InvalidMajorType;
-    after_header += 1;
-    const info: u5 = @intCast(b & 0x1F);
-    const arg: u64 = switch (info) {
-        0...23 => @as(u64, info),
-        24 => blk: {
-            if (after_header >= bytes.len) return ReaderError.Truncated;
-            const v = bytes[after_header];
-            after_header += 1;
-            break :blk @as(u64, v);
-        },
-        25 => blk: {
-            if (after_header + 2 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u16, bytes[after_header..][0..2], .big);
-            after_header += 2;
-            break :blk @as(u64, v);
-        },
-        26 => blk: {
-            if (after_header + 4 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u32, bytes[after_header..][0..4], .big);
-            after_header += 4;
-            break :blk @as(u64, v);
-        },
-        27 => blk: {
-            if (after_header + 8 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u64, bytes[after_header..][0..8], .big);
-            after_header += 8;
-            break :blk v;
-        },
-        else => return ReaderError.UnsupportedItem,
-    };
-    cursor.* = after_header;
-    return arg;
-}
-
-/// Read a map header at `cursor` and return the pair count.
-fn readMapHeader(bytes: []const u8, cursor: *usize) ReaderError!u64 {
-    if (cursor.* >= bytes.len) return ReaderError.Truncated;
-    const start = cursor.*;
-    const b = bytes[start];
-    const major: u3 = @intCast(b >> 5);
-    if (major != 5) return ReaderError.InvalidMajorType;
-    // Same decode as array; hijack readArrayHeader's logic by temporarily
-    // treating it as an array. Inline for clarity.
-    var after_header = start + 1;
-    const info: u5 = @intCast(b & 0x1F);
-    const arg: u64 = switch (info) {
-        0...23 => @as(u64, info),
-        24 => blk: {
-            if (after_header >= bytes.len) return ReaderError.Truncated;
-            const v = bytes[after_header];
-            after_header += 1;
-            break :blk @as(u64, v);
-        },
-        25 => blk: {
-            if (after_header + 2 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u16, bytes[after_header..][0..2], .big);
-            after_header += 2;
-            break :blk @as(u64, v);
-        },
-        26 => blk: {
-            if (after_header + 4 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u32, bytes[after_header..][0..4], .big);
-            after_header += 4;
-            break :blk @as(u64, v);
-        },
-        27 => blk: {
-            if (after_header + 8 > bytes.len) return ReaderError.Truncated;
-            const v = std.mem.readInt(u64, bytes[after_header..][0..8], .big);
-            after_header += 8;
-            break :blk v;
-        },
-        else => return ReaderError.UnsupportedItem,
-    };
-    cursor.* = after_header;
-    return arg;
-}
-
-/// Read a text string and advance cursor past it. Returns a borrowed slice.
-fn readText(bytes: []const u8, cursor: *usize) ReaderError![]const u8 {
-    const di = try readItem(bytes, cursor);
-    if (di.getType() != .TextString) return ReaderError.InvalidMajorType;
-    return di.string() orelse ReaderError.UnsupportedItem;
-}
-
-/// Read a byte string and advance cursor past it. Returns a borrowed slice.
-fn readBytes(bytes: []const u8, cursor: *usize) ReaderError![]const u8 {
-    const di = try readItem(bytes, cursor);
-    if (di.getType() != .ByteString) return ReaderError.InvalidMajorType;
-    return di.string() orelse ReaderError.UnsupportedItem;
-}
-
-/// Read an unsigned integer and advance cursor past it.
-fn readUint(bytes: []const u8, cursor: *usize) ReaderError!u64 {
-    const di = try readItem(bytes, cursor);
-    if (di.getType() != .Int) return ReaderError.InvalidMajorType;
-    const v = di.int() orelse return ReaderError.UnsupportedItem;
-    if (v < 0) return ReaderError.InvalidMajorType;
-    return @intCast(v);
-}
+const peekMajor = dcbor.peekMajor;
+const readTagHead = dcbor.readTag;
+const expectTag = dcbor.expectTag;
+const readArrayHeader = dcbor.readArrayHeader;
+const readMapHeader = dcbor.readMapHeader;
+const readText = dcbor.readText;
+const readBytes = dcbor.readBytes;
+const readUint = dcbor.readUint;
 
 // ============================================================================
 // Decoder (subject only — sufficient for verify/show v0)
@@ -462,6 +285,8 @@ fn readUint(bytes: []const u8, cursor: *usize) ReaderError!u64 {
 /// Decode subject-only round-trip companion for `encodeDreamBall`. Reads the
 /// subject map whether or not assertions follow.
 pub fn decodeDreamBallSubject(bytes: []const u8) !protocol.DreamBall {
+    try dcbor.verifyCanonical(bytes);
+
     var cursor: usize = 0;
     try expectTag(bytes, &cursor, dcbor.Tag.envelope);
 
@@ -1011,6 +836,8 @@ fn decodeActFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Act 
 /// Full DreamBall decoder — subject + every assertion we know how to
 /// interpret. Unknown assertions are rejected (fail-loud).
 pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamBall {
+    try dcbor.verifyCanonical(env_bytes);
+
     var cursor: usize = 0;
     const assertion_count = try enterEnvelope(env_bytes, &cursor);
 

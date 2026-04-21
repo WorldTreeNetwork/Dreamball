@@ -140,6 +140,223 @@ pub fn itemLen(bytes: []const u8, start: usize) ItemLenError!usize {
     return cursor - start;
 }
 
+// ─── Cursor-based readers with canonical-form enforcement ───────────────────
+//
+// zbor does **not** reject non-smallest-form integer encodings on decode.
+// For dCBOR interop we want the decoder to reject any padded head
+// (e.g. `0x18 0x05` encoding the value 5 in 2 bytes when 1 suffices, or
+// `0x19 0x00 0xFF` encoding 255 in 3 bytes when 2 suffice). `readHead`
+// enforces this on every head it produces, so every caller of these
+// helpers inherits the check.
+//
+// Call `verifyCanonical(bytes)` at the top of a decode path to validate
+// the entire envelope is in canonical form in one pass — cheaper than
+// per-item scatter, and catches nested non-canonical encodings that a
+// tree-walking decoder might miss.
+
+pub const ReadError = error{
+    Truncated,
+    NonCanonicalInteger,
+    UnexpectedMajorType,
+    UnexpectedTag,
+    UnsupportedItem,
+};
+
+pub const Head = struct { major: u3, info: u5, arg: u64 };
+
+/// Read one CBOR head (major type + argument) at `cursor.*`, advance cursor
+/// past the head, and return the decoded (major, info, arg) triple.
+///
+/// For majors 0..6, rejects non-smallest-form integer/length encodings per
+/// dCBOR §3. For major 7, canonical-form semantics are different — `info`
+/// disambiguates simple values (≤23 inline, 24 as 1-byte follow) from
+/// halfs/floats/doubles (25/26/27) and floats are rejected by
+/// `verifyCanonical`, not here. Indefinite-length items (info == 31) are
+/// rejected for all majors.
+pub fn readHead(bytes: []const u8, cursor: *usize) ReadError!Head {
+    if (cursor.* >= bytes.len) return ReadError.Truncated;
+    const b = bytes[cursor.*];
+    cursor.* += 1;
+    const major: u3 = @intCast(b >> 5);
+    const info: u5 = @intCast(b & 0x1F);
+    const arg: u64 = switch (info) {
+        0...23 => @as(u64, info),
+        24 => blk: {
+            if (cursor.* >= bytes.len) return ReadError.Truncated;
+            const v = bytes[cursor.*];
+            cursor.* += 1;
+            break :blk @as(u64, v);
+        },
+        25 => blk: {
+            if (cursor.* + 2 > bytes.len) return ReadError.Truncated;
+            const v = std.mem.readInt(u16, bytes[cursor.*..][0..2], .big);
+            cursor.* += 2;
+            break :blk @as(u64, v);
+        },
+        26 => blk: {
+            if (cursor.* + 4 > bytes.len) return ReadError.Truncated;
+            const v = std.mem.readInt(u32, bytes[cursor.*..][0..4], .big);
+            cursor.* += 4;
+            break :blk @as(u64, v);
+        },
+        27 => blk: {
+            if (cursor.* + 8 > bytes.len) return ReadError.Truncated;
+            const v = std.mem.readInt(u64, bytes[cursor.*..][0..8], .big);
+            cursor.* += 8;
+            break :blk v;
+        },
+        // 28, 29, 30 are reserved. 31 is the indefinite-length marker.
+        else => return ReadError.UnsupportedItem,
+    };
+
+    // Smallest-form enforcement for integer/length arguments: applies to
+    // majors 0..6 (int, neg-int, byte-string, text-string, array, map, tag).
+    // Skip for major 7, where info 25/26/27 are raw float bit patterns with
+    // no smallest-form meaning.
+    if (major != 7) {
+        switch (info) {
+            24 => if (arg < 24) return ReadError.NonCanonicalInteger,
+            25 => if (arg < 256) return ReadError.NonCanonicalInteger,
+            26 => if (arg < 0x1_0000) return ReadError.NonCanonicalInteger,
+            27 => if (arg < 0x1_0000_0000) return ReadError.NonCanonicalInteger,
+            else => {},
+        }
+    }
+
+    return .{ .major = major, .info = info, .arg = arg };
+}
+
+/// Peek the major type at `cursor` without advancing or validating.
+pub fn peekMajor(bytes: []const u8, cursor: usize) ReadError!u3 {
+    if (cursor >= bytes.len) return ReadError.Truncated;
+    return @intCast(bytes[cursor] >> 5);
+}
+
+/// Read an array header (major type 4) and return the element count.
+pub fn readArrayHeader(bytes: []const u8, cursor: *usize) ReadError!u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 4) return ReadError.UnexpectedMajorType;
+    return h.arg;
+}
+
+/// Read a map header (major type 5) and return the pair count.
+pub fn readMapHeader(bytes: []const u8, cursor: *usize) ReadError!u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 5) return ReadError.UnexpectedMajorType;
+    return h.arg;
+}
+
+/// Read a tag (major type 6) and return the tag number. The tagged item
+/// itself is left unconsumed at `cursor.*`.
+pub fn readTag(bytes: []const u8, cursor: *usize) ReadError!u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 6) return ReadError.UnexpectedMajorType;
+    return h.arg;
+}
+
+/// Read a tag and fail if it does not equal `want`.
+pub fn expectTag(bytes: []const u8, cursor: *usize, want: u64) ReadError!void {
+    const got = try readTag(bytes, cursor);
+    if (got != want) return ReadError.UnexpectedTag;
+}
+
+/// Read an unsigned integer (major type 0).
+pub fn readUint(bytes: []const u8, cursor: *usize) ReadError!u64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 0) return ReadError.UnexpectedMajorType;
+    return h.arg;
+}
+
+/// Read a text string (major type 3) and return a borrowed slice into `bytes`.
+pub fn readText(bytes: []const u8, cursor: *usize) ReadError![]const u8 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 3) return ReadError.UnexpectedMajorType;
+    const len: usize = @intCast(h.arg);
+    if (cursor.* + len > bytes.len) return ReadError.Truncated;
+    const s = bytes[cursor.* .. cursor.* + len];
+    cursor.* += len;
+    return s;
+}
+
+/// Read a byte string (major type 2) and return a borrowed slice into `bytes`.
+pub fn readBytes(bytes: []const u8, cursor: *usize) ReadError![]const u8 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 2) return ReadError.UnexpectedMajorType;
+    const len: usize = @intCast(h.arg);
+    if (cursor.* + len > bytes.len) return ReadError.Truncated;
+    const s = bytes[cursor.* .. cursor.* + len];
+    cursor.* += len;
+    return s;
+}
+
+/// Skip one item at `cursor.*` without examining its structure. Uses
+/// `zbor.advance` for well-formedness; does NOT enforce canonical form.
+/// Use `verifyCanonical` first if you need that guarantee for nested items.
+pub fn skipItem(bytes: []const u8, cursor: *usize) ReadError!void {
+    if (cursor.* >= bytes.len) return ReadError.Truncated;
+    if (zbor.advance(bytes, cursor) == null) return ReadError.Truncated;
+}
+
+/// Walk the entire CBOR stream in `bytes`, validating every head is in
+/// smallest form per dCBOR §3. Accepts any number of top-level items.
+/// Returns on the first non-canonical head or malformed item.
+///
+/// Intended for use at the top of a decode path — e.g.
+/// `identity_envelope.decode` runs this once on the whole envelope so
+/// later readers can trust that the bytes are canonical.
+///
+/// Note: this does not enforce map-key ordering or assertion ordering —
+/// those are envelope-semantic concerns, not CBOR-canonical concerns.
+/// For map-ordering enforcement, see `PairList.sort` (writer side); a
+/// decode-side checker would verify keys appear in sorted order but is
+/// not currently implemented.
+pub fn verifyCanonical(bytes: []const u8) ReadError!void {
+    var cursor: usize = 0;
+    while (cursor < bytes.len) {
+        try verifyOne(bytes, &cursor);
+    }
+}
+
+fn verifyOne(bytes: []const u8, cursor: *usize) ReadError!void {
+    const head = try readHead(bytes, cursor);
+    switch (head.major) {
+        0, 1 => {}, // int — head-only, no content to walk
+        2, 3 => {
+            // byte/text string: skip content bytes
+            const len: usize = @intCast(head.arg);
+            if (cursor.* + len > bytes.len) return ReadError.Truncated;
+            cursor.* += len;
+        },
+        4 => {
+            // array: recurse for each element
+            var i: u64 = 0;
+            while (i < head.arg) : (i += 1) try verifyOne(bytes, cursor);
+        },
+        5 => {
+            // map: recurse for each key and each value
+            var i: u64 = 0;
+            while (i < head.arg) : (i += 1) {
+                try verifyOne(bytes, cursor); // key
+                try verifyOne(bytes, cursor); // value
+            }
+        },
+        6 => {
+            // tag: recurse once into the tagged item
+            try verifyOne(bytes, cursor);
+        },
+        7 => {
+            // Only inline simple values 20–23 (false/true/null/undefined)
+            // are permitted. info 24 (extended simple) and info 25/26/27
+            // (f16/f32/f64) are rejected — DreamBall envelopes never use
+            // them.
+            if (head.info > 23) return ReadError.UnsupportedItem;
+            if (head.arg != 20 and head.arg != 21 and head.arg != 22 and head.arg != 23) {
+                return ReadError.UnsupportedItem;
+            }
+        },
+    }
+}
+
 // ─── Small write helpers ────────────────────────────────────────────────────
 //
 // Every DreamBall encoder follows the same skeleton: create an allocating
@@ -182,6 +399,150 @@ test "itemLen: uint, text, bytes, array, map, tag" {
     try std.testing.expectEqual(@as(usize, 3), try itemLen(&.{ 0xA1, 0x01, 0x02 }, 0));
     // Tag(1)(uint 5) → 2 bytes head + 1 content
     try std.testing.expectEqual(@as(usize, 2), try itemLen(&.{ 0xC1, 0x05 }, 0));
+}
+
+test "readHead rejects 1-byte-padded uint (info 24, value <24)" {
+    // `0x18 0x05` encodes value 5 in the 1-byte-follow form; minimum is `0x05`.
+    var cursor: usize = 0;
+    const bytes = [_]u8{ 0x18, 0x05 };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, readHead(&bytes, &cursor));
+}
+
+test "readHead rejects 2-byte-padded uint (info 25, value <256)" {
+    // `0x19 0x00 0xFF` encodes value 255 in the 2-byte form; minimum is `0x18 0xFF`.
+    var cursor: usize = 0;
+    const bytes = [_]u8{ 0x19, 0x00, 0xFF };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, readHead(&bytes, &cursor));
+}
+
+test "readHead rejects 4-byte-padded uint (info 26, value <65536)" {
+    // `0x1A 0x00 0x00 0x01 0x00` encodes value 256 in the 4-byte form; minimum is `0x19 0x01 0x00`.
+    var cursor: usize = 0;
+    const bytes = [_]u8{ 0x1A, 0x00, 0x00, 0x01, 0x00 };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, readHead(&bytes, &cursor));
+}
+
+test "readHead rejects 8-byte-padded uint (info 27, value <2^32)" {
+    var cursor: usize = 0;
+    const bytes = [_]u8{ 0x1B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00 };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, readHead(&bytes, &cursor));
+}
+
+test "readHead accepts smallest-form encodings at each boundary" {
+    // info < 24
+    {
+        var cursor: usize = 0;
+        const h = try readHead(&[_]u8{0x17}, &cursor);
+        try std.testing.expectEqual(@as(u64, 23), h.arg);
+    }
+    // info 24 at lower bound (24)
+    {
+        var cursor: usize = 0;
+        const h = try readHead(&[_]u8{ 0x18, 0x18 }, &cursor);
+        try std.testing.expectEqual(@as(u64, 24), h.arg);
+    }
+    // info 25 at lower bound (256)
+    {
+        var cursor: usize = 0;
+        const h = try readHead(&[_]u8{ 0x19, 0x01, 0x00 }, &cursor);
+        try std.testing.expectEqual(@as(u64, 256), h.arg);
+    }
+    // info 26 at lower bound (65536)
+    {
+        var cursor: usize = 0;
+        const h = try readHead(&[_]u8{ 0x1A, 0x00, 0x01, 0x00, 0x00 }, &cursor);
+        try std.testing.expectEqual(@as(u64, 0x1_0000), h.arg);
+    }
+    // info 27 at lower bound (2^32)
+    {
+        var cursor: usize = 0;
+        const h = try readHead(&[_]u8{ 0x1B, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00 }, &cursor);
+        try std.testing.expectEqual(@as(u64, 0x1_0000_0000), h.arg);
+    }
+}
+
+test "readHead rejects indefinite-length marker (info 31)" {
+    var cursor: usize = 0;
+    // Major 4 (array), info 31 = `0x9F` = indefinite-length array.
+    const bytes = [_]u8{0x9F};
+    try std.testing.expectError(ReadError.UnsupportedItem, readHead(&bytes, &cursor));
+}
+
+test "verifyCanonical accepts canonical fixture" {
+    // A tiny canonical envelope: tag(200)([tag(201)({"t":1}),]).
+    // Hand-built to be canonical.
+    const bytes = [_]u8{
+        0xD8, 0xC8, // tag 200
+        0x81, //       array(1)
+        0xD8, 0xC9, // tag 201
+        0xA1, //       map(1)
+        0x61, 't', //  "t"
+        0x01, //       1
+    };
+    try verifyCanonical(&bytes);
+}
+
+test "verifyCanonical rejects non-canonical nested uint" {
+    // Same envelope, but the `1` value is encoded as `0x18 0x01` (padded).
+    const bytes = [_]u8{
+        0xD8, 0xC8, //
+        0x81, //
+        0xD8, 0xC9, //
+        0xA1, //
+        0x61, 't', //
+        0x18, 0x01, // <- non-canonical
+    };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, verifyCanonical(&bytes));
+}
+
+test "verifyCanonical rejects nested indefinite-length array" {
+    // tag(200) wrapping an indefinite-length array.
+    const bytes = [_]u8{ 0xD8, 0xC8, 0x9F, 0x01, 0xFF };
+    try std.testing.expectError(ReadError.UnsupportedItem, verifyCanonical(&bytes));
+}
+
+test "verifyCanonical accepts bools and simple null/undefined" {
+    // Array of [true, false, null, undefined].
+    const bytes = [_]u8{ 0x84, 0xF5, 0xF4, 0xF6, 0xF7 };
+    try verifyCanonical(&bytes);
+}
+
+test "verifyCanonical rejects float (major 7, info 26)" {
+    // f32 0.0
+    const bytes = [_]u8{ 0xFA, 0x00, 0x00, 0x00, 0x00 };
+    try std.testing.expectError(ReadError.UnsupportedItem, verifyCanonical(&bytes));
+}
+
+test "readArrayHeader / readMapHeader / readTag / readUint / readText / readBytes smoke" {
+    // [1, 2] — array of 2, with uints.
+    {
+        var cursor: usize = 0;
+        const bytes = [_]u8{ 0x82, 0x01, 0x02 };
+        try std.testing.expectEqual(@as(u64, 2), try readArrayHeader(&bytes, &cursor));
+        try std.testing.expectEqual(@as(u64, 1), try readUint(&bytes, &cursor));
+        try std.testing.expectEqual(@as(u64, 2), try readUint(&bytes, &cursor));
+    }
+    // {"x": 5}
+    {
+        var cursor: usize = 0;
+        const bytes = [_]u8{ 0xA1, 0x61, 'x', 0x05 };
+        try std.testing.expectEqual(@as(u64, 1), try readMapHeader(&bytes, &cursor));
+        try std.testing.expectEqualStrings("x", try readText(&bytes, &cursor));
+        try std.testing.expectEqual(@as(u64, 5), try readUint(&bytes, &cursor));
+    }
+    // tag 200 over bytes `DEAD`
+    {
+        var cursor: usize = 0;
+        const bytes = [_]u8{ 0xD8, 0xC8, 0x42, 0xDE, 0xAD };
+        try expectTag(&bytes, &cursor, 200);
+        try std.testing.expectEqualSlices(u8, &[_]u8{ 0xDE, 0xAD }, try readBytes(&bytes, &cursor));
+    }
+    // expectTag mismatch
+    {
+        var cursor: usize = 0;
+        const bytes = [_]u8{ 0xD8, 0xC8 };
+        try std.testing.expectError(ReadError.UnexpectedTag, expectTag(&bytes, &cursor, 201));
+    }
 }
 
 test "PairList: sort orders shorter-first then lex" {
