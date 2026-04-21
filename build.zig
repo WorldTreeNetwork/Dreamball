@@ -132,6 +132,55 @@ pub fn build(b: *std.Build) void {
     const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts");
     schemagen_step.dependOn(&schemagen_run.step);
 
+    // export-mldsa-fixture — deterministic KAT vector for WASM verify tests.
+    // Uses a seeded PRNG (tools/export-mldsa-fixture/deterministic_rand.c)
+    // so the same fixtures/ml_dsa_87_golden.json bytes are produced on
+    // every run, making the fixture safe to commit and pin in Vitest.
+    const fixture_mod = b.createModule(.{
+        .root_source_file = b.path("tools/export-mldsa-fixture/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    // Link the same liboqs C sources as the main module, but replace
+    // dreamball_stubs.c with the deterministic_rand.c seeded variant.
+    fixture_mod.link_libc = true;
+    fixture_mod.addIncludePath(liboqs_vendor.path(b, "include"));
+    fixture_mod.addIncludePath(liboqs_vendor.path(b, "src/common/pqclean_shims"));
+    fixture_mod.addIncludePath(liboqs_vendor.path(b, "src/common/sha3"));
+    fixture_mod.addIncludePath(liboqs_vendor.path(b, "src/common/sha3/xkcp_low/KeccakP-1600/plain-64bits"));
+    fixture_mod.addIncludePath(liboqs_vendor.path(b, "src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref"));
+    fixture_mod.addCSourceFiles(.{
+        .files = &.{
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/ntt.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/packing.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/poly.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/polyvec.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/reduce.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/rounding.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/sign.c",
+            "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/symmetric-shake.c",
+            "vendor/liboqs/src/common/sha3/sha3.c",
+            "vendor/liboqs/src/common/sha3/xkcp_sha3.c",
+            "vendor/liboqs/src/common/sha3/xkcp_low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c",
+            // Deterministic seeded PRNG — replaces dreamball_stubs.c for fixture gen.
+            "tools/export-mldsa-fixture/deterministic_rand.c",
+        },
+        .flags = &.{
+            "-DDILITHIUM_MODE=5",
+            "-std=c11",
+            "-Wno-unused-parameter",
+            "-Wno-unused-but-set-variable",
+            "-Wno-sign-compare",
+        },
+    });
+    const fixture_exe = b.addExecutable(.{
+        .name = "export-mldsa-fixture",
+        .root_module = fixture_mod,
+    });
+    const fixture_run = b.addRunArtifact(fixture_exe);
+    const fixture_step = b.step("export-mldsa-fixture", "Write fixtures/ml_dsa_87_golden.json (deterministic KAT vector)");
+    fixture_step.dependOn(&fixture_run.step);
+
     // jelly-wasm — WASM build of the parser for browser consumption.
     // Separate module because freestanding-wasm drops std.Io / std.crypto.random,
     // so we skip linking signer.zig / io.zig. See tools/jelly-wasm/main.zig.

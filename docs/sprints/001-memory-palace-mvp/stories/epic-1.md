@@ -24,6 +24,43 @@ Follow D-010 Option 1 exactly. Extend `src/lib/wasm/verify.test.ts` (no parallel
 - DOES: ship WASM verify export, fixture emitter, 3 verify tests + bundle-size + import-shape assertions, close `docs/known-gaps.md §1` when AC1–AC5 green.
 - Does NOT: touch `protocol_v2.zig` structs (Story 1.2), exercise `jelly.action` envelope round-trip (Story 1.3), lock palace-envelope golden bytes (Story 1.4), or wire codegen to TS (Story 1.5).
 
+### Dev Agent Record
+
+**Agent Model Used**: claude-sonnet-4-6
+
+**Completion Date**: 2026-04-22
+
+**AC Status**:
+- AC1 [happy] ✅ — `zig build export-mldsa-fixture` writes `fixtures/ml_dsa_87_golden.json`; `verifyMlDsa` happy-path passes in Vitest+Node.
+- AC2 [sig tamper] ✅ — sig byte 0 bit-flipped → returns false, no exception.
+- AC3 [msg tamper] ✅ — msg byte 0 bit-flipped → returns false, no exception.
+- AC4 [budget] ✅ — `statSync` + `gzipSync` assertions colocated in verify.test.ts; raw ≤204800 and gzip ≤65536.
+- AC5 [single import] ✅ — already met (not touched).
+- AC6 [close known-gaps] ✅ — `docs/known-gaps.md §1` status flipped to CLOSED.
+
+**Completion Notes**:
+- W-001: Added `tools/export-mldsa-fixture/main.zig` + `tools/export-mldsa-fixture/deterministic_rand.c` (seeded xorshift64* PRNG replacing `OQS_randombytes` for deterministic KAT output). Added `export-mldsa-fixture` build step to `build.zig` linking the same liboqs C sources as the main module. `fixtures/ml_dsa_87_golden.json` committed (14,547 bytes; MD5 stable across runs: `6a5c10deefbd4209ddd29578c3838a2b`).
+- W-002: Extended `src/lib/wasm/verify.test.ts` with `describe('ML-DSA-87 WASM verify (primitive)', ...)` containing AC1 happy, AC2 sig-tamper, AC3 msg-tamper tests. Verified `verifyMlDsa` was already exported from `src/lib/wasm/loader.ts` with signature `(signature, message, publicKey)` — no loader changes needed.
+- W-003: Added `describe('WASM binary budget (TC5)', ...)` with one test using `statSync` + `gzipSync` for the ≤204800/≤65536 assertions, colocated in the same file.
+- W-004: This Dev Agent Record (Playwright deferral documented below).
+- W-005: `docs/known-gaps.md §1` heading state-line changed to CLOSED; "Path forward" first bullet marked ✅; polish sub-item (strip internal symbols) preserved as the only remaining residual.
+
+**Test output** (verbatim):
+```
+$ vitest --run src/lib/wasm/verify.test.ts
+
+ RUN  v4.1.4 /Users/dukejones/work/Identikey/Dreamball
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  07:03:17
+   Duration  230ms (transform 25ms, setup 0ms, import 34ms, tests 86ms, environment 0ms)
+```
+
+**Playwright+Chromium deferral**: Playwright+Chromium coverage is deferred — the project has no Playwright harness yet. Vitest+Node coverage satisfies the D-010 spike gate; browser-runtime test lands when a browser harness is introduced (tracked in known-gaps.md).
+
+**Blocker Type**: none
+
 ---
 
 ## Story 1.2 — Add 9 palace envelope structs + `field-kind` to `protocol_v2.zig`

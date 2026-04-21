@@ -11,13 +11,16 @@ lingers here without a clear next step.
 
 ### 1. Browser-side ML-DSA-87 verification
 
-**State (updated 2026-04-21 — spike landed, opt-in build flag).**
-`verifyJelly` in `jelly.wasm` verifies Ed25519 locally and, when the
-binary is built with `-Dpq-wasm=true`, also verifies ML-DSA-87
-signatures against the envelope's `identity-pq` core field. A
-standalone `verifyMlDsa(sig, msg, pk)` export is also available.
-The default `zig build wasm` target stays PQ-free (Ed25519-only,
-matches the prior behaviour).
+**State — CLOSED 2026-04-22 by S1.1 completion. Remaining item below is polish only.**
+
+`verifyJelly` in `jelly.wasm` verifies Ed25519 locally and ML-DSA-87
+signatures against the envelope's `identity-pq` core field. The default
+`zig build wasm` ships with PQ-verify enabled (`-Dpq-wasm=true` is the
+default). A standalone `verifyMlDsa(sig, msg, pk)` export is fully tested
+via a pinned KAT fixture (`fixtures/ml_dsa_87_golden.json`, generated
+deterministically by `zig build export-mldsa-fixture`). All AC1–AC5 of
+Story 1.1 are green; see `src/lib/wasm/verify.test.ts` for the primitive
++ budget assertions.
 
 **Verify-only spike results.** Vendored liboqs (ML-DSA-87 ref impl +
 XKCP SHAKE) compiled for wasm32-freestanding via four shim headers
@@ -46,10 +49,9 @@ the native CLI, load `jelly.wasm` in Bun, push bytes through
 the repo, reconstruct from this note if needed.
 
 **Path forward.**
-- Flip `-Dpq-wasm=true` to default-on once a browser consumer
-  actually needs PQ verify (the Memory Palace composition may want
-  it for visitor-signed poetic mythoi). Until then the flag is
-  opt-in, the default stays the tiny Ed25519-only binary.
+- ✅ Closed 2026-04-22 — `-Dpq-wasm=true` is now the default; PQ verify
+  ships in every `zig build wasm` output. KAT fixture committed; Vitest
+  primitive tests green (S1.1 AC1–AC5).
 - Open polish: strip internal `pqcrystals_*_internal` + `OQS_SHA3_*`
   symbols from the export table (`wasm_exe.rdynamic` leaks them).
   Not correctness-affecting; a few hundred bytes.
