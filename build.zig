@@ -4,6 +4,19 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // Build options. `-Dpq-wasm=true` links the ML-DSA-87 VERIFY path
+    // (vendored liboqs) into the WASM module so the browser can check
+    // post-quantum signatures locally. Off by default — the baseline WASM
+    // binary stays under the 150 KB budget.
+    const pq_wasm = b.option(
+        bool,
+        "pq-wasm",
+        "Link ML-DSA-87 verify into jelly.wasm (freestanding). Default: false.",
+    ) orelse false;
+
+    const build_opts = b.addOptions();
+    build_opts.addOption(bool, "pq_wasm", pq_wasm);
+
     const zbor_dep = b.dependency("zbor", .{
         .target = target,
         .optimize = optimize,
@@ -16,6 +29,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     mod.addImport("zbor", zbor_mod);
+    mod.addImport("build_options", build_opts.createModule());
 
     // liboqs ML-DSA-87 reference implementation, vendored under vendor/liboqs.
     // See vendor/liboqs/VENDOR.md for pin + scope. The .c sources compile into
@@ -124,6 +138,52 @@ pub fn build(b: *std.Build) void {
         .target = wasm_target,
         .optimize = .ReleaseSmall,
     });
+    wasm_mod.addImport("build_options", build_opts.createModule());
+
+    // Optional PQ verify: link the vendored liboqs subset into the WASM
+    // module. The linker's dead-code elimination (ReleaseSmall + wasm-ld)
+    // drops the sign/keypair paths when only verify is exported.
+    if (pq_wasm) {
+        wasm_mod.link_libc = false;
+        // Shim directory goes FIRST so our stub <string.h>/<stdlib.h>/<stdio.h>/<limits.h>
+        // resolve ahead of anything the toolchain might surface. Freestanding-wasm
+        // has no libc, and we only need declarations the compiler-rt side
+        // already provides (memcpy/memset) or that live in never-expanded macros.
+        wasm_mod.addIncludePath(liboqs_vendor.path(b, "wasm_shims"));
+        wasm_mod.addIncludePath(liboqs_vendor.path(b, "include"));
+        wasm_mod.addIncludePath(liboqs_vendor.path(b, "src/common/pqclean_shims"));
+        wasm_mod.addIncludePath(liboqs_vendor.path(b, "src/common/sha3"));
+        wasm_mod.addIncludePath(liboqs_vendor.path(b, "src/common/sha3/xkcp_low/KeccakP-1600/plain-64bits"));
+        wasm_mod.addIncludePath(liboqs_vendor.path(b, "src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref"));
+        wasm_mod.addCSourceFiles(.{
+            .files = &.{
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/ntt.c",
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/packing.c",
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/poly.c",
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/polyvec.c",
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/reduce.c",
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/rounding.c",
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/sign.c",
+                "vendor/liboqs/src/sig/ml_dsa/pqcrystals-dilithium-standard_ml-dsa-87_ref/symmetric-shake.c",
+                "vendor/liboqs/src/common/sha3/sha3.c",
+                "vendor/liboqs/src/common/sha3/xkcp_sha3.c",
+                "vendor/liboqs/src/common/sha3/xkcp_low/KeccakP-1600/plain-64bits/KeccakP-1600-opt64.c",
+                "vendor/liboqs/src/dreamball_stubs_wasm.c",
+            },
+            .flags = &.{
+                "-DDILITHIUM_MODE=5",
+                "-std=c11",
+                "-Wno-unused-parameter",
+                "-Wno-unused-but-set-variable",
+                "-Wno-sign-compare",
+                // No stdlib on freestanding — liboqs sources don't need any
+                // beyond memcpy/memset, both of which Zig's compiler-rt
+                // provides automatically.
+                "-ffreestanding",
+            },
+        });
+    }
+
     const wasm_exe = b.addExecutable(.{
         .name = "jelly",
         .root_module = wasm_mod,

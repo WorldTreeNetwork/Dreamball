@@ -25,11 +25,13 @@
 //!     pick up a pure-Zig Ed25519 impl that tolerates freestanding).
 
 const std = @import("std");
+const build_options = @import("build_options");
 
 const protocol = @import("protocol.zig");
 const envelope = @import("envelope.zig");
 const sealing = @import("sealing.zig");
 const json_mod = @import("json.zig");
+const ml_dsa = @import("ml_dsa.zig");
 
 /// Host-provided randomness. Imported by the WASM module; the JS side
 /// supplies an implementation that fills `ptr[0..len]` with cryptographically
@@ -494,9 +496,55 @@ export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
                 return 0;
             };
             have_ed = true;
+        } else if (build_options.pq_wasm and std.mem.eql(u8, sig.alg, "ml-dsa-87")) {
+            // ML-DSA verify needs `identity-pq` in the core.
+            const pq_pk = db.identity_pq orelse {
+                setErr("ML-DSA signature present but no identity-pq in core", .{});
+                return 0;
+            };
+            if (sig.value.len != protocol.ML_DSA_87_SIGNATURE_LEN) {
+                setErr("malformed ML-DSA signature length", .{});
+                return 0;
+            }
+            ml_dsa.verify(sig.value, stripped.unsigned, &pq_pk) catch {
+                setErr("ML-DSA signature verification failed", .{});
+                return 0;
+            };
         }
-        // ML-DSA and other algs are parsed but not verified here.
+        // When !build_options.pq_wasm, ML-DSA signatures are parsed but
+        // not verified here (native CLI is the authority).
     }
 
     return if (have_ed) 2 else 1;
+}
+
+/// Standalone ML-DSA-87 verify. Inputs point into linear memory.
+/// Returns 1 = verified, 0 = verification failed, -1 = parse/setup error.
+/// Only active when built with `-Dpq-wasm=true`. On the no-PQ build the
+/// export is still present but always returns -1 with last-err set.
+export fn verifyMlDsa(
+    sig_ptr: u32,
+    sig_len: u32,
+    msg_ptr: u32,
+    msg_len: u32,
+    pk_ptr: u32,
+    pk_len: u32,
+) i32 {
+    if (!build_options.pq_wasm) {
+        setErr("verifyMlDsa: build was not compiled with -Dpq-wasm=true", .{});
+        return -1;
+    }
+    if (sig_len != protocol.ML_DSA_87_SIGNATURE_LEN) {
+        setErr("verifyMlDsa: signature length must be {d}, got {d}", .{ protocol.ML_DSA_87_SIGNATURE_LEN, sig_len });
+        return -1;
+    }
+    if (pk_len != protocol.ML_DSA_87_PUBLIC_KEY_LEN) {
+        setErr("verifyMlDsa: pubkey length must be {d}, got {d}", .{ protocol.ML_DSA_87_PUBLIC_KEY_LEN, pk_len });
+        return -1;
+    }
+    const sig: []const u8 = @as([*]const u8, @ptrFromInt(sig_ptr))[0..sig_len];
+    const msg: []const u8 = @as([*]const u8, @ptrFromInt(msg_ptr))[0..msg_len];
+    const pk: *const [protocol.ML_DSA_87_PUBLIC_KEY_LEN]u8 = @ptrCast(@alignCast(@as([*]const u8, @ptrFromInt(pk_ptr))));
+    ml_dsa.verify(sig, msg, pk) catch return 0;
+    return 1;
 }

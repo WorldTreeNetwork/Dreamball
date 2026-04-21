@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build_options");
 
 // Sizes match FIPS-204 Category 5 / pqcrystals_ml_dsa_87 constants defined in
 // liboqs's api.h. Hard-coded here so the Zig type system treats them as
@@ -29,10 +30,10 @@ comptime {
     std.debug.assert(SIGNATURE_LEN == protocol.ML_DSA_87_SIGNATURE_LEN);
 }
 
-// Compile-time gate: the externs exist only for native targets that link the
-// vendored liboqs. wasm32-freestanding builds this module with `enabled = false`
-// and exposes compile errors if something tries to call sign/verify there.
-pub const enabled = builtin.target.os.tag != .freestanding;
+// Compile-time gate: `enabled` tells callers whether the ML-DSA-87 externs
+// are linked. Native targets always have liboqs. wasm32-freestanding links
+// it only under `-Dpq-wasm=true`; see the verify-only PQ spike in build.zig.
+pub const enabled = builtin.target.os.tag != .freestanding or build_options.pq_wasm;
 
 // ---------------------------------------------------------------------------
 // liboqs externs — pqcrystals_ml_dsa_87_ref_*

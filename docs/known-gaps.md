@@ -11,33 +11,50 @@ lingers here without a clear next step.
 
 ### 1. Browser-side ML-DSA-87 verification
 
-**State.** `verifyJelly` in `jelly.wasm` currently verifies Ed25519
-locally and acknowledges ML-DSA-87 signatures without verifying them.
-(Terminology: the nodes carry ML-DSA-87 `'signed'` attributes that
-reference an `identity-pq` core field on v3 nodes — see §1.2 of
-PROTOCOL.md.)
+**State (updated 2026-04-21 — spike landed, opt-in build flag).**
+`verifyJelly` in `jelly.wasm` verifies Ed25519 locally and, when the
+binary is built with `-Dpq-wasm=true`, also verifies ML-DSA-87
+signatures against the envelope's `identity-pq` core field. A
+standalone `verifyMlDsa(sig, msg, pk)` export is also available.
+The default `zig build wasm` target stays PQ-free (Ed25519-only,
+matches the prior behaviour).
 
-**Native side is no longer deferred.** See §6 below — the vendored
-liboqs subset now links cleanly into the native `jelly` binary and
-the Zig library exposes `ml_dsa.keypair` / `ml_dsa.sign` / `ml_dsa.verify`
-with a round-trip test gate. Browser verification remains the open
-problem.
+**Verify-only spike results.** Vendored liboqs (ML-DSA-87 ref impl +
+XKCP SHAKE) compiled for wasm32-freestanding via four shim headers
+(`<string.h>`, `<stdlib.h>`, `<stdio.h>`, `<limits.h>` in
+`vendor/liboqs/wasm_shims/`) + a freestanding stubs file
+(`dreamball_stubs_wasm.c`, static 8×256-byte arena for the Keccak
+context alloc, traps for unreachable exit/fprintf/randombytes).
+wasm-ld's dead-code elimination dropped the sign and keypair code
+paths cleanly, leaving only the verify-reachable subset plus shared
+NTT/poly helpers:
 
-**Why still deferred for WASM.** The compiled size of the ML-DSA-87
-reference C sources plus XKCP Keccak adds ~250-400 KB of code section
-to the WASM binary, against our 150 KB budget. The native path is
-strictly preferable: the server subprocesses the native `jelly`
-binary (no HTTP hop to recrypt-server, no bundle bloat) and the
-browser stays Ed25519-only.
+| Build                        | Raw    | Gzipped |
+|------------------------------|--------|---------|
+| Default (Ed25519 only)       | 142.5 KB | 40.3 KB |
+| `-Dpq-wasm=true` (PQ verify) | 171.3 KB | 50.1 KB |
+| **Delta**                    | **+28.7 KB raw** | **+9.9 KB gzipped** |
+
+~10 KB over the wire is well inside the 150 KB budget. The prior
+"~250–400 KB" estimate was pessimistic by an order of magnitude;
+it assumed no DCE and the full OQS_KEM + OQS_SIG dispatch surface.
+
+**End-to-end confirmed.** Mint → hybrid-sign a tool DreamBall via
+the native CLI, load `jelly.wasm` in Bun, push bytes through
+`verifyJelly`, return code = 2 (Ed25519 + ML-DSA both OK). See
+`/tmp/pq-wasm-verify-smoke.ts` during the spike — not committed to
+the repo, reconstruct from this note if needed.
 
 **Path forward.**
-- Stay native-CLI-only until either (a) a tree-shaken pure-Zig
-  ML-DSA-87 implementation appears in stdlib or (b) the bundle-size
-  trade-off is explicitly revisited as a product decision.
-- The vendored `vendor/liboqs/` subset can be compiled for
-  wasm32-freestanding today by providing a freestanding `OQS_randombytes`
-  (the existing `env.getRandomBytes` host import) — the compile
-  toolchain is ready when the size budget is.
+- Flip `-Dpq-wasm=true` to default-on once a browser consumer
+  actually needs PQ verify (the Memory Palace composition may want
+  it for visitor-signed poetic mythoi). Until then the flag is
+  opt-in, the default stays the tiny Ed25519-only binary.
+- Open polish: strip internal `pqcrystals_*_internal` + `OQS_SHA3_*`
+  symbols from the export table (`wasm_exe.rdynamic` leaks them).
+  Not correctness-affecting; a few hundred bytes.
+- Signing in the browser remains out of scope by design — user
+  signing lives in the key-bearing extension/app path.
 
 ### 2. `zstd` compression for DragonBall sealed bundles
 
@@ -166,9 +183,11 @@ policy.
   recrypt+identikey wallet format (`DCYW` shell + Argon2id +
   XChaCha20-Poly1305 around a `recrypt.identity` node).
   Tracked in a cross-repo follow-up.
-- Browser-side ML-DSA-87 verification (see §1 above — still
-  native-only due to WASM bundle-size budget; verify-only spike
-  planned next to measure the minimum WASM delta).
+- Browser-side ML-DSA-87 verification — **spike landed 2026-04-21**
+  behind `-Dpq-wasm=true`. +28.7 KB raw / +9.9 KB gzipped over the
+  Ed25519-only baseline. Default build stays PQ-free until a
+  browser consumer actually needs it. See §1 above for the full
+  measurement and follow-ups.
 - ✅ Closed 2026-04-21 — `Transmission` and `Relic` envelopes now
   carry their own `identity-pq` slot in core (`sender-identity` +
   `sender-identity-pq` on Transmission, `identity-pq` on Relic)
