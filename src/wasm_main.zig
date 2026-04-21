@@ -142,12 +142,18 @@ fn pack(bytes: []const u8) u64 {
 }
 
 // ============================================================================
-// Write-op exports — the Phase A expansion. Every export returns a packed
-// u64 (result_ptr << 32) | result_len pointing at JSON bytes. Secret keys
+// Write-op exports — every export returns a packed u64
+// (result_ptr << 32) | result_len pointing at JSON bytes. Secret keys
 // produced by `mintDreamBall` are placed in `last_secret`; JS reads via
-// `lastSecretPtr` + `lastSecretLen`. ML-DSA-87 signatures are zero-filled
-// placeholders here; the caller (jelly-server) is responsible for the
-// HTTP roundtrip to recrypt-server for real post-quantum signing.
+// `lastSecretPtr` + `lastSecretLen`.
+//
+// ML-DSA-87 signatures are NOT emitted here. The browser doesn't hold
+// the signer's PQ secret — user signing lives in a key-bearing
+// extension/app path, and the server mint path subprocesses the native
+// `jelly` binary which signs with both algorithms locally. Browser-
+// minted envelopes are therefore Ed25519-only (explicitly legal under
+// PROTOCOL.md §2.3). A consumer that wants PQ strength re-signs with
+// `jelly grow --key` using a hybrid key file.
 // ============================================================================
 
 const Ed25519 = std.crypto.sign.Ed25519;
@@ -162,12 +168,10 @@ export fn lastSecretLen() u32 {
     return last_secret_len;
 }
 
-fn mlDsaZeroSig() [protocol.ML_DSA_87_SIGNATURE_LEN]u8 {
-    var buf: [protocol.ML_DSA_87_SIGNATURE_LEN]u8 = undefined;
-    @memset(&buf, 0);
-    return buf;
-}
-
+/// Legacy zero-filled ML-DSA-87 signature detector. Earlier browser-mint
+/// envelopes attached a 4627-byte zero buffer as a placeholder; we now
+/// emit Ed25519-only instead, but `verifyJelly` keeps this around to
+/// tolerate any on-disk envelope still carrying the legacy placeholder.
 fn isPlaceholderMldsa(sig: []const u8) bool {
     if (sig.len != protocol.ML_DSA_87_SIGNATURE_LEN) return false;
     for (sig) |b| if (b != 0) return false;
@@ -259,11 +263,12 @@ export fn mintDreamBall(
     };
     const sig_bytes = sig.toBytes();
 
-    // Attach Ed25519 + ML-DSA placeholder, re-encode.
-    const mldsa_ph = mlDsaZeroSig();
+    // Attach Ed25519 only — browser mint doesn't hold a PQ key, and
+    // §2.3 accepts Ed25519-only nodes. A downstream caller (typically
+    // `jelly grow --key` on the native CLI with a hybrid key file)
+    // upgrades the envelope to hybrid when real PQ strength is wanted.
     const sigs = [_]protocol.Signature{
         .{ .alg = "ed25519", .value = &sig_bytes },
-        .{ .alg = "ml-dsa-87", .value = &mldsa_ph },
     };
     db.signatures = &sigs;
 
@@ -345,10 +350,9 @@ export fn joinGuildWasm(
         return 0;
     };
     const sig_bytes = sig.toBytes();
-    const mldsa_ph = mlDsaZeroSig();
+    // Re-sign with Ed25519 only — same reasoning as mint (see above).
     const sigs = [_]protocol.Signature{
         .{ .alg = "ed25519", .value = &sig_bytes },
-        .{ .alg = "ml-dsa-87", .value = &mldsa_ph },
     };
     db.signatures = &sigs;
 
@@ -416,10 +420,9 @@ export fn growDreamBall(
         return 0;
     };
     const sig_bytes = sig.toBytes();
-    const mldsa_ph = mlDsaZeroSig();
+    // Re-sign with Ed25519 only — same reasoning as mint (see above).
     const sigs = [_]protocol.Signature{
         .{ .alg = "ed25519", .value = &sig_bytes },
-        .{ .alg = "ml-dsa-87", .value = &mldsa_ph },
     };
     db.signatures = &sigs;
 
@@ -506,10 +509,9 @@ export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
                 setErr("malformed ML-DSA signature length", .{});
                 return 0;
             }
-            // Zero-filled placeholder — emitted by the legacy browser-mint
-            // path (see `mlDsaZeroSig` below). Don't verify; don't reject.
-            // A caller that wants PQ-strong verification must replace these
-            // with real sigs (e.g. via `jelly grow --key` on the native CLI).
+            // Zero-filled placeholder from pre-2026-04-21 browser-mint
+            // envelopes — skip, don't reject. Current mint emits
+            // Ed25519-only, so fresh envelopes never hit this branch.
             if (isPlaceholderMldsa(sig.value)) continue;
             const pq_pk = db.identity_pq orelse {
                 setErr("ML-DSA signature present but no identity-pq in core", .{});
