@@ -638,6 +638,7 @@ Per-slot read/write permission policy. Attached to a Guild envelope as the `poli
   "guild-only":       "emotional-register",
   "guild-only":       "interaction-set",
   "admin-only":       "secret",            ; repeatable — only guild admins
+  "quorum-policy":    <jelly.quorum-policy>,  ; optional — co-signing rule for quorum-gated actions
   [salted] 'note':    "default v2 policy"
 ]
 ```
@@ -645,6 +646,33 @@ Per-slot read/write permission policy. Attached to a Guild envelope as the `poli
 A consumer rendering a DreamBall first checks `guild` attribute(s) on the target DreamBall, resolves each to a `jelly.dreamball.guild` envelope, reads the policy, and decides which attributes to expose to the current viewer identity.
 
 Policy resolution is additive — if multiple Guilds claim the DreamBall, the union of `public` + `guild-only` slots is readable by members of any claiming Guild; `admin-only` requires admin membership in at least one claiming Guild.
+
+**`quorum-policy` (optional).** Defines the co-signing rule for
+Guild-quorum-gated actions (PRD FR60g — mythos divergence
+resolution; future uses: palace-custodian-change actions,
+Guild-admin rotations):
+
+```
+200(
+  201({ "type": "jelly.quorum-policy", "format-version": 2,
+        "kind": "m-of-n" })
+) [
+  "m":      3,                          ; threshold — how many admin sigs required
+  "admins": [h'…32…', h'…32…', ...],   ; fingerprints eligible to co-sign; cardinality = n
+  [salted] 'note': "default admin quorum"
+]
+```
+
+Quorum is enforced **at the signature-verification layer** by
+requiring an action to carry ≥ `m` `'signed'` attribute pairs
+(Ed25519 + ML-DSA-87) each from a distinct fingerprint in the
+`admins` list, each verifying over the action's canonical bytes.
+This is a policy check on top of the existing "all present
+signatures must verify" rule (§8) — it does **not** introduce a
+threshold-aggregate signature scheme (which would be incompatible
+with ML-DSA-87's lack of a reference threshold construction). See
+`docs/decisions/2026-04-21-nextgraph-crdt-review.md` "Option A" for
+the rationale.
 
 ### 12.8 `jelly.secret-ref`
 
@@ -786,51 +814,101 @@ floats.
 ### 13.3 `jelly.timeline` + `jelly.action`
 
 A signed, hash-linked DAG of actions taken inside the palace.
-Append-only per keypair; Merkle-rooted by `head-hash`; any
+Append-only per keypair; Merkle-rooted by the **head set**; any
 cryptographic-clock semantics can be derived without a central
 authority. Multi-parent actions enable merge semantics (conflict
 resolution is PRD FR68, Vision).
 
 ```
 200(
-  201({ "type": "jelly.timeline", "format-version": 2,
+  201({ "type": "jelly.timeline", "format-version": 3,
         "palace-fp": h'…32…'                 ; 1:1 identity anchor — which palace this timeline belongs to
   })
 ) [
-  "head-hash":    h'…32…',                   ; Blake3 of the latest jelly.action envelope — attribute, updated on every append
-  "action":       <jelly.action envelope>,   ; repeatable, ordered by parent-hash chain
+  "head-hashes":  [h'…32…', h'…32…'],         ; set, cardinality ≥ 1 — Blake3 of each current leaf jelly.action
+  "action":       <jelly.action envelope>,    ; repeatable, ordered by parent-hash chain
   [salted] 'note': "genesis timeline"
 ]
 ```
 
-`head-hash` lives in an attribute, not the core, because it is
+**`head-hashes` is a set, not a single hash.** A timeline with no
+concurrent activity has exactly one head; multi-writer shared
+rooms (FR68) transiently hold multiple heads until a merge action
+lands. Verifiers MUST accept any cardinality ≥ 1 and walk back from
+*every* head to the genesis. When cardinality drops to 1 after a
+merge, the timeline is fully reconciled.
+
+`head-hashes` lives in an attribute, not the core, because it is
 the timeline's current *state*, not its *identity*. The core
 stays stable across the timeline's entire life: `palace-fp` binds
 the timeline to exactly one palace. Re-signing on append is still
 required, but the core digest does not churn — the Merkle tree
 over attributes is what changes.
 
+**Format bump.** The shift from `head-hash` (singular, v2) to
+`head-hashes` (set, v3) is a wire change. v2 timelines with a
+single `head-hash` are accepted on read and rewritten as a
+1-element `head-hashes` set on the next append.
+
 `jelly.action` core:
 ```
 {
   "type":           "jelly.action",
-  "format-version": 2,
+  "format-version": 3,
   "action-kind":    "inscribe"|"move"|"unlock"|"true-naming"|"shadow-naming"|…,
-  "parent-hashes":  [h'…32…', h'…32…'],       ; one for linear history, multiple for merges
+  "parent-hashes":  [h'…32…', h'…32…'],       ; ACKS — previous head(s) acknowledged; one for linear history, multiple for merges
   "actor":          h'…32…'                    ; fingerprint of the signer
 }
 ```
 Attributes: `timestamp` (CBOR tag 1), `target-fp` (what the action
 was performed on, if any), free-form per-kind payload, dual
-signatures.
+signatures, and two optional DAG-relation attributes below.
+
+**Optional `deps` attribute — logical dependencies (adapted from
+NextGraph's DEPS).** `parent-hashes` conflates two concerns: the
+prior head(s) this action acknowledges (ACKS), and the earlier
+actions this one logically depends on (a `move` of an item
+depends on the `inscribe` that created it; a `true-naming` depends
+on the `reflect` session that surfaced it). When the distinction
+matters — typically for renderer highlighting, diagnostic
+traversal, or "what is the minimum causal slice of history
+required to replay this action?" queries — authors MAY add an
+optional `deps` attribute:
+
+```
+"deps": [<jelly.action-ref>, <jelly.action-ref>, ...]  ; repeatable; logical predecessors; disjoint from parent-hashes
+```
+
+Absent = no explicit logical dependencies beyond ACKS. Not
+load-bearing for verification: walk still proceeds via
+`parent-hashes`. Load-bearing for "causal slice" queries.
+
+**Optional `nacks` attribute — invalidation (adapted from
+NextGraph's NACKS).** An action that invalidates earlier actions
+on the same timeline MAY list their refs in a `nacks` attribute:
+
+```
+"nacks": [<jelly.action-ref>, ...]  ; repeatable; invalidated prior actions
+```
+
+Used by `jelly palace rewind` (FR67) and by the FR60g "shadow-
+naming" flow (a quorum-resolved canonical `true-naming` `nacks`
+the losing branch's `true-naming` candidate, preserving it on the
+timeline as a read-only record). Verifiers accept `nacks` entries
+that reference existing actions; they do not require the
+referenced action to be reachable from any current head.
 
 **Chain rules.**
 - Every signed action's `parent-hashes` MUST resolve to previously
   signed actions in the same palace's timeline.
-- Verification walks back from `head-hash` to the first action
-  (whose `parent-hashes` is empty); a gap is a hard failure.
+- Verification walks back from *every* entry in `head-hashes` to
+  the first action (whose `parent-hashes` is empty); a gap on any
+  walk is a hard failure.
 - An action whose `parent-hashes` points outside the palace's
   timeline is rejected with "foreign parent."
+- `deps` and `nacks` refs MUST resolve to actions in the same
+  palace's timeline but are NOT required to be reachable from the
+  current head set.
 
 **`jelly.action-ref` shorthand.** A 32-byte Blake3 of a
 `jelly.action` envelope's canonical bytes. Used from other envelopes
@@ -1078,9 +1156,11 @@ canonical byte output for:
 1. `jelly.dreamball.field` with `field-kind: "palace"` attribute
    (minimal).
 2. `jelly.layout` with two placements.
-3. `jelly.timeline` with `head-hash` attribute set.
+3. `jelly.timeline` with 1-element `head-hashes` set (quiescent).
+3a. `jelly.timeline` with 2-element `head-hashes` set (concurrent writers, unmerged).
 4. `jelly.action` single-parent variant.
 5. `jelly.action` multi-parent variant.
+5a. `jelly.action` with `deps` and `nacks` attributes populated.
 6. `jelly.aqueduct` with all numeric fields populated.
 7. `jelly.element-tag` with `phase` qualifier.
 8. `jelly.trust-observation` with two axes + both signatures.
@@ -1092,15 +1172,26 @@ canonical byte output for:
 
 ### 13.12 Migration
 
-- **Fully additive.** Every introduction here is new. No v1 or v2
-  envelope gains or loses core fields.
-- **Version number unchanged.** All new envelopes carry
-  `format-version: 2`.
+- **Mostly additive.** Every introduction here is new, with one
+  wire-format change: `jelly.timeline` and `jelly.action` bump to
+  `format-version: 3` to carry the `head-hashes` set (was
+  `head-hash` singular) and the optional `deps` / `nacks`
+  attributes on actions. Readers accept v2 timelines and normalize
+  `head-hash` → 1-element `head-hashes` on the next append. Every
+  other new envelope in this section carries `format-version: 2`.
+  No v1 or v2 envelope outside `jelly.timeline`/`jelly.action`
+  gains or loses core fields.
 - **v2 consumers without palace support.** Unknown attributes on a
   known envelope skip silently, preserving §9's versioning rule. A
   v2 consumer rendering a palace-flavoured Field without palace
   support sees a plain v2 Field and renders via the existing
   `omnispherical` lens — degraded but valid.
+- **Pre-FR68 wire tweaks.** The `head-hashes` pluralisation, the
+  `deps`/`nacks` optional attributes on `jelly.action`, and the
+  `quorum-policy` attribute on `jelly.guild-policy` (§12.7) are
+  landed as spec-only changes ahead of FR68 code work to avoid a
+  later breaking wire revision. Rationale in
+  `docs/decisions/2026-04-21-nextgraph-crdt-review.md`.
 
 ### 13.13 Open questions
 
@@ -1108,10 +1199,17 @@ Tracked in the Memory Palace PRD §9 rather than duplicated here.
 Summary of protocol-shape-affecting ones:
 
 1. **CRDT merge semantics for the timeline DAG.** Multi-writer
-   merges are Vision (PRD FR68). A decision there may reshape
-   `jelly.action`'s core.
+   merges are Vision (PRD FR68). Pre-FR68 wire tweaks landed
+   2026-04-21 (`head-hashes` set, optional `deps`/`nacks` on
+   actions) so the envelope shape can accommodate the merge
+   without a future breaking change. The merge *algorithm* (who
+   emits the merge action, conflict-surfacing policy) remains
+   open.
 2. **Mythos quorum on Guild-owned palaces.** PRD FR60g Vision.
-   Default today is any-admin.
+   Wire shape landed 2026-04-21 as `jelly.quorum-policy` under
+   `jelly.guild-policy` (§12.7) — enforced via stacked `'signed'`
+   attributes rather than a threshold-aggregate scheme. Default
+   today remains any-admin.
 3. **Archiform registry federation.** Community-defined archiforms
    may fragment without a shared root registry. Deferred.
 4. **NextGraph overlap.** Before locking CRDT and threshold-signature

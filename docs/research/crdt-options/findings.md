@@ -80,6 +80,46 @@ embeddable library solves all four problems.
   content-addressed DAG compatible with Blake3/jelly. Signing is
   external.
 
+### Fugue (Weidner et al., 2023; IEEE TPDS paper published Nov 2025)
+
+- **Maturity**: Academic / reference-implementation grade. "The Art of
+  the Fugue: Minimizing Interleaving in Collaborative Text Editing"
+  (Weidner, Gentle, Kleppmann) first circulated as arXiv 2305.00583 in
+  May 2023; formal publication IEEE Transactions on Parallel and
+  Distributed Systems 36(11):2425–2437, November 2025.
+- **License**: the reference implementation `@mweidner037/list-fugue`
+  is MIT.
+- **Claim to fame**: the **first** list/text CRDT proven to satisfy
+  *maximal non-interleaving*. The paper establishes that every prior
+  list CRDT (RGA, YATA, Logoot, Treedoc, etc.) and every OT family
+  exhibits an interleaving anomaly — concurrent insertions at the
+  same position can produce character-level interleaved garbage.
+  Fugue solves this; two variants (Fugue-Tree and Fugue-List) are
+  proven semantically equivalent.
+- **Data types**: text/list only. Not a full CRDT library — a primitive.
+- **WASM/Bun story**: pure TypeScript reference implementation; no
+  runtime dependency beyond the standard library. Drops into Bun and
+  the browser without an extra WASM instance.
+- **Where Fugue actually matters for Dreamball**:
+  - `jelly.inscription` concurrent editing (FR72, Growth tier — if
+    two scribes edit the same inscription at the same position, Fugue
+    is the algorithm that avoids the interleaving anomaly).
+  - Underlies Loro's Text container (Loro picked Fugue over RGA/YATA
+    specifically for non-interleaving). Choosing Loro for
+    inscription editing transitively picks Fugue.
+  - **Not relevant** for `jelly.action` (a DAG-of-events, not a
+    sequence of character positions), `jelly.layout` (a map, not a
+    sequence), or `jelly.mythos` (a per-custodian chain with
+    quorum-resolved forks, not an interleaved text edit).
+- **Verdict**: the right *text-level* algorithm when FR72
+  concurrent-inscription editing becomes a requirement. MVP doesn't
+  need it — inscriptions are single-author. When it does become a
+  requirement, reach for Loro (which ships Fugue internally) rather
+  than adopting the reference `@mweidner037/list-fugue` directly,
+  unless size/tree-shaking becomes a pressure point.
+
+Sources: [22][23][24]
+
 ### Diamond Types / eg-walker
 
 Research-grade. GitHub "WIP" as of early 2026. EuroSys 2025 paper
@@ -325,3 +365,11 @@ nodes and edges; those must still be implemented.
   framework
 - [21] https://docs.nextgraph.org/en/specs/format-repo/ — NextGraph repo
   format spec
+- [22] https://arxiv.org/abs/2305.00583 — The Art of the Fugue:
+  Minimizing Interleaving in Collaborative Text Editing (Weidner,
+  Gentle, Kleppmann, 2023)
+- [23] https://mattweidner.com/2022/10/21/basic-list-crdt.html —
+  Weidner, "Fugue: A Basic List CRDT" (introductory exposition,
+  tree-variant)
+- [24] https://loro.dev/blog/loro-richtext — Loro's rationale for
+  adopting Fugue as the underlying text algorithm

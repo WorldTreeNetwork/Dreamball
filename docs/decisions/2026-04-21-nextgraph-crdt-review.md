@@ -221,7 +221,7 @@ plus verify-side policy evaluation.
 | `jelly.layout` | MV-Register per `child-fp` (surfaces both concurrent moves as ghost-placements; matches the "rejected-action ghost" UX already in §9) | Bespoke; ~80 lines |
 | `jelly.mythos` divergence (FR60g) | Signed-chain fork protocol with Guild-quorum canonicalization + `shadow-naming` preservation | Bespoke; wire shape specified above |
 | Oracle memory-graph triples (LPG) | OR-Set for nodes and edges + LWW-Map per edge for properties | Primary: bespoke; consider Loro (pure WASM, no napi) if concurrent property edits become a hotspot |
-| `jelly.inscription` text editing (FR72, Growth) | LWW on the `jelly.asset` hash is sufficient at MVP; Peritext/Automerge only if concurrent text merging becomes a requirement | Defer — MVP is single-author per inscription |
+| `jelly.inscription` text editing (FR72, Growth) | LWW on the `jelly.asset` hash is sufficient at MVP. When concurrent text editing becomes a requirement, use **Fugue** — the first CRDT with proven maximal non-interleaving (Weidner et al., IEEE TPDS 2025). Reach for Loro (which ships Fugue internally) rather than the standalone reference implementation. | Defer — MVP is single-author per inscription |
 
 The key finding: **we do not need a CRDT library for the MVP palace.**
 Three of four structures are already Merkle-CRDT-shaped by the
