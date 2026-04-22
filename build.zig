@@ -132,6 +132,24 @@ pub fn build(b: *std.Build) void {
     const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts");
     schemagen_step.dependOn(&schemagen_run.step);
 
+    // export-envelope-fixtures — write fixtures/envelope_golden/<type>.cbor for
+    // Vitest round-trip parity tests (Story 1.5 / AC2).
+    const envelope_fixture_mod = b.createModule(.{
+        .root_source_file = b.path("tools/export-envelope-fixtures/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    // The tool accesses all encoders via the dreamball module (root.zig re-exports
+    // protocol_v2, protocol, envelope_v2 as pub fields).
+    envelope_fixture_mod.addImport("dreamball", mod);
+    const envelope_fixture_exe = b.addExecutable(.{
+        .name = "export-envelope-fixtures",
+        .root_module = envelope_fixture_mod,
+    });
+    const envelope_fixture_run = b.addRunArtifact(envelope_fixture_exe);
+    const envelope_fixture_step = b.step("export-envelope-fixtures", "Write fixtures/envelope_golden/*.cbor for Vitest round-trip tests");
+    envelope_fixture_step.dependOn(&envelope_fixture_run.step);
+
     // export-mldsa-fixture — deterministic KAT vector for WASM verify tests.
     // Uses a seeded PRNG (tools/export-mldsa-fixture/deterministic_rand.c)
     // so the same fixtures/ml_dsa_87_golden.json bytes are produced on

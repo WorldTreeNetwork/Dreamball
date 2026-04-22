@@ -28,32 +28,32 @@ export class CborReader {
     return this.bytes[this.cursor++];
   }
 
-  private readHead(): { major: number; arg: number | bigint } {
+  private readHead(): { major: number; arg: number | bigint; info: number } {
     const b = this.takeByte();
     const major = b >> 5;
     const info = b & 0x1f;
-    if (info < 24) return { major, arg: info };
-    if (info === 24) return { major, arg: this.takeByte() };
+    if (info < 24) return { major, arg: info, info };
+    if (info === 24) return { major, arg: this.takeByte(), info };
     if (info === 25) {
       const hi = this.takeByte();
       const lo = this.takeByte();
-      return { major, arg: (hi << 8) | lo };
+      return { major, arg: (hi << 8) | lo, info };
     }
     if (info === 26) {
       let v = 0;
       for (let i = 0; i < 4; i++) v = (v << 8) | this.takeByte();
-      return { major, arg: v >>> 0 };
+      return { major, arg: v >>> 0, info };
     }
     if (info === 27) {
       let v = 0n;
       for (let i = 0; i < 8; i++) v = (v << 8n) | BigInt(this.takeByte());
-      return { major, arg: v };
+      return { major, arg: v, info };
     }
     throw new Error(`cbor: unsupported info ${info}`);
   }
 
   readAny(): unknown {
-    const { major, arg } = this.readHead();
+    const { major, arg, info } = this.readHead();
     switch (major) {
       case 0: return typeof arg === 'bigint' ? arg : arg;
       case 1: return typeof arg === 'bigint' ? -(arg + 1n) : -(arg + 1);
@@ -85,6 +85,23 @@ export class CborReader {
         if (arg === 21) return true;
         if (arg === 22) return null;
         if (arg === 23) return undefined;
+        if (info === 25) {
+          // float16 — decode IEEE 754 half-precision
+          const bits = arg as number;
+          const exp = (bits >> 10) & 0x1f;
+          const frac = bits & 0x3ff;
+          const sign = (bits >> 15) ? -1 : 1;
+          if (exp === 0) return sign * Math.pow(2, -14) * (frac / 1024);
+          if (exp === 31) return frac ? NaN : sign * Infinity;
+          return sign * Math.pow(2, exp - 15) * (1 + frac / 1024);
+        }
+        if (info === 26) {
+          // float32 — decode via DataView
+          const buf = new ArrayBuffer(4);
+          const view = new DataView(buf);
+          view.setUint32(0, arg as number);
+          return view.getFloat32(0);
+        }
         if (typeof arg === 'bigint') {
           // float64 (info 27)
           const buf = new ArrayBuffer(8);
@@ -179,3 +196,278 @@ export function fromBase58Tagged(s: string): Uint8Array {
   if (!s.startsWith('b58:')) throw new Error(`expected b58: prefix, got '${s.slice(0, 8)}...'`);
   return base58Decode(s.slice(4));
 }
+
+// ========================================================================
+// §13 palace envelope typed decoders
+// ========================================================================
+
+import type {
+  Layout, Timeline, Action, Aqueduct,
+  ElementTag, TrustObservation, Inscription, Mythos, Archiform
+} from './types.js';
+
+/** Walk the raw CBOR tree and extract the core map + attribute list. */
+function extractEnvelopeParts(raw: unknown): {
+  core: Record<string, unknown>;
+  attrs: [string, unknown][];
+} {
+  const env = raw as { __cborTag: number; value: unknown };
+  if (env.__cborTag !== 200) throw new Error('expected tag 200 envelope');
+  const arr = env.value as unknown[];
+  // First element is tag-201 leaf (core map), rest are [label, value] attribute pairs.
+  const leafRaw = arr[0] as { __cborTag: number; value: unknown };
+  if (leafRaw.__cborTag !== 201) throw new Error('expected tag 201 leaf');
+  const core = leafRaw.value as Record<string, unknown>;
+  const attrs: [string, unknown][] = [];
+  for (let i = 1; i < arr.length; i++) {
+    const pair = arr[i] as unknown[];
+    attrs.push([pair[0] as string, pair[1]]);
+  }
+  return { core, attrs };
+}
+
+function b58Bytes(raw: unknown): `b58:${string}` {
+  return toBase58Tagged(raw as Uint8Array);
+}
+
+/** Decode a jelly.layout CBOR envelope. */
+export function decodeLayout(bytes: Uint8Array): Layout {
+  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  void core; // type/format-version checked implicitly
+  const placements: Layout['placements'] = [];
+  let note: string | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'placement') {
+      const m = v as Record<string, unknown>;
+      const pos = m['position'] as number[];
+      const fac = m['facing'] as number[];
+      placements.push({
+        'child-fp': b58Bytes(m['child-fp']),
+        position: [pos[0], pos[1], pos[2]],
+        facing: [fac[0], fac[1], fac[2], fac[3]],
+      });
+    } else if (k === 'note') { note = v as string; }
+  }
+  return { type: 'jelly.layout', 'format-version': 2, placements, note };
+}
+
+/** Decode a jelly.timeline CBOR envelope. */
+export function decodeTimeline(bytes: Uint8Array): Timeline {
+  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  const palaceFp = b58Bytes(core['palace-fp']);
+  const headHashes: `b58:${string}`[] = [];
+  let note: string | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'head-hashes') headHashes.push(b58Bytes(v));
+    else if (k === 'note') note = v as string;
+  }
+  return { type: 'jelly.timeline', 'format-version': 3, 'palace-fp': palaceFp, 'head-hashes': headHashes, note };
+}
+
+/** Decode a jelly.action CBOR envelope. */
+export function decodeAction(bytes: Uint8Array): Action {
+  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  // action-kind, actor, parent-hashes are in the core map.
+  const actionKind = core['action-kind'] as Action['action-kind'];
+  const actor = b58Bytes(core['actor']);
+  // parent-hashes is a CBOR array in the core map.
+  const parentHashRaw = core['parent-hashes'] as Uint8Array[];
+  const parentHashes: `b58:${string}`[] = Array.isArray(parentHashRaw)
+    ? parentHashRaw.map(b58Bytes)
+    : [];
+  const deps: `b58:${string}`[] = [];
+  const nacks: `b58:${string}`[] = [];
+  let targetFp: `b58:${string}` | undefined;
+  let timestamp: number | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'target-fp') targetFp = b58Bytes(v);
+    else if (k === 'timestamp') {
+      const tagged = v as { __cborTag?: number; value?: unknown };
+      timestamp = (tagged.__cborTag === 1 ? tagged.value : v) as number;
+    }
+    else if (k === 'deps') deps.push(b58Bytes(v));
+    else if (k === 'nacks') nacks.push(b58Bytes(v));
+  }
+  const out: Action = {
+    type: 'jelly.action', 'format-version': 3,
+    'action-kind': actionKind, actor, 'parent-hashes': parentHashes
+  };
+  if (targetFp !== undefined) out['target-fp'] = targetFp;
+  if (timestamp !== undefined) out.timestamp = timestamp;
+  if (deps.length > 0) out.deps = deps;
+  if (nacks.length > 0) out.nacks = nacks;
+  return out;
+}
+
+/** Decode a jelly.aqueduct CBOR envelope. */
+export function decodeAqueduct(bytes: Uint8Array): Aqueduct {
+  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  // from, to, kind are in the core map; all numeric fields are attributes.
+  const from = b58Bytes(core['from']);
+  const to = b58Bytes(core['to']);
+  const kind = core['kind'] as string;
+  let capacity: number | undefined;
+  let strength: number | undefined;
+  let resistance: number | undefined;
+  let capacitance: number | undefined;
+  let conductance: number | undefined;
+  let phase: Aqueduct['phase'];
+  let lastTraversed: number | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'capacity') capacity = v as number;
+    else if (k === 'strength') strength = v as number;
+    else if (k === 'resistance') resistance = v as number;
+    else if (k === 'capacitance') capacitance = v as number;
+    else if (k === 'conductance') conductance = v as number;
+    else if (k === 'phase') phase = v as Aqueduct['phase'];
+    else if (k === 'last-traversed') {
+      // epoch-time tag wrapper — extract inner value
+      const tagged = v as { __cborTag?: number; value?: unknown };
+      lastTraversed = (tagged.__cborTag === 1 ? tagged.value : v) as number;
+    }
+  }
+  if (capacity === undefined || strength === undefined || resistance === undefined || capacitance === undefined) {
+    throw new Error('decodeAqueduct: missing required numeric attribute');
+  }
+  const out: Aqueduct = {
+    type: 'jelly.aqueduct', 'format-version': 2,
+    from, to, kind, capacity, strength, resistance, capacitance
+  };
+  if (conductance !== undefined) out.conductance = conductance;
+  if (phase !== undefined) out.phase = phase;
+  if (lastTraversed !== undefined) out['last-traversed'] = lastTraversed;
+  return out;
+}
+
+/** Decode a jelly.element-tag CBOR envelope. */
+export function decodeElementTag(bytes: Uint8Array): ElementTag {
+  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  let element: string | undefined;
+  let phase: string | undefined;
+  let note: string | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'element') element = v as string;
+    else if (k === 'phase') phase = v as string;
+    else if (k === 'note') note = v as string;
+  }
+  if (element === undefined) throw new Error('decodeElementTag: missing element attribute');
+  const out: ElementTag = { type: 'jelly.element-tag', 'format-version': 2, element };
+  if (phase !== undefined) out.phase = phase;
+  if (note !== undefined) out.note = note;
+  return out;
+}
+
+/** Decode a jelly.trust-observation CBOR envelope. */
+export function decodeTrustObservation(bytes: Uint8Array): TrustObservation {
+  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  const observer = b58Bytes(core['observer']);
+  const about = b58Bytes(core['about']);
+  const axes: TrustObservation['axes'] = [];
+  const signatures: TrustObservation['signatures'] = [];
+  let observedAt: number | undefined;
+  let context: string | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'axis') {
+      const m = v as Record<string, unknown>;
+      axes!.push({
+        name: m['name'] as string,
+        value: m['value'] as number,
+        range: m['range'] as [number, number],
+      });
+    } else if (k === 'observed-at') { observedAt = v as number; }
+    else if (k === 'context') { context = v as string; }
+    else if (k === 'signed') {
+      const pair = v as unknown[];
+      signatures!.push({ alg: pair[0] as 'ed25519' | 'ml-dsa-87', value: b58Bytes(pair[1]) });
+    }
+  }
+  const out: TrustObservation = { type: 'jelly.trust-observation', 'format-version': 2, observer, about };
+  if (axes.length > 0) out.axes = axes;
+  if (observedAt !== undefined) out['observed-at'] = observedAt;
+  if (context !== undefined) out.context = context;
+  if (signatures!.length > 0) out.signatures = signatures;
+  return out;
+}
+
+/** Decode a jelly.inscription CBOR envelope. */
+export function decodeInscription(bytes: Uint8Array): Inscription {
+  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  let surface: string | undefined;
+  let placement = 'auto';
+  let note: string | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'surface') surface = v as string;
+    else if (k === 'placement') placement = v as string;
+    else if (k === 'note') note = v as string;
+  }
+  if (surface === undefined) throw new Error('decodeInscription: missing surface attribute');
+  const out: Inscription = { type: 'jelly.inscription', 'format-version': 2, surface, placement };
+  if (note !== undefined) out.note = note;
+  return out;
+}
+
+/** Decode a jelly.mythos CBOR envelope. */
+export function decodeMythos(bytes: Uint8Array): Mythos {
+  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  const isGenesis = core['is-genesis'] as boolean;
+  let predecessor: `b58:${string}` | undefined;
+  let about: `b58:${string}` | undefined;
+  let form: string | undefined;
+  let body: string | undefined;
+  let trueName: string | undefined;
+  let discoveredIn: `b58:${string}` | undefined;
+  const synthesizes: `b58:${string}`[] = [];
+  const inspiredBy: `b58:${string}`[] = [];
+  let author: `b58:${string}` | undefined;
+  let authoredAt: number | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'predecessor') predecessor = b58Bytes(v);
+    else if (k === 'about') about = b58Bytes(v);
+    else if (k === 'form') form = v as string;
+    else if (k === 'body') body = v as string;
+    else if (k === 'true-name') trueName = v as string;
+    else if (k === 'discovered-in') discoveredIn = b58Bytes(v);
+    else if (k === 'synthesizes') synthesizes.push(b58Bytes(v));
+    else if (k === 'inspired-by') inspiredBy.push(b58Bytes(v));
+    else if (k === 'author') author = b58Bytes(v);
+    else if (k === 'authored-at') {
+      const tagged = v as { __cborTag?: number; value?: unknown };
+      authoredAt = (tagged.__cborTag === 1 ? tagged.value : v) as number;
+    }
+  }
+  const out: Mythos = { type: 'jelly.mythos', 'format-version': 2, 'is-genesis': isGenesis };
+  if (predecessor !== undefined) out.predecessor = predecessor;
+  if (about !== undefined) out.about = about;
+  if (form !== undefined) out.form = form;
+  if (body !== undefined) out.body = body;
+  if (trueName !== undefined) out['true-name'] = trueName;
+  if (discoveredIn !== undefined) out['discovered-in'] = discoveredIn;
+  if (synthesizes.length > 0) out.synthesizes = synthesizes;
+  if (inspiredBy.length > 0) out['inspired-by'] = inspiredBy;
+  if (author !== undefined) out.author = author;
+  if (authoredAt !== undefined) out['authored-at'] = authoredAt;
+  return out;
+}
+
+/** Decode a jelly.archiform CBOR envelope. */
+export function decodeArchiform(bytes: Uint8Array): Archiform {
+  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+  let form: string | undefined;
+  let tradition: string | undefined;
+  let parentForm: string | undefined;
+  let note: string | undefined;
+  for (const [k, v] of attrs) {
+    if (k === 'form') form = v as string;
+    else if (k === 'tradition') tradition = v as string;
+    else if (k === 'parent-form') parentForm = v as string;
+    else if (k === 'note') note = v as string;
+  }
+  if (form === undefined) throw new Error('decodeArchiform: missing form attribute');
+  const out: Archiform = { type: 'jelly.archiform', 'format-version': 2, form };
+  if (tradition !== undefined) out.tradition = tradition;
+  if (parentForm !== undefined) out['parent-form'] = parentForm;
+  if (note !== undefined) out.note = note;
+  return out;
+}
+
+// DO NOT EDIT — generated by tools/schema-gen/main.zig
