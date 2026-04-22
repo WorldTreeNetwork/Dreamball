@@ -289,6 +289,62 @@ pub fn readBytes(bytes: []const u8, cursor: *usize) ReadError![]const u8 {
     return s;
 }
 
+/// Read an f16 (half-float, major 7 info 25, `0xF9` prefix).
+pub fn readF16(bytes: []const u8, cursor: *usize) ReadError!f16 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 7 or h.info != 25) return ReadError.UnexpectedMajorType;
+    return @bitCast(@as(u16, @intCast(h.arg)));
+}
+
+/// Read an f32 (single-float, major 7 info 26, `0xFA` prefix).
+pub fn readF32(bytes: []const u8, cursor: *usize) ReadError!f32 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 7 or h.info != 26) return ReadError.UnexpectedMajorType;
+    return @bitCast(@as(u32, @intCast(h.arg)));
+}
+
+/// Read an f64 (double-float, major 7 info 27, `0xFB` prefix).
+pub fn readF64(bytes: []const u8, cursor: *usize) ReadError!f64 {
+    const h = try readHead(bytes, cursor);
+    if (h.major != 7 or h.info != 27) return ReadError.UnexpectedMajorType;
+    return @bitCast(h.arg);
+}
+
+/// Read any float (f16, f32, or f64) and return as f64. Accepts all three
+/// widths and widens to f64. Used by decoders that store f64 values.
+pub fn readAnyFloat(bytes: []const u8, cursor: *usize) ReadError!f64 {
+    if (cursor.* >= bytes.len) return ReadError.Truncated;
+    const b = bytes[cursor.*];
+    const info: u5 = @intCast(b & 0x1F);
+    const major: u3 = @intCast(b >> 5);
+    if (major != 7) return ReadError.UnexpectedMajorType;
+    return switch (info) {
+        25 => @floatCast(try readF16(bytes, cursor)),
+        26 => @floatCast(try readF32(bytes, cursor)),
+        27 => try readF64(bytes, cursor),
+        else => ReadError.UnexpectedMajorType,
+    };
+}
+
+/// Read any float and return as f32 (widening from f16 accepted).
+pub fn readAnyFloatF32(bytes: []const u8, cursor: *usize) ReadError!f32 {
+    return @floatCast(try readAnyFloat(bytes, cursor));
+}
+
+/// Write a float using the smallest half/single encoding that is lossless.
+/// - If the value round-trips through f16 without change → emit #7.25.
+/// - Otherwise emit #7.26 (f32).
+/// Used for aqueduct and layout/trust float fields per TC20.
+pub fn writeSmallestFloat(w: *std.Io.Writer, v: f32) !void {
+    const as_half: f16 = @floatCast(v);
+    const back: f32 = @floatCast(as_half);
+    if (back == v) {
+        try zbor.builder.writeFloat(w, as_half);
+    } else {
+        try zbor.builder.writeFloat(w, v);
+    }
+}
+
 /// Skip one item at `cursor.*` without examining its structure. Uses
 /// `zbor.advance` for well-formedness; does NOT enforce canonical form.
 /// Use `verifyCanonical` first if you need that guarantee for nested items.
