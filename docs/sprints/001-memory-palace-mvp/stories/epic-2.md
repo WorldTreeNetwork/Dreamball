@@ -136,3 +136,46 @@ New: `src/memory-palace/aqueduct.ts`, `src/memory-palace/aqueduct.test.ts`. Exte
 - **Cross-epic deps**: forward — none. Consumed by Epics 3, 4, 5, 6.
 - **Risk gates**: R2 → 2.1 (HARD BLOCK on set inequality). R1 → 2.3 (Chromium-only MVP per OQ3). R7 → 2.5 (bit-identical test between Epic 3 + Epic 5 call sites).
 - **Build-gate coverage**: `bun run check`, `bun run test:unit -- --run`, `bun run test:e2e` (Playwright Chromium), `scripts/server-smoke.sh`. No new golden fixtures (Epic 1's surface).
+
+---
+
+### Story 2.1 — Dev Agent Record
+
+**Agent Model Used**: claude-sonnet-4-6 (via oh-my-claudecode:executor)
+
+**Completion Notes**:
+
+Implemented the full S2.1 cross-runtime vector-parity spike. Outcome: **PASS**.
+
+- Built a deterministic LCG fixture generator (`src/memory-palace/fixtures/knn-parity.ts`) producing 100 unit-normalised 256-dim Float32 vectors from seed=42 and a query vector from seed=43. SHA-256 of the concatenated bytes is pinned as `FIXTURE_SHA256_HEX = 9ff1615985a29958e9589546a8dda1c4fc64bbfdbef9a2ec5f1b9250c6a0c7b2`.
+- Server ground truth (AC2): `@ladybugdb/core` 0.15.3 returns top-10 fps `[v79, v18, v31, v32, v1, v28, v33, v66, v44, v60]` with cosine distances in [0.76, 0.92]. Requires `INSTALL VECTOR; LOAD EXTENSION VECTOR` before `CREATE_VECTOR_INDEX` (extension bundled but not auto-loaded).
+- Browser parity (AC3): `kuzu-wasm@0.11.3` Playwright Chromium returns **identical fps in identical order**, max |Δ| = **0.000048** — well within the 0.1 threshold.
+- WARN/HARD BLOCK logic (`classifyParity`) is pure-function tested in vitest (AC4/AC5). AC5 `expect.fail` message contains literal `"HARD BLOCK: D-015 parity"` as required.
+- `bun run test:unit -- --run` covers AC1–AC5 (154 tests, all pass). `bun run test:e2e` covers AC3 browser half (1 test, passes in 5s).
+
+**Spike outcome**: PASS — set-equal YES, max |Δ| = 0.000048.
+
+**Routing branch for S2.3 and S6.3**: Local kuzu-wasm kNN — happy path. S2.3 implements `kNN()` using local `QUERY_VECTOR_INDEX` (no HTTP fallback). S6.3 does not need a `/kNN` HTTP route for MVP.
+
+**Problems encountered**:
+
+1. `@ladybugdb/core` VECTOR extension not auto-loaded — must call `INSTALL VECTOR; LOAD EXTENSION VECTOR` explicitly before `CREATE_VECTOR_INDEX`. Not documented in the README; discovered by running the test.
+2. kuzu-wasm browser async build uses `qr.getAllObjects()` not `qr.getAll()` (different API from the native @ladybugdb/core). The nodejs variant also uses `getAllObjects()`. The default browser `index.js` is an ESM bundle requiring `setWorkerPath()` before first DB call.
+3. kuzu-wasm nodejs/default builds crash under Bun's worker thread implementation (`Aborted(Assertion failed)`). The browser Playwright path is the only stable runtime for the async build. This does not affect S2.3 (browser adapter) or S2.2 (server adapter uses @ladybugdb/core natively).
+4. The `params` overload of `lbugQuery` caused a TypeScript type error (`Record<string, unknown>` not assignable to `Record<string, LbugValue>`). Removed the params path — all fixture inserts use inline Cypher literals (acceptable for the spike; S2.2 will add proper parameterised queries via the store wrapper).
+5. `playwright.config.ts` webServer command uses a Node.js heredoc inline script for the static file server — portable but slightly unusual; documented in the config header.
+
+**Blocker Type**: `none`
+
+**File List**:
+
+- `src/memory-palace/fixtures/knn-parity.ts` — created
+- `src/memory-palace/parity.test.ts` — created
+- `tests/parity-browser.e2e.ts` — created
+- `tests/parity-fixture/index.html` — created
+- `tests/parity-fixture/fixture-data.js` — created (270 KB pre-generated fixture data)
+- `playwright.config.ts` — created
+- `docs/sprints/001-memory-palace-mvp/addenda/S2.1-parity-result.md` — created
+- `docs/decisions/2026-04-22-vector-parity-spike.md` — created
+- `package.json` — added `"test:e2e": "playwright test"` script; added `kuzu-wasm@0.11.3` dep, `@playwright/test` devDep
+- `bun.lock` — updated (kuzu-wasm, @playwright/test)

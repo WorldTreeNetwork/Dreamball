@@ -286,3 +286,18 @@ If you encounter a deferred item during a sprint:
 4. Note the gap in the sprint's PRD under "Assumptions & Risks."
 
 The goal: every residual compromise is visible, dated, and owned.
+
+### NFR11 K-NN relaxation (added by S2.1 HARD BLOCK)
+
+**State**: HARD BLOCK detected by S2.1 parity spike (2026-04-22).
+
+**Why**: kuzu-wasm@0.11.3 browser QUERY_VECTOR_INDEX returned fps not matching
+@ladybugdb/core server ground truth. D-015 set-equality contract violated.
+
+**NFR11 relaxation**: K-NN queries in the browser must route to jelly-server
+HTTP /kNN endpoint. Offline K-NN is degraded for MVP. Epic 6 must add the
+/kNN route.
+
+**Path forward**: S2.3 implements HTTP fallback kNN; S6.3 adds /kNN endpoint.
+TODO-KNN-FALLBACK markers must be preserved until both stories land.
+

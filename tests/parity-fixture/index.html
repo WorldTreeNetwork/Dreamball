@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<!--
+  S2.1 parity browser test page.
+  Loaded by Playwright Chromium to run kuzu-wasm@0.11.3 vector index query.
+  Results are exposed on window.__parityResult for the Playwright spec to read.
+
+  Bootstrap sequence:
+  1. Load fixture-data.js (inline FIXTURE_DATA constant)
+  2. Set kuzu-wasm worker path to /kuzu-worker.js (served by Playwright webServer)
+  3. Open in-memory kuzu-wasm database
+  4. Insert all 100 fixture vectors into Inscription.embedding FLOAT[256]
+  5. CREATE_VECTOR_INDEX + QUERY_VECTOR_INDEX with seed=43 query vector, k=10
+  6. Write result to window.__parityResult = { fps: string[], rows: {fp,distance}[] }
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>S2.1 kuzu-wasm parity test</title>
+</head>
+<body>
+<pre id="status">Starting...</pre>
+<script src="/fixture-data.js"></script>
+<script type="module">
+import kuzu from '/kuzu-wasm/index.js';
+
+const status = document.getElementById('status');
+function log(msg) {
+  status.textContent += '\n' + msg;
+  console.log('[kuzu-parity]', msg);
+}
+
+async function run() {
+  try {
+    // Set worker path — must be called before any DB operations
+    kuzu.setWorkerPath('/kuzu-wasm/kuzu_wasm_worker.js');
+    log('Worker path set');
+
+    const db = new kuzu.Database(':memory:');
+    const conn = new kuzu.Connection(db);
+    log('DB + connection opened');
+
+    // Helper: run a query, return all objects, close result.
+    // kuzu-wasm@0.11.3 browser async variant uses getAllObjects(), not getAll().
+    async function q(cypher) {
+      const qr = await conn.query(cypher);
+      const rows = await qr.getAllObjects();
+      await qr.close();
+      return rows;
+    }
+
+    // Schema
+    await q(`CREATE NODE TABLE Inscription (fp STRING PRIMARY KEY, embedding FLOAT[256])`);
+    log('Table created');
+
+    // Insert fixture
+    const fixture = FIXTURE_DATA.fixture;
+    for (const row of fixture) {
+      const arr = `[${row.vec.join(',')}]`;
+      await q(`CREATE (:Inscription {fp: '${row.fp}', embedding: CAST(${arr} AS FLOAT[256])})`);
+    }
+    log(`Inserted ${fixture.length} rows`);
+
+    // Vector extension not needed in kuzu-wasm (bundled)
+    // Create vector index
+    await q(`CALL CREATE_VECTOR_INDEX('Inscription', 'inscription_emb', 'embedding')`);
+    log('Vector index created');
+
+    // Query
+    const qVec = FIXTURE_DATA.query;
+    const qArr = `[${qVec.join(',')}]`;
+    const results = await q(`
+      CALL QUERY_VECTOR_INDEX('Inscription', 'inscription_emb', CAST(${qArr} AS FLOAT[256]), 10)
+      YIELD node, distance
+      RETURN node.fp AS fp, distance
+      ORDER BY distance
+    `);
+    log(`KNN results: ${results.map(r => `${r.fp}:${Number(r.distance).toFixed(4)}`).join(', ')}`);
+
+    await conn.close();
+    await db.close();
+
+    window.__parityResult = {
+      status: 'ok',
+      rows: results.map(r => ({ fp: String(r.fp), distance: Number(r.distance) }))
+    };
+    log('DONE — result written to window.__parityResult');
+  } catch (err) {
+    window.__parityResult = { status: 'error', error: String(err) };
+    log('ERROR: ' + err);
+    console.error(err);
+  }
+}
+
+run();
+</script>
+</body>
+</html>
