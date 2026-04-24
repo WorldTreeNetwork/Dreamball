@@ -339,27 +339,19 @@ gate and delete the alias export.
 
 ### 9. Hash helper Blake3/SHA-256 fallback
 
-**State**: Open — `cypher-utils.hashBytesBlake3Hex` picks Blake3 when Bun is
-available and SHA-256 otherwise (WebCrypto in browsers, `node:crypto` in
-vitest-under-Node).
+**State — CLOSED 2026-04-24 by Sprint-1 code review HIGH-2.**
 
-**Why deferred**: Production paths run under Bun, which ships `Bun.hash.blake3`
-synchronously. Vitest occasionally runs the same code under plain Node for
-pure-logic tests; rather than ship a wasm Blake3 binding for those paths we
-fall back to SHA-256, whose output shape (64-char lowercase hex) is
-indistinguishable from Blake3 to every downstream validator.
+`jelly.wasm` now exports `hashBlake3(input_ptr, input_len, out_ptr)` which
+computes Blake3-256 using the same `std.crypto.hash.Blake3` the Zig CLI
+uses. The TS binding `blake3Hex(bytes)` in `src/lib/wasm/loader.ts` wraps
+the export. `cypher-utils.hashBytesBlake3Hex` (async) now falls through
+from Bun's native `Bun.hash.blake3` to the WASM export — no more SHA-256
+fallback on any async path. The sync variant `hashBytesBlake3HexSync`
+retains a node:crypto fallback for early test bootstrap where WASM may not
+be initialized; production paths always take the Bun branch.
 
-**Limitation**: Blake3 and SHA-256 produce *different* hex strings for the
-same input. Any given runtime is internally consistent, but a fingerprint
-computed by Bun is not comparable to one computed by Node. This matters
-whenever `source_blake3` round-trips between runtimes (e.g. tests that
-compare a precomputed Bun-side fp against a Node-side computation).
-
-**Marker**: `cypher-utils.ts` comments the branch and links to this file.
-
-**Path forward**: replace both branches with a shared Blake3 WASM import
-once the jelly-wasm module exposes a `jelly_blake3_hex(bytes)` helper —
-already a candidate export for the WASM signer work in §8.
+WASM budget impact: 172 KB raw / 51 KB gzipped — well within the 200 KB /
+64 KB ceiling.
 
 ---
 
@@ -385,6 +377,46 @@ does not.
 (which already owns an open TS palace handle) alongside the WASM signer work
 in §8; the CLI picks it up when `palace_open.zig` returns a TS-wrapped
 handle as part of the same seam.
+
+---
+
+### 11. Palace action-envelope signature verification deferred in MVP
+
+**State**: Open — `jelly verify <palace>` enforces structural invariants
+only. Invariants (a)–(f) in `src/cli/palace_verify.zig` cover room presence,
+sole-oracle-agent, parent-hash resolvability, mythos walk-to-genesis,
+head-hash leaf-ness, and oracle actor-fp equality. **No cryptographic
+signature is checked over action envelopes.**
+
+**Why deferred**: The `jelly.action` struct in `src/protocol_v2.zig`
+carries a `signatures: []Signature` field, but the verify-walk does
+not yet dispatch to `signer.verify` / `dreamball.ml_dsa.verify` per
+action. Wiring that requires (i) canonical-bytes construction per
+action for the signed-message input, (ii) public-key lookup per
+`actor` fp (either via the oracle `.oracle.key` sibling or a palace-
+local key registry), and (iii) matching WASM exports so the browser
+side of the verify path keeps parity (NFR12 hybrid end-to-end).
+
+**Limitation**: An attacker with CAS write access can fabricate an
+action whose `actor` fp matches the oracle fp; verify today will
+pass it because only fp equality is checked. The MVP threat model
+(local-first, single-custodian) assumes CAS-write access implies
+oracle possession per D-011 — but this is a materially weaker
+guarantee than the commit-message framing of `ecf6408`. Future
+multi-custodian palaces MUST land signature verification before
+shipping.
+
+**Marker**: this entry; the file header of `src/cli/palace_verify.zig`
+explicitly states invariants are structural-only and points here; the
+sprint story (`docs/sprints/001-memory-palace-mvp/stories/epic-4.md`
+§"Dual-signature gap (TODO-CRYPTO)") documents the scope.
+
+**Path forward**: next sprint — extend `palace_verify.zig` with a new
+invariant (g) "action signatures verify against actor public key",
+call `signer.verify` over canonical action bytes for every
+`jelly.action` in the bundle. Depends on §8 (parameterised WASM
+signer export) so browser-side verify parity lands in the same
+sprint.
 
 ---
 

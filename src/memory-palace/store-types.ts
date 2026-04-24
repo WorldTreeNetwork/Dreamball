@@ -15,6 +15,88 @@
  * S2.5 provides real implementations.
  */
 
+// ── Palace / Room read types (S5.2 — PalaceLens consumer) ────────────────────
+
+/**
+ * Decoded palace room as returned by `roomsFor`.
+ *
+ * `layout` carries the `jelly.layout` envelope for the room if present;
+ * its `placements` array maps child-fp → [x,y,z] + quaternion. When absent
+ * (null), the lens falls back to the deterministic-grid algorithm (AC3).
+ *
+ * Coords: position is cartesian local-to-field-origin (ADR 2026-04-24-coord-frames §2).
+ */
+export interface RoomData {
+  /** Blake3 fp identifying this room. */
+  fp: string;
+  /** Optional display name. */
+  name?: string;
+  /** Decoded jelly.layout for this room, or null when absent. */
+  layout: {
+    placements: Array<{
+      'child-fp': string;
+      position: [number, number, number];
+      facing: [number, number, number, number];
+    }>;
+  } | null;
+}
+
+/**
+ * Palace summary as returned by `getPalace`.
+ *
+ * The palace envelope itself is a `jelly.dreamball.field`; here we
+ * surface just the fields the lens needs to render the outer shell.
+ */
+export interface PalaceData {
+  /** Blake3 fp of the palace (field envelope). */
+  fp: string;
+  /** Optional display name. */
+  name?: string;
+  /**
+   * Omnispherical grid — if present gives pole-north / pole-south /
+   * camera-ring / layer-depth for the outer shell topology.
+   * Null when the field has no grid attribute (grid-less palace).
+   */
+  omnisphericalGrid: {
+    'pole-north'?: { x: number; y: number; z: number };
+    'pole-south'?: { x: number; y: number; z: number };
+    'camera-ring'?: Array<{ radius: number; tilt: number; fov: number }>;
+    'layer-depth'?: number;
+    resolution?: number;
+  } | null;
+}
+
+// ── Room contents types (S5.3 — RoomLens consumer) ───────────────────────────
+
+/**
+ * A single inscription item returned by `roomContents(roomFp)`.
+ *
+ * `placement` carries cartesian position + quaternion facing when the room's
+ * `jelly.layout` specifies it; null when absent → lens uses deterministic grid
+ * fallback (AC2). Coords are local-to-room-origin per ADR 2026-04-24-coord-frames §2.
+ *
+ * `surface` is the inscription's render surface tag (e.g. "scroll", "tablet")
+ * for use by InscriptionLens in S5.4.
+ */
+export interface RoomContentsItem {
+  /** Blake3 fp of the inscription / avatar. */
+  fp: string;
+  /** Optional display name. */
+  name?: string;
+  /** Surface tag for InscriptionLens dispatch (S5.4). */
+  surface?: string;
+  /**
+   * Cartesian position [x,y,z] and quaternion facing [qx,qy,qz,qw] local to the
+   * room origin. Null when jelly.layout does not specify a placement for this item.
+   *
+   * Quaternion order: [qx, qy, qz, qw] per glTF 2.0 / ADR 2026-04-24-coord-frames.
+   */
+  placement: {
+    position: [number, number, number];
+    facing: [number, number, number, number];
+  } | null;
+}
+
 // ── Policy-gated read types (S4.2) ───────────────────────────────────────────
 
 /** Data returned by getInscription (policy-gated read verb). */
@@ -324,10 +406,10 @@ export interface StoreAPI {
    *
    * Used by S4.3 AC6 interleaved-reader test.
    *
-   * @param palaceFp      Blake3 fp of the palace
-   * @param sinceActionFp Cursor fp (exclusive lower bound, or '' for all)
+   * @param palaceFp Blake3 fp of the palace
+   * @param opts     Optional cursor: afterTimestamp (ms epoch, exclusive). Omit or 0 for all.
    */
-  actionsSince(palaceFp: string, sinceActionFp: string): Promise<Array<{ fp: string; actionKind: string; targetFp: string }>>;
+  actionsSince(palaceFp: string, opts?: { afterTimestamp?: number }): Promise<Array<{ fp: string; actionKind: string; targetFp: string; timestamp: number }>>;
 
   // ── S4.4 file-watcher domain verbs ───────────────────────────────────────
 
@@ -387,6 +469,64 @@ export interface StoreAPI {
    * @param requesterFp Blake3 fp of the requester (any value — always allowed)
    */
   mythosChainTriples(palaceFp: string, requesterFp: string): Promise<MythosTriple[]>;
+
+  // ── Inscription body read (S5.4 — InscriptionLens consumer, D-007, TC13) ──
+
+  /**
+   * Fetch CAS body bytes for an inscription (D-007 / TC13 / AC3).
+   *
+   * Flow:
+   *   1. Queries `source_blake3` for the inscription fp from the store.
+   *   2. Reads raw bytes from CAS (server: filesystem; browser: same-origin /cas/:hash).
+   *   3. Hash-verifies: asserts Blake3(bytes) === source_blake3.
+   *   4. Returns the verified Uint8Array.
+   *
+   * SEC6: MUST NOT fetch from non-local URLs. No raw filesystem path constructed
+   * by the caller — all path logic lives inside the store implementation.
+   *
+   * Throws if the inscription is not found, if CAS bytes are unavailable, or if
+   * hash verification fails.
+   *
+   * @param inscriptionFp  Blake3 fp of the inscription avatar
+   */
+  inscriptionBody(inscriptionFp: string): Promise<Uint8Array>;
+
+  // ── Palace / Room read verbs (S5.2 — PalaceLens consumer) ───────────────
+
+  /**
+   * Return summary data for a palace (field envelope).
+   *
+   * D-007: the sole entry point for palace-level reads from lens code.
+   * Returns null if the palace fp is not found in the store.
+   *
+   * @param palaceFp  Blake3 fp of the palace (jelly.dreamball.field)
+   */
+  getPalace(palaceFp: string): Promise<PalaceData | null>;
+
+  /**
+   * Return all rooms contained within a palace.
+   *
+   * D-007: returns decoded room data including jelly.layout when present
+   * (or null when absent — triggers AC3 grid-fallback in the lens).
+   * Order is deterministic: rooms are returned sorted by fp lexicographically,
+   * which gives the grid-fallback stable positions across mounts.
+   *
+   * @param palaceFp  Blake3 fp of the palace
+   */
+  roomsFor(palaceFp: string): Promise<RoomData[]>;
+
+  /**
+   * Return all inscriptions contained within a room, with placement data.
+   *
+   * D-007: the sole entry point for room-interior reads from RoomLens (S5.3 / FR16).
+   * Each item carries a `placement` object when jelly.layout specifies position +
+   * facing for that inscription; null when absent → lens uses deterministic grid
+   * fallback. Items are returned sorted by fp lexicographically for stable grid
+   * fallback ordering across mounts.
+   *
+   * @param roomFp  Blake3 fp of the room
+   */
+  roomContents(roomFp: string): Promise<RoomContentsItem[]>;
 
   // ── Diagnostic escape hatch ───────────────────────────────────────────────
 

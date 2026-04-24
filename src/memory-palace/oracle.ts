@@ -165,7 +165,7 @@ function parseKeyFile(raw: string, keyPath: string): HybridKeyPair {
   };
 }
 
-// ── oracleSignAction ──────────────────────────────────────────────────────────
+// ── oracleActionStub ──────────────────────────────────────────────────────────
 //
 // S4.4: Oracle-signed action for file-watcher events.
 //
@@ -280,13 +280,6 @@ export async function oracleActionStub(
   };
 }
 
-/**
- * @deprecated Use `oracleActionStub` — renamed to make the unsigned-MVP status
- * clear at every call site. This alias exists so legacy tests keep compiling
- * while the code review pass lands. New callers must use the new name and
- * opt into JELLY_ORACLE_ALLOW_UNSIGNED=1 explicitly.
- */
-export const oracleSignAction = oracleActionStub;
 
 // ── mirrorInscriptionToKnowledgeGraph / mirrorInscriptionMove ─────────────
 //

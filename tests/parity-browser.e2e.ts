@@ -25,25 +25,12 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 
-// ── Server ground truth (from AC2 vitest run) ────────────────────────────────
-// Recorded: 2026-04-22 by S2.1 vitest server test (parity.test.ts AC2)
-// Re-run `bun run test:unit -- --run --project=server` to refresh these values.
-const SERVER_GROUND_TRUTH: Array<{ fp: string; distance: number }> = [
-  { fp: 'v79', distance: 0.7617 },
-  { fp: 'v18', distance: 0.8787 },
-  { fp: 'v31', distance: 0.8877 },
-  { fp: 'v32', distance: 0.8938 },
-  { fp: 'v1',  distance: 0.8952 },
-  { fp: 'v28', distance: 0.8985 },
-  { fp: 'v33', distance: 0.9018 },
-  { fp: 'v66', distance: 0.9029 },
-  { fp: 'v44', distance: 0.9133 },
-  { fp: 'v60', distance: 0.9176 }
-];
+// ── Server ground truth (shared fixture — Sprint-1 MEDIUM-3 code review) ─────
+// Single source of truth: src/memory-palace/fixtures/parity-ground-truth.ts
+// Both this test and src/memory-palace/parity.test.ts import from the same module.
+import { SERVER_GROUND_TRUTH, type KnnRow } from '../src/memory-palace/fixtures/parity-ground-truth.js';
 
 // ── Parity classification (mirrors parity.test.ts classifyParity) ─────────────
-
-interface KnnRow { fp: string; distance: number }
 
 function classifyParity(
   server: KnnRow[],

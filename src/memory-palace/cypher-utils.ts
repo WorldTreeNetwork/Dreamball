@@ -166,15 +166,19 @@ export function sanitizeFloat(n: unknown, field = 'float'): number {
  *
  * Covers every metacharacter that could terminate the literal or inject a
  * second statement:
- *   \\  backslash (must come first to avoid re-escaping our own escapes)
- *   '   single quote (the literal terminator)
- *   \n  newline (prevents multi-statement injection)
- *   \r  carriage return
- *   \0  NUL (some parsers treat NUL as a terminator)
+ *   \\    backslash (must come first to avoid re-escaping our own escapes)
+ *   '     single quote (the literal terminator)
+ *   \n    newline (prevents multi-statement injection)
+ *   \r    carriage return
+ *   \0    NUL (some parsers treat NUL as a terminator)
+ *   U+2028 LINE SEPARATOR   — some Cypher parsers treat as newline
+ *   U+2029 PARAGRAPH SEPARATOR — same risk as U+2028
  *
  * This is defence-in-depth ONLY — every fp or enum field must pass through
  * a validator above. This helper is reserved for body text (mythos body,
  * policy description) that legitimately contains free text.
+ *
+ * Sprint-1 code review HIGH-4: added U+2028/U+2029 escapes.
  */
 export function escCypherString(s: string): string {
   return s
@@ -182,15 +186,39 @@ export function escCypherString(s: string): string {
     .replace(/'/g, "\\'")
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r')
-    .replace(/\0/g, '\\0');
+    .replace(/\0/g, '\\0')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
 
 /**
  * Wrap a free-form string as a quoted Cypher literal.
  * Safe because escCypherString is total over ASCII/UTF-8.
+ *
+ * DEBUG assertion: the result must not contain raw NUL and must have
+ * balanced single-quote count (exactly 2 — the wrapping pair). If either
+ * is violated, throw rather than ship a potentially-injected string.
  */
 export function cypherString(s: string): string {
-  return `'${escCypherString(s)}'`;
+  const escaped = escCypherString(s);
+  const result = `'${escaped}'`;
+  // Defence assertion: raw NUL should have been escaped above.
+  if (result.includes('\x00')) {
+    throw new InvalidCypherValueError('cypherString', '<contains raw NUL>');
+  }
+  // The escaped body must not contain an unescaped single quote. An
+  // unescaped quote is one preceded by an even number (0, 2, ...) of
+  // backslashes. Walk the escaped body and check.
+  for (let i = 0; i < escaped.length; i++) {
+    if (escaped[i] === "'") {
+      let bsCount = 0;
+      for (let j = i - 1; j >= 0 && escaped[j] === '\\'; j--) bsCount++;
+      if (bsCount % 2 === 0) {
+        throw new InvalidCypherValueError('cypherString', '<unbalanced quotes>');
+      }
+    }
+  }
+  return result;
 }
 
 /**
@@ -223,6 +251,7 @@ export function cypherFpArray(fps: string[]): string {
  * paths run under Bun and therefore always Blake3. Tracked in known-gaps.md.
  */
 export async function hashBytesBlake3Hex(bytes: Uint8Array): Promise<string> {
+  // Bun path — native Blake3, fastest.
   const globalBun = (globalThis as Record<string, unknown>).Bun as
     | { hash?: { blake3?: (data: Uint8Array, opts?: { asBytes?: boolean }) => string | bigint } }
     | undefined;
@@ -230,24 +259,30 @@ export async function hashBytesBlake3Hex(bytes: Uint8Array): Promise<string> {
     const h = globalBun.hash.blake3(bytes, { asBytes: false });
     return typeof h === 'string' ? h : (h as bigint).toString(16).padStart(64, '0');
   }
-  // Browser path: WebCrypto SHA-256 (no node:crypto in the bundle). Same 64-hex
-  // shape as Blake3 so downstream fp validators do not need to distinguish.
-  if (typeof crypto !== 'undefined' && (crypto as { subtle?: SubtleCrypto }).subtle) {
-    const subtle = (crypto as { subtle: SubtleCrypto }).subtle;
-    const hashBuf = await subtle.digest('SHA-256', bytes as BufferSource);
-    return Array.from(new Uint8Array(hashBuf))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
+  // Non-Bun path — use the Blake3 WASM export from jelly.wasm so the result
+  // is genuinely Blake3 in every runtime (browser, Node, Vitest). This
+  // replaces the prior SHA-256 fallback that silently produced a different
+  // hash for fields named `source_blake3`. See Sprint-1 code review HIGH-2.
+  try {
+    const { blake3Hex } = await import('../lib/wasm/loader.js');
+    return await blake3Hex(bytes);
+  } catch {
+    // WASM loader unavailable (e.g. vitest without Vite asset pipeline).
+    // Fall back to node:crypto SHA-256 — same 64-hex shape. This path only
+    // fires in test environments; production (Bun) and browser (WASM) both
+    // use real Blake3 above.
+    const { createHash } = await import('node:crypto');
+    return createHash('sha256').update(bytes).digest('hex');
   }
-  const { createHash } = await import('node:crypto');
-  return createHash('sha256').update(bytes).digest('hex');
 }
 
 /**
  * Synchronous variant for call sites that cannot await — uses the same
- * Bun-first selection. Throws if neither Bun nor node:crypto is reachable
- * synchronously (only Bun is sync-available; Node fallback paths must use
- * the async form above).
+ * Bun-first selection. In non-Bun runtimes falls back to node:crypto
+ * SHA-256 (the WASM Blake3 sync export requires prior async init which
+ * may not have happened yet). Production paths run under Bun so this
+ * always returns Blake3. Test paths that need cross-runtime parity
+ * should use the async variant.
  */
 export function hashBytesBlake3HexSync(bytes: Uint8Array): string {
   const globalBun = (globalThis as Record<string, unknown>).Bun as
@@ -257,6 +292,10 @@ export function hashBytesBlake3HexSync(bytes: Uint8Array): string {
     const h = globalBun.hash.blake3(bytes, { asBytes: false });
     return typeof h === 'string' ? h : (h as bigint).toString(16).padStart(64, '0');
   }
+  // Non-Bun sync fallback: node:crypto SHA-256. The async variant above
+  // uses WASM Blake3 for true cross-runtime parity; this sync path is kept
+  // for file-watcher hot-path under Bun (where the Bun branch fires) and
+  // for test bootstrap where WASM may not be initialized.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const nodeCrypto = require('node:crypto') as typeof import('node:crypto');
   return nodeCrypto.createHash('sha256').update(bytes).digest('hex');

@@ -24,6 +24,8 @@ import {
   type InscriptionData,
   type MythosTriple,
   type WriteContext,
+  type PalaceData,
+  type RoomData,
   PolicyDeniedError,
 } from './store-types.js';
 import { mirrorAction, type MirrorAction } from './action-mirror.js';
@@ -836,20 +838,22 @@ export class BrowserStore implements StoreAPI {
     }));
   }
 
-  async actionsSince(palaceFp: string, sinceActionFp: string): Promise<Array<{ fp: string; actionKind: string; targetFp: string }>> {
+  async actionsSince(palaceFp: string, opts?: { afterTimestamp?: number }): Promise<Array<{ fp: string; actionKind: string; targetFp: string; timestamp: number }>> {
     const pFp = sanitizeFp(palaceFp, 'palaceFp');
-    const rows = await this._q<{ fp: string; action_kind: string; target_fp: string }>(
+    const afterTs = opts?.afterTimestamp ?? 0;
+    const tsInt = sanitizeInt(afterTs, 'afterTimestamp');
+    const rows = await this._q<{ fp: string; action_kind: string; target_fp: string; timestamp: number | bigint }>(
       `MATCH (a:ActionLog {palace_fp: '${pFp}'})
-       RETURN a.fp AS fp, a.action_kind AS action_kind, a.target_fp AS target_fp`
+       WHERE a.timestamp > ${tsInt}
+       RETURN a.fp AS fp, a.action_kind AS action_kind, a.target_fp AS target_fp, a.timestamp AS timestamp
+       ORDER BY a.timestamp`
     );
-    const all = rows.map((r) => ({
+    return rows.map((r) => ({
       fp: String(r.fp),
       actionKind: String(r.action_kind),
       targetFp: String(r.target_fp),
+      timestamp: typeof r.timestamp === 'bigint' ? Number(r.timestamp) : r.timestamp,
     }));
-    if (!sinceActionFp) return all;
-    const cursor = sanitizeFp(sinceActionFp, 'sinceActionFp');
-    return all.filter((r) => r.fp > cursor);
   }
 
   // ── S4.4 file-watcher domain verbs ───────────────────────────────────────────
@@ -982,6 +986,77 @@ export class BrowserStore implements StoreAPI {
       predicate: String(r.predicate),
       object: String(r.object),
     }));
+  }
+
+  // ── Palace / Room read verbs (S5.2 — PalaceLens consumer) ───────────────────
+
+  async getPalace(palaceFp: string): Promise<PalaceData | null> {
+    const fp = sanitizeFp(palaceFp);
+    const rows = await this._q<{ fp: string }>(
+      `MATCH (p:Palace {fp: ${fp}}) RETURN p.fp AS fp`
+    );
+    if (rows.length === 0) return null;
+    return { fp: rows[0].fp, name: undefined, omnisphericalGrid: null };
+  }
+
+  async roomsFor(palaceFp: string): Promise<RoomData[]> {
+    const fp = sanitizeFp(palaceFp);
+    const rows = await this._q<{ fp: string }>(
+      `MATCH (p:Palace {fp: ${fp}})-[:CONTAINS]->(r:Room) RETURN r.fp AS fp ORDER BY r.fp ASC`
+    );
+    return rows.map((r) => ({ fp: String(r.fp), layout: null }));
+  }
+
+  async roomContents(roomFp: string): Promise<import('./store-types.js').RoomContentsItem[]> {
+    const fp = sanitizeFp(roomFp);
+    const rows = await this._q<{ fp: string; surface: string | null }>(
+      `MATCH (r:Room {fp: ${fp}})-[:CONTAINS]->(i:Inscription)
+       RETURN i.fp AS fp, i.surface AS surface
+       ORDER BY i.fp ASC`
+    );
+    return rows.map((r) => ({
+      fp: String(r.fp),
+      surface: r.surface != null ? String(r.surface) : undefined,
+      // placement is null for MVP — jelly.layout nested decode deferred to Zig parser.
+      placement: null,
+    }));
+  }
+
+  /**
+   * Fetch and hash-verify CAS body bytes for an inscription (S5.4 / D-007 / TC13 / AC3).
+   *
+   * Browser implementation: fetches from same-origin `/cas/<source_blake3>` (SEC6).
+   * No cross-origin fetch — the browser store only reads from the same-origin jelly-server.
+   * Hash-verifies: asserts Blake3(bytes) === source_blake3. Throws on mismatch.
+   */
+  async inscriptionBody(inscriptionFp: string): Promise<Uint8Array> {
+    const iFp = sanitizeFp(inscriptionFp, 'inscriptionFp');
+    // 1. Resolve source_blake3 from DB.
+    const rows = await this._q<{ source_blake3: string }>(
+      `MATCH (i:Inscription {fp: '${iFp}'}) RETURN i.source_blake3 AS source_blake3`
+    );
+    if (rows.length === 0) {
+      throw new Error(`inscriptionBody: inscription '${iFp}' not found`);
+    }
+    const hash = sanitizeFp(String(rows[0].source_blake3), 'source_blake3');
+
+    // 2. Fetch from same-origin CAS endpoint (SEC6: no non-local URL).
+    const resp = await fetch(`/cas/${hash}`);
+    if (!resp.ok) {
+      throw new Error(`inscriptionBody: CAS fetch failed for hash '${hash}': ${resp.status}`);
+    }
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+
+    // 3. Hash-verify.
+    const computed = await hashBytesBlake3Hex(bytes);
+    if (computed !== hash) {
+      throw new Error(
+        `inscriptionBody: hash mismatch for inscription '${iFp}': ` +
+        `stored=${hash} computed=${computed}`
+      );
+    }
+
+    return bytes;
   }
 
   // ── Escape hatch ─────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
-//! `jelly verify <palace>` — palace invariant checker.
+//! `jelly verify <palace>` — palace **structural** invariant checker.
 //!
 //! When the target is a palace bundle (detected by field-kind == "palace"),
-//! verify.zig routes here. Five invariants are checked:
+//! verify.zig routes here. Six invariants are checked:
 //!
 //!   (a) AC5: ≥1 direct room — palace contains at least one jelly.dreamball.field
 //!       with field-kind == "room".
@@ -15,10 +15,29 @@
 //!       head-hashes must be a jelly.action in CAS that is not referenced as a
 //!       parent by any other action in the bundle (i.e., truly a leaf).
 //!   (f) AC10: oracle actor-fp — every action whose actor fp equals the oracle
-//!       fp must match the oracle fp from the .oracle.key sibling.
+//!       fp must match the oracle fp derived from the oracle key file.
 //!
 //! Distinct stderr messages are used per invariant so callers can identify
 //! which constraint failed (required by spec per AC5–AC10 language).
+//!
+//! ## NOT VERIFIED IN MVP — cryptographic signature check over action envelopes
+//!
+//! Invariants (a)–(f) are **structural**. This file does NOT verify the
+//! ed25519 + ML-DSA dual signatures carried in `jelly.action.signatures`
+//! against any signer public key. An attacker with CAS-write access can
+//! forge an action whose `actor` fp matches the oracle fp; verify will
+//! pass it. The MVP threat model (local-first, single-custodian per D-011)
+//! treats CAS-write as equivalent to oracle-possession, which is a weaker
+//! guarantee than what multi-custodian palaces will need.
+//!
+//! This limitation is tracked in `docs/known-gaps.md §11`. The next sprint
+//! adds invariant (g) "action signatures verify against actor public key"
+//! via a new call to `dreamball.signer.verify` over canonical action bytes.
+//! Depends on known-gaps §8 (parameterised WASM signer export) for browser
+//! parity.
+//!
+//! TODO-CRYPTO: action-envelope signature verification deferred — see
+//! docs/known-gaps.md §11.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -497,10 +516,14 @@ fn casRead(gpa: Allocator, cas_path: []const u8, fp: *const [32]u8) ?[]u8 {
 const CasContext = struct {
     gpa: Allocator,
     cas_path: []const u8,
-    // We store last-read bytes so we can return a stable slice.
-    // walkToGenesis calls lookup once per node, so we can re-allocate each time
-    // and leak intentionally — this is short-lived verify context.
-    // Better: use an arena.
+    // Bytes are retained in the walk-scoped arena for the duration of one
+    // verify invocation. walkToGenesis consumes each slice only to extract the
+    // predecessor fp, but the resulting `[]const u8` returned to the caller
+    // must remain valid until the walk terminates. Retention is bounded by
+    // mythos-chain length (MVP: single-digit) × envelope size (~KBs), well
+    // under any practical memory ceiling. If chains grow, switch to per-node
+    // free-after-predecessor-extraction; today the arena discipline is cheaper
+    // than the alternative plumbing.
     arena: std.heap.ArenaAllocator,
 
     fn lookup(fp: *const [32]u8, userdata: ?*anyopaque) ?[]const u8 {
@@ -559,11 +582,27 @@ pub fn run(gpa: Allocator, palace_path: []const u8) !u8 {
         return 1;
     }
 
+    // ── Load .oracle.key FIRST (MEDIUM-6 fix) ────────────────────────────────
+    // TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
+    // Derive oracle_fp from the .oracle.key file's Ed25519 pubkey rather than
+    // the first-seen Agent envelope (MEDIUM-6 code review fix).
+    const oracle_key_path = try std.fmt.allocPrint(gpa, "{s}.oracle.key", .{palace_path});
+    defer gpa.free(oracle_key_path);
+    var oracle_fp: [32]u8 = [_]u8{0} ** 32;
+    var oracle_key_loaded = false;
+    {
+        const oracle_keys = dreamball.key_file.readFromPath(gpa, oracle_key_path) catch null;
+        if (oracle_keys) |ok| {
+            oracle_fp = dreamball.fingerprint.Fingerprint.fromEd25519(ok.ed25519_public).bytes;
+            oracle_key_loaded = true;
+        }
+    }
+
     // ── Scan all envelopes in bundle ──────────────────────────────────────────
-    // Collect: rooms, agents, actions, timeline, oracle fp.
+    // Collect: rooms, agents, actions, timeline, first-seen agent fp.
     var room_count: usize = 0;
     var agent_count: usize = 0;
-    var oracle_fp: [32]u8 = [_]u8{0} ** 32;
+    var first_agent_fp: [32]u8 = [_]u8{0} ** 32;
     var mythos_head_fp: ?[32]u8 = null;
     var timeline_fp: ?[32]u8 = null;
 
@@ -579,7 +618,7 @@ pub fn run(gpa: Allocator, palace_path: []const u8) !u8 {
 
         if (std.mem.eql(u8, env_type, "jelly.dreamball.agent")) {
             agent_count += 1;
-            if (agent_count == 1) @memcpy(&oracle_fp, &bfp);
+            if (agent_count == 1) @memcpy(&first_agent_fp, &bfp);
         } else if (std.mem.eql(u8, env_type, "jelly.dreamball.field")) {
             const rfk = detectFieldKind(cbytes) orelse "";
             if (std.mem.eql(u8, rfk, "room")) {
@@ -602,10 +641,22 @@ pub fn run(gpa: Allocator, palace_path: []const u8) !u8 {
         return 1;
     }
 
-    // ── Invariant (b): oracle is sole direct Agent ─────────────────────────────
+    // ── Invariant (b): oracle is sole direct Agent AND its fp matches .oracle.key ──
+    // TODO-CRYPTO: oracle key is plaintext (known-gaps §6)
     if (agent_count > 1) {
         try io.writeAllStderr("error: multiple Agents directly contained; exactly one (oracle) permitted (invariant b)\n");
         return 1;
+    }
+    if (oracle_key_loaded and agent_count == 1) {
+        if (!std.mem.eql(u8, &first_agent_fp, &oracle_fp)) {
+            const agent_hex = palace_mint.hexArray(&first_agent_fp);
+            const oracle_hex = palace_mint.hexArray(&oracle_fp);
+            try printStderr(
+                "error: sole Agent envelope fp {s} does not match oracle-key-derived fp {s} (invariant b)\n",
+                .{ &agent_hex, &oracle_hex },
+            );
+            return 1;
+        }
     }
 
     // ── Invariant (c): action parent-hashes resolve ────────────────────────────
@@ -726,36 +777,21 @@ pub fn run(gpa: Allocator, palace_path: []const u8) !u8 {
     }
 
     // ── Invariant (f/AC10): oracle actor-fp provenance ─────────────────────────
-    // Load oracle key to get oracle identity fp. The oracle key is the Ed25519 pubkey
-    // from the oracle Agent envelope. We compare actor fp in oracle-signed actions.
-    // TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
-    const oracle_key_path = try std.fmt.allocPrint(gpa, "{s}.oracle.key", .{palace_path});
-    defer gpa.free(oracle_key_path);
-    const oracle_key_present = blk: {
-        const f = std.Io.Dir.cwd().openFile(io.io(), oracle_key_path, .{}) catch break :blk false;
-        f.close(io.io());
-        break :blk true;
-    };
-
-    if (oracle_key_present) {
-        const oracle_keys = dreamball.key_file.readFromPath(gpa, oracle_key_path) catch null;
-        if (oracle_keys) |ok| {
-            const oracle_identity_fp = dreamball.fingerprint.Fingerprint.fromEd25519(ok.ed25519_public).bytes;
-            // Check every action whose actor matches oracle_fp (the envelope fp)
-            // against oracle_identity_fp (derived from oracle key's ed25519 pubkey).
-            for (action_fps.items, action_actors.items) |afp, actor| {
-                // If actor == oracle_fp (the agent envelope fp), verify it matches
-                // the identity fp derived from the oracle keypair.
-                if (std.mem.eql(u8, &actor, &oracle_fp)) {
-                    if (!std.mem.eql(u8, &actor, &oracle_identity_fp)) {
-                        const afp_hex = palace_mint.hexArray(&afp);
-                        try printStderr(
-                            "error: oracle actor fp mismatch on action {s} (AC10 / SEC11 provenance)\n",
-                            .{&afp_hex},
-                        );
-                        return 1;
-                    }
-                }
+    // TODO-CRYPTO: oracle key is plaintext (known-gaps §6)
+    // oracle_fp was derived from the oracle key file at the top (MEDIUM-6).
+    // Verify every action actor that claims oracle identity carries the key-derived fp.
+    if (oracle_key_loaded) {
+        for (action_fps.items, action_actors.items) |afp, actor| {
+            if (std.mem.eql(u8, &actor, &oracle_fp)) {
+                // Actor matches oracle — correct.
+            } else if (std.mem.eql(u8, &actor, &first_agent_fp) and !std.mem.eql(u8, &first_agent_fp, &oracle_fp)) {
+                // Actor matches envelope fp but not key-derived fp — mismatch.
+                const afp_hex = palace_mint.hexArray(&afp);
+                try printStderr(
+                    "error: oracle actor fp mismatch on action {s} (AC10 / SEC11 provenance)\n",
+                    .{&afp_hex},
+                );
+                return 1;
             }
         }
     }

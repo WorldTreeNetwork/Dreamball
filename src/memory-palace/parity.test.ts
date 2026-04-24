@@ -24,12 +24,10 @@ import {
   type ParityVector
 } from './fixtures/knn-parity.js';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types (re-exported from shared parity ground truth — Sprint-1 MEDIUM-3) ──
 
-export interface KnnRow {
-  fp: string;
-  distance: number;
-}
+export type { KnnRow } from './fixtures/parity-ground-truth.js';
+import type { KnnRow } from './fixtures/parity-ground-truth.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -124,10 +122,19 @@ export function classifyParity(
   let maxDelta = 0;
   for (const br of browser) {
     const sr = server.find((r) => r.fp === br.fp);
-    if (sr) {
-      const delta = Math.abs(br.distance - sr.distance);
-      if (delta > maxDelta) maxDelta = delta;
+    if (!sr) {
+      // Guaranteed unreachable given setEqual above, but defend against future
+      // edits: a missing counterpart is a hard block, never a silent pass.
+      return { outcome: 'HARD BLOCK', maxDelta: Infinity, setEqual: true };
     }
+    const delta = Math.abs(br.distance - sr.distance);
+    if (!Number.isFinite(delta)) {
+      // NaN / Infinity distances (e.g. missing vector, arithmetic edge) must
+      // fail loudly — without this guard, NaN > maxDelta is false and the
+      // classifier defaults to PASS.
+      return { outcome: 'HARD BLOCK', maxDelta: Infinity, setEqual: true };
+    }
+    if (delta > maxDelta) maxDelta = delta;
   }
 
   return {

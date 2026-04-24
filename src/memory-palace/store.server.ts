@@ -40,6 +40,8 @@ import {
   type InscriptionData,
   type MythosTriple,
   type WriteContext,
+  type PalaceData,
+  type RoomData,
   PolicyDeniedError,
 } from './store-types.js';
 import { mirrorAction, type MirrorAction } from './action-mirror.js';
@@ -158,6 +160,13 @@ export class ServerStore implements StoreAPI {
   private db: InstanceType<typeof lbug.Database> | null = null;
   private conn: InstanceType<typeof lbug.Connection> | null = null;
   private dbPath: string;
+  /**
+   * CAS directory for inscription body bytes (S5.4 / AC3 / TC13).
+   * Each file is named by its Blake3 hex hash (64 lowercase hex chars).
+   * Default: ':none:' — means CAS reads are not available on this store instance.
+   * Set via constructor `opts.casDir` or the PALACE_CAS_DIR env var.
+   */
+  private _casDir: string;
 
   /**
    * Per-palace oracle fp registry (S4.2).
@@ -173,8 +182,9 @@ export class ServerStore implements StoreAPI {
   /** Active write-context for the next mutation verb. */
   private _writeCtx: WriteContext = { requesterFp: '', origin: 'custodian' };
 
-  constructor(dbPath = ':memory:') {
+  constructor(dbPath = ':memory:', opts: { casDir?: string } = {}) {
     this.dbPath = dbPath;
+    this._casDir = opts.casDir ?? (process.env['PALACE_CAS_DIR'] ?? ':none:');
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -924,22 +934,32 @@ export class ServerStore implements StoreAPI {
   }
 
   /**
-   * Return ActionLog rows for a palace added after sinceActionFp (exclusive cursor).
+   * Return ActionLog rows for a palace added after a given timestamp (exclusive).
+   *
+   * Sprint-1 code review LOW-4: the previous implementation filtered on
+   * `fp > cursor` — but content-addressed hex fps are NOT monotonically
+   * ordered, so lex comparison returns a random subset. Replaced with
+   * timestamp-based cursor: callers pass `{ afterTimestamp: number }` (ms
+   * epoch) and the filter uses `timestamp > afterTimestamp`.
+   *
+   * Pass afterTimestamp=0 or omit to get all actions.
    */
-  async actionsSince(palaceFp: string, sinceActionFp: string): Promise<Array<{ fp: string; actionKind: string; targetFp: string }>> {
+  async actionsSince(palaceFp: string, opts?: { afterTimestamp?: number }): Promise<Array<{ fp: string; actionKind: string; targetFp: string; timestamp: number }>> {
     const pFp = sanitizeFp(palaceFp, 'palaceFp');
-    const rows = await this._q<{ fp: string; action_kind: string; target_fp: string }>(
+    const afterTs = opts?.afterTimestamp ?? 0;
+    const tsInt = sanitizeInt(afterTs, 'afterTimestamp');
+    const rows = await this._q<{ fp: string; action_kind: string; target_fp: string; timestamp: number | bigint }>(
       `MATCH (a:ActionLog {palace_fp: '${pFp}'})
-       RETURN a.fp AS fp, a.action_kind AS action_kind, a.target_fp AS target_fp`
+       WHERE a.timestamp > ${tsInt}
+       RETURN a.fp AS fp, a.action_kind AS action_kind, a.target_fp AS target_fp, a.timestamp AS timestamp
+       ORDER BY a.timestamp`
     );
-    const all = rows.map((r) => ({
+    return rows.map((r) => ({
       fp: String(r.fp),
       actionKind: String(r.action_kind),
       targetFp: String(r.target_fp),
+      timestamp: typeof r.timestamp === 'bigint' ? Number(r.timestamp) : r.timestamp,
     }));
-    if (!sinceActionFp) return all;
-    const cursor = sanitizeFp(sinceActionFp, 'sinceActionFp');
-    return all.filter((r) => r.fp > cursor);
   }
 
   // ── S4.4 file-watcher domain verbs ──────────────────────────────────────────
@@ -1077,6 +1097,89 @@ export class ServerStore implements StoreAPI {
       predicate: String(r.predicate),
       object: String(r.object),
     }));
+  }
+
+  // ── Palace / Room read verbs (S5.2 — PalaceLens consumer) ───────────────────
+
+  async getPalace(palaceFp: string): Promise<PalaceData | null> {
+    const fp = sanitizeFp(palaceFp);
+    const rows = await this._q<{ fp: string }>(
+      `MATCH (p:Palace {fp: ${fp}}) RETURN p.fp AS fp`
+    );
+    if (rows.length === 0) return null;
+    return { fp: rows[0].fp, name: undefined, omnisphericalGrid: null };
+  }
+
+  async roomsFor(palaceFp: string): Promise<RoomData[]> {
+    const fp = sanitizeFp(palaceFp);
+    const rows = await this._q<{ fp: string }>(
+      `MATCH (p:Palace {fp: ${fp}})-[:CONTAINS]->(r:Room) RETURN r.fp AS fp ORDER BY r.fp ASC`
+    );
+    return rows.map((r) => ({ fp: String(r.fp), layout: null }));
+  }
+
+  async roomContents(roomFp: string): Promise<import('./store-types.js').RoomContentsItem[]> {
+    const fp = sanitizeFp(roomFp);
+    const rows = await this._q<{ fp: string; surface: string | null }>(
+      `MATCH (r:Room {fp: ${fp}})-[:CONTAINS]->(i:Inscription)
+       RETURN i.fp AS fp, i.surface AS surface
+       ORDER BY i.fp ASC`
+    );
+    return rows.map((r) => ({
+      fp: String(r.fp),
+      surface: r.surface != null ? String(r.surface) : undefined,
+      // placement is null for MVP — jelly.layout nested decode deferred to Zig parser.
+      placement: null,
+    }));
+  }
+
+  /**
+   * Fetch and hash-verify CAS body bytes for an inscription (S5.4 / D-007 / TC13 / AC3).
+   *
+   * 1. Queries `source_blake3` for the inscription fp.
+   * 2. Reads the file from `_casDir/<source_blake3>` (SEC6: local filesystem only).
+   * 3. Hash-verifies: asserts Blake3(bytes) === source_blake3. Throws on mismatch.
+   *
+   * No raw filesystem path is exposed to the lens — all CAS path logic is here.
+   */
+  async inscriptionBody(inscriptionFp: string): Promise<Uint8Array> {
+    const iFp = sanitizeFp(inscriptionFp, 'inscriptionFp');
+    // 1. Resolve source_blake3 from DB.
+    const rows = await this._q<{ source_blake3: string }>(
+      `MATCH (i:Inscription {fp: '${iFp}'}) RETURN i.source_blake3 AS source_blake3`
+    );
+    if (rows.length === 0) {
+      throw new Error(`inscriptionBody: inscription '${iFp}' not found`);
+    }
+    const hash = sanitizeFp(String(rows[0].source_blake3), 'source_blake3');
+
+    if (this._casDir === ':none:') {
+      throw new Error(
+        `inscriptionBody: CAS directory not configured (set opts.casDir or PALACE_CAS_DIR env var)`
+      );
+    }
+
+    // 2. Read from CAS directory (SEC6: local FS only — no HTTP fetch).
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const casPath = join(this._casDir, hash);
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(readFileSync(casPath));
+    } catch (err) {
+      throw new Error(`inscriptionBody: CAS file not found for hash '${hash}': ${err}`);
+    }
+
+    // 3. Hash-verify: Blake3(bytes) must match stored source_blake3.
+    const computed = await hashBytesBlake3Hex(bytes);
+    if (computed !== hash) {
+      throw new Error(
+        `inscriptionBody: hash mismatch for inscription '${iFp}': ` +
+        `stored=${hash} computed=${computed}`
+      );
+    }
+
+    return bytes;
   }
 
   // ── Escape hatch ─────────────────────────────────────────────────────────────

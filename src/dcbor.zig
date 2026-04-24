@@ -354,23 +354,35 @@ pub fn skipItem(bytes: []const u8, cursor: *usize) ReadError!void {
 }
 
 /// Walk the entire CBOR stream in `bytes`, validating every head is in
-/// smallest form per dCBOR §3. Accepts any number of top-level items.
-/// Returns on the first non-canonical head or malformed item.
+/// smallest form per dCBOR §3 AND that every map's keys appear in
+/// canonical (shorter-first, then lexicographic) order per RFC 8949 §4.2.1.
+/// Accepts any number of top-level items.  Returns on the first
+/// non-canonical head, out-of-order map key, or malformed item.
 ///
-/// Intended for use at the top of a decode path — e.g.
-/// `identity_envelope.decode` runs this once on the whole envelope so
-/// later readers can trust that the bytes are canonical.
+/// Intended for use at the top of a decode path — e.g. every `decode*`
+/// in envelope_v2.zig runs this once on the whole envelope so later
+/// readers can trust that the bytes are canonical (both smallest-form
+/// AND map-key-ordered).
 ///
-/// Note: this does not enforce map-key ordering or assertion ordering —
-/// those are envelope-semantic concerns, not CBOR-canonical concerns.
-/// For map-ordering enforcement, see `PairList.sort` (writer side); a
-/// decode-side checker would verify keys appear in sorted order but is
-/// not currently implemented.
+/// Load-bearing rationale: without map-key-order enforcement two
+/// byte-distinct encodings decode to the same logical struct but hash
+/// to different Blake3 fingerprints — which breaks parent-hash checks
+/// and opens the door to malleability / forgery. See review note
+/// HIGH-1 in the Sprint-1 code review (2026-04-24) for the full
+/// rationale.
 pub fn verifyCanonical(bytes: []const u8) ReadError!void {
     var cursor: usize = 0;
     while (cursor < bytes.len) {
         try verifyOne(bytes, &cursor);
     }
+}
+
+/// Canonical map-key ordering comparison per RFC 8949 §4.2.1 / dCBOR:
+/// the key with the shorter encoded form sorts first; ties break
+/// lexicographically over the raw encoded bytes.
+fn keyLessThan(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return a.len < b.len;
+    return std.mem.lessThan(u8, a, b);
 }
 
 fn verifyOne(bytes: []const u8, cursor: *usize) ReadError!void {
@@ -389,10 +401,29 @@ fn verifyOne(bytes: []const u8, cursor: *usize) ReadError!void {
             while (i < head.arg) : (i += 1) try verifyOne(bytes, cursor);
         },
         5 => {
-            // map: recurse for each key and each value
+            // map: recurse for each key and each value, verifying that
+            // the raw CBOR encoding of each successive key sorts AFTER
+            // the previous key under RFC 8949 §4.2.1.  We snapshot the
+            // cursor before and after the key's head+content so we can
+            // slice the exact bytes compared.
             var i: u64 = 0;
+            var prev_key_start: usize = 0;
+            var prev_key_end: usize = 0;
             while (i < head.arg) : (i += 1) {
+                const key_start = cursor.*;
                 try verifyOne(bytes, cursor); // key
+                const key_end = cursor.*;
+                if (i > 0) {
+                    const prev_key = bytes[prev_key_start..prev_key_end];
+                    const this_key = bytes[key_start..key_end];
+                    // Strictly-less: equal-key is also illegal (duplicate
+                    // map keys are a dCBOR violation).
+                    if (!keyLessThan(prev_key, this_key)) {
+                        return ReadError.NonCanonicalInteger;
+                    }
+                }
+                prev_key_start = key_start;
+                prev_key_end = key_end;
                 try verifyOne(bytes, cursor); // value
             }
         },
@@ -405,6 +436,63 @@ fn verifyOne(bytes: []const u8, cursor: *usize) ReadError!void {
             // are permitted. info 24 (extended simple) and info 25/26/27
             // (f16/f32/f64) are rejected — DreamBall envelopes never use
             // them.
+            if (head.info > 23) return ReadError.UnsupportedItem;
+            if (head.arg != 20 and head.arg != 21 and head.arg != 22 and head.arg != 23) {
+                return ReadError.UnsupportedItem;
+            }
+        },
+    }
+}
+
+/// Variant of `verifyCanonical` that allows floats (major 7 info 25/26/27).
+/// Used for envelope types that legitimately carry float values under the
+/// PROTOCOL §12.2 float exception (omnispherical-grid, layout, aqueduct,
+/// emotional-register, trust-observation).  All other canonicality rules —
+/// smallest-form integer encoding and map-key ordering — remain in force.
+pub fn verifyCanonicalAllowFloats(bytes: []const u8) ReadError!void {
+    var cursor: usize = 0;
+    while (cursor < bytes.len) {
+        try verifyOneAllowFloats(bytes, &cursor);
+    }
+}
+
+fn verifyOneAllowFloats(bytes: []const u8, cursor: *usize) ReadError!void {
+    const head = try readHead(bytes, cursor);
+    switch (head.major) {
+        0, 1 => {},
+        2, 3 => {
+            const len: usize = @intCast(head.arg);
+            if (cursor.* + len > bytes.len) return ReadError.Truncated;
+            cursor.* += len;
+        },
+        4 => {
+            var i: u64 = 0;
+            while (i < head.arg) : (i += 1) try verifyOneAllowFloats(bytes, cursor);
+        },
+        5 => {
+            var i: u64 = 0;
+            var prev_key_start: usize = 0;
+            var prev_key_end: usize = 0;
+            while (i < head.arg) : (i += 1) {
+                const key_start = cursor.*;
+                try verifyOneAllowFloats(bytes, cursor);
+                const key_end = cursor.*;
+                if (i > 0) {
+                    const prev_key = bytes[prev_key_start..prev_key_end];
+                    const this_key = bytes[key_start..key_end];
+                    if (!keyLessThan(prev_key, this_key)) {
+                        return ReadError.NonCanonicalInteger;
+                    }
+                }
+                prev_key_start = key_start;
+                prev_key_end = key_end;
+                try verifyOneAllowFloats(bytes, cursor);
+            }
+        },
+        6 => try verifyOneAllowFloats(bytes, cursor),
+        7 => {
+            // Permit floats (info 25/26/27) in addition to bools/null/undefined.
+            if (head.info == 25 or head.info == 26 or head.info == 27) return;
             if (head.info > 23) return ReadError.UnsupportedItem;
             if (head.arg != 20 and head.arg != 21 and head.arg != 22 and head.arg != 23) {
                 return ReadError.UnsupportedItem;
@@ -599,6 +687,84 @@ test "readArrayHeader / readMapHeader / readTag / readUint / readText / readByte
         const bytes = [_]u8{ 0xD8, 0xC8 };
         try std.testing.expectError(ReadError.UnexpectedTag, expectTag(&bytes, &cursor, 201));
     }
+}
+
+test "verifyCanonical accepts map with canonically-ordered keys" {
+    // {"a": 1, "bb": 2} — len 1 < len 2, so "a" first is canonical.
+    const bytes = [_]u8{
+        0xA2, //       map(2)
+        0x61, 'a', //  "a"
+        0x01, //       1
+        0x62, 'b', 'b', // "bb"
+        0x02, //       2
+    };
+    try verifyCanonical(&bytes);
+}
+
+test "verifyCanonical rejects map with non-canonical key order (length violation)" {
+    // {"bb": 2, "a": 1} — len-2 key first, len-1 key second.  Violation.
+    const bytes = [_]u8{
+        0xA2,
+        0x62, 'b', 'b',
+        0x02,
+        0x61, 'a',
+        0x01,
+    };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, verifyCanonical(&bytes));
+}
+
+test "verifyCanonical rejects map with non-canonical key order (lex violation within equal length)" {
+    // {"bb": 2, "aa": 1} — equal length, but "bb" > "aa" lex.  Violation.
+    const bytes = [_]u8{
+        0xA2,
+        0x62, 'b', 'b',
+        0x02,
+        0x62, 'a', 'a',
+        0x01,
+    };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, verifyCanonical(&bytes));
+}
+
+test "verifyCanonical rejects map with duplicate keys" {
+    // {"a": 1, "a": 2} — same key twice.  dCBOR prohibits duplicates.
+    const bytes = [_]u8{
+        0xA2,
+        0x61, 'a',
+        0x01,
+        0x61, 'a',
+        0x02,
+    };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, verifyCanonical(&bytes));
+}
+
+test "verifyCanonical rejects nested non-canonical map-key ordering" {
+    // tag(200)([tag(201)({"bb": 2, "a": 1})]) — inner map has wrong order.
+    const bytes = [_]u8{
+        0xD8, 0xC8, // tag 200
+        0x81, //       array(1)
+        0xD8, 0xC9, // tag 201
+        0xA2, //       map(2)
+        0x62, 'b', 'b',
+        0x02,
+        0x61, 'a',
+        0x01,
+    };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, verifyCanonical(&bytes));
+}
+
+test "verifyCanonicalAllowFloats accepts an f32 but rejects bad map order" {
+    // f32 0.5
+    const ok_bytes = [_]u8{ 0xFA, 0x3F, 0x00, 0x00, 0x00 };
+    try verifyCanonicalAllowFloats(&ok_bytes);
+    // Same map-ordering check applies.
+    const bad_bytes = [_]u8{
+        0xA2,
+        0x62, 'b', 'b',
+        0x02,
+        0x61, 'a',
+        0x01,
+    };
+    try std.testing.expectError(ReadError.NonCanonicalInteger, verifyCanonicalAllowFloats(&bad_bytes));
 }
 
 test "PairList: sort orders shorter-first then lex" {

@@ -52,7 +52,7 @@ function makeMockStore(opts: {
   _revisions: Map<string, number>;
   _sourceBlake3: Map<string, string>;
 } {
-  const actionLog: Array<{ fp: string; actionKind: string; actorFp: string; targetFp: string }> = [];
+  const actionLog: Array<{ fp: string; actionKind: string; actorFp: string; targetFp: string; timestamp: number }> = [];
   const embeddings = new Map<string, Float32Array>();
   const orphaned = new Map<string, boolean>();
   const revisions = new Map<string, number>();
@@ -83,6 +83,7 @@ function makeMockStore(opts: {
         actionKind: params.actionKind,
         actorFp: params.actorFp,
         targetFp: params.targetFp ?? '',
+        timestamp: typeof params.timestamp === 'number' ? params.timestamp : Date.now(),
       });
     }),
     headHashes: vi.fn().mockResolvedValue([]),
@@ -103,11 +104,11 @@ function makeMockStore(opts: {
     deleteTriple: vi.fn(),
     updateTriple: vi.fn(),
     triplesFor: vi.fn().mockResolvedValue([]),
-    actionsSince: vi.fn().mockImplementation(async (_palaceFp: string, cursor: string) => {
-      if (!cursor) return actionLog.map((a) => ({ fp: a.fp, actionKind: a.actionKind, targetFp: a.targetFp }));
+    actionsSince: vi.fn().mockImplementation(async (_palaceFp: string, opts?: { afterTimestamp?: number }) => {
+      const afterTs = opts?.afterTimestamp ?? 0;
       return actionLog
-        .filter((a) => a.fp > cursor)
-        .map((a) => ({ fp: a.fp, actionKind: a.actionKind, targetFp: a.targetFp }));
+        .filter((a) => (a.timestamp ?? 0) > afterTs)
+        .map((a) => ({ fp: a.fp, actionKind: a.actionKind, targetFp: a.targetFp, timestamp: a.timestamp ?? 0 }));
     }),
     updateInscription: vi.fn().mockImplementation(async (fp: string, fields: { source_blake3?: string; revision?: number }) => {
       if (fields.source_blake3 !== undefined) sourceBlake3.set(fp, fields.source_blake3);
@@ -137,7 +138,7 @@ function makeMockStore(opts: {
 
 /**
  * Set up a temp directory with a real .oracle.key file (mode 0600)
- * so oracleSignAction can read it.
+ * so oracleActionStub can read it.
  */
 function makeTempPalace(parent?: string): { palaceDir: string; palacePath: string; keyPath: string } {
   // SEC10 path-containment: file-watcher rejects source files whose resolved
@@ -799,5 +800,62 @@ describe('acquirePalaceMutex — per-palace serialisation', () => {
 
     expect(done).toBe(true);
     expect(secondRan).toBe(true);
+  });
+});
+
+// ── MEDIUM-4: realpath symlink containment ────────────────────────────────────
+
+describe('MEDIUM-4: symlink path-containment via realpath', () => {
+  let palaceDir: string;
+  let outsideDir: string;
+  let outsideFile: string;
+  let symlinkPath: string;
+
+  beforeAll(async () => {
+    const { symlinkSync } = await import('node:fs');
+    palaceDir = mkdtempSync(join(tmpdir(), 'palace-symlink-'));
+    outsideDir = mkdtempSync(join(tmpdir(), 'outside-'));
+    outsideFile = join(outsideDir, 'secret.txt');
+    writeFileSync(outsideFile, 'this is outside the palace');
+    // Create a symlink INSIDE the palace pointing OUTSIDE.
+    symlinkPath = join(palaceDir, 'link-to-outside.txt');
+    symlinkSync(outsideFile, symlinkPath);
+  });
+
+  afterAll(async () => {
+    await rm(palaceDir, { recursive: true, force: true });
+    await rm(outsideDir, { recursive: true, force: true });
+  });
+
+  it('refuses to process a symlink pointing outside the palace root', async () => {
+    const insc: WatchedInscription = {
+      avatarFp: makeFp('symlink-avatar'),
+      sourcePath: symlinkPath,
+      roomFp: makeFp('symlink-room'),
+      oracleAgentFp: makeFp('symlink-oracle'),
+    };
+
+    const store = makeMockStore() as unknown as StoreAPI;
+
+    // onFileChange should throw because realpath(symlinkPath) resolves to
+    // outsideFile, which is NOT inside palaceDir.
+    await expect(
+      onFileChange(palaceDir, makeFp('symlink-palace'), insc, store)
+    ).rejects.toThrow('refusing to read sourcePath outside palace root');
+  });
+
+  it('refuses onFileDelete for symlink pointing outside palace root', async () => {
+    const insc: WatchedInscription = {
+      avatarFp: makeFp('symlink-del-avatar'),
+      sourcePath: symlinkPath,
+      roomFp: makeFp('symlink-del-room'),
+      oracleAgentFp: makeFp('symlink-del-oracle'),
+    };
+
+    const store = makeMockStore() as unknown as StoreAPI;
+
+    await expect(
+      onFileDelete(palaceDir, makeFp('symlink-del-palace'), insc, store)
+    ).rejects.toThrow('refusing to read sourcePath outside palace root');
   });
 });

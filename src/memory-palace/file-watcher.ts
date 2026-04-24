@@ -13,7 +13,7 @@
  * 4-step inline transaction (D-008):
  *   1. Content-hash check — skip if unchanged (AC2 no-op guard)
  *   2. computeEmbedding — throws EmbeddingServiceUnreachable on 503 (AC4)
- *   3. oracleSignAction — produces SignedAction with oracle fp as signer
+ *   3. oracleActionStub — produces SignedAction with oracle fp as signer
  *   4. Sequential store writes: reembed → mirrorInscriptionToKnowledgeGraph →
  *      recordAction → updateInscription
  *      (SEC11: action recorded after effect within same write sequence)
@@ -29,8 +29,8 @@
  * TODO-EMBEDDING: bring-model-local-or-byo (Epic 6 implements Qwen3 server /embed)
  */
 
-import { watch, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { watch, readFileSync, realpathSync } from 'node:fs';
+import { resolve, dirname, basename } from 'node:path';
 import type { StoreAPI } from './store-types.js';
 import {
   oracleActionStub,
@@ -41,6 +41,43 @@ import {
   EmbeddingServiceUnreachable,
 } from './embedding-client.js';
 import { hashBytesBlake3HexSync } from './cypher-utils.js';
+
+// ── Realpath-aware path containment (Sprint-1 MEDIUM-4 code review) ──────────
+
+/**
+ * Resolve a path to its real filesystem location, following symlinks.
+ * Falls back to resolving the parent directory (which likely still exists)
+ * and appending the basename. This handles the deleted-file case (e.g.
+ * onFileDelete) where the file is gone but the parent dir exists and may
+ * contain symlinks (on macOS, /var -> /private/var).
+ */
+function safeRealpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    // File doesn't exist — try resolving the parent directory.
+    try {
+      return resolve(realpathSync(dirname(p)), basename(p));
+    } catch {
+      return resolve(p);
+    }
+  }
+}
+
+/**
+ * Check whether `sourcePath` is contained within `palaceRoot` after
+ * following symlinks. Uses `realpathSync` so a symlink pointing outside
+ * the palace tree is correctly detected as an escape.
+ *
+ * Sprint-1 code review MEDIUM-4: the previous `resolve() + startsWith`
+ * approach did not follow symlinks, allowing a symlink inside the palace
+ * pointing to a file outside the palace to pass the containment check.
+ */
+function isContainedInPalace(palacePath: string, sourcePath: string): boolean {
+  const palaceRoot = safeRealpath(palacePath);
+  const sourceResolved = safeRealpath(sourcePath);
+  return sourceResolved.startsWith(palaceRoot + '/') || sourceResolved === palaceRoot;
+}
 
 // ── Per-palace mutex ──────────────────────────────────────────────────────────
 
@@ -203,7 +240,7 @@ export function openPalaceWatcher(
  * 4-step inline transaction (D-008):
  *   1. Read new bytes; compute content hash; skip if unchanged (AC2).
  *   2. computeEmbedding → throws EmbeddingServiceUnreachable on 503 (AC4).
- *   3. oracleSignAction → oracle-signed 'inscription-updated' action.
+ *   3. oracleActionStub → oracle-signed 'inscription-updated' action.
  *   4. Sequential store writes (SEC11 order):
  *      store.reembed → mirrorInscriptionToKnowledgeGraph → recordAction →
  *      updateInscription(source_blake3 + revision bump).
@@ -220,13 +257,8 @@ export async function onFileChange(
   store: StoreAPI
 ): Promise<void> {
   // SEC10 path-containment: refuse to read a sourcePath that resolves outside
-  // the palace root. The watcher subscribes to absolute paths given by the
-  // topology; if the path becomes a symlink or is otherwise lifted out of the
-  // palace tree between subscribe and fire we must fail closed rather than
-  // treat an arbitrary file as an inscription source.
-  const palaceRoot = resolve(palacePath);
-  const sourceResolved = resolve(insc.sourcePath);
-  if (!sourceResolved.startsWith(palaceRoot + '/') && sourceResolved !== palaceRoot) {
+  // the palace root. Uses realpathSync to follow symlinks (MEDIUM-4 fix).
+  if (!isContainedInPalace(palacePath, insc.sourcePath)) {
     throw new Error(`file-watcher: refusing to read sourcePath outside palace root: ${insc.sourcePath}`);
   }
 
@@ -344,10 +376,8 @@ export async function onFileDelete(
   insc: WatchedInscription,
   store: StoreAPI
 ): Promise<void> {
-  // SEC10 path-containment (see onFileChange for rationale).
-  const palaceRoot = resolve(palacePath);
-  const sourceResolved = resolve(insc.sourcePath);
-  if (!sourceResolved.startsWith(palaceRoot + '/') && sourceResolved !== palaceRoot) {
+  // SEC10 path-containment (see onFileChange for rationale; MEDIUM-4 realpath fix).
+  if (!isContainedInPalace(palacePath, insc.sourcePath)) {
     throw new Error(`file-watcher: refusing to read sourcePath outside palace root: ${insc.sourcePath}`);
   }
 

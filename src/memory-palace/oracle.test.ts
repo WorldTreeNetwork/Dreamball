@@ -17,7 +17,7 @@ import { execSync } from 'node:child_process';
 import {
   bootstrapOracleSlots,
   buildSystemPrompt,
-  oracleSignAction,
+  oracleActionStub,
   ORACLE_PROMPT_BYTES,
   type OracleSlots,
 } from './oracle.js';
@@ -254,9 +254,9 @@ describe('buildSystemPrompt', () => {
   });
 });
 
-// ── S4.4: oracleSignAction ────────────────────────────────────────────────────
+// ── S4.4: oracleActionStub ────────────────────────────────────────────────────
 
-describe('S4.4 oracleSignAction — oracle-signed actions for file-watcher', () => {
+describe('S4.4 oracleActionStub — oracle-signed actions for file-watcher', () => {
   // oracleActionStub now refuses to run unless JELLY_ORACLE_ALLOW_UNSIGNED=1
   // (see docs/known-gaps.md §8). This describe block exercises the stub path
   // explicitly so the env var is set for the duration of these tests only.
@@ -277,12 +277,12 @@ describe('S4.4 oracleSignAction — oracle-signed actions for file-watcher', () 
     return { palacePath, palaceDir };
   }
 
-  it('AC1: oracleSignAction returns inscription-updated with non-empty fp', async () => {
+  it('AC1: oracleActionStub returns inscription-updated with non-empty fp', async () => {
     const { palacePath } = makeTempPalace();
     const palaceFp = 'a'.repeat(64);
     const targetFp = 'b'.repeat(64);
 
-    const action = await oracleSignAction(palacePath, palaceFp, 'inscription-updated', targetFp, []);
+    const action = await oracleActionStub(palacePath, palaceFp, 'inscription-updated', targetFp, []);
 
     expect(action.fp).toBeTruthy();
     expect(action.fp.length).toBeGreaterThan(0);
@@ -293,7 +293,7 @@ describe('S4.4 oracleSignAction — oracle-signed actions for file-watcher', () 
 
   it('AC1: signerFp equals oracle fp (not custodian)', async () => {
     const { palacePath } = makeTempPalace();
-    const action = await oracleSignAction(
+    const action = await oracleActionStub(
       palacePath, 'c'.repeat(64), 'inscription-updated', 'd'.repeat(64), []
     );
 
@@ -307,17 +307,17 @@ describe('S4.4 oracleSignAction — oracle-signed actions for file-watcher', () 
     const palaceFp = 'e'.repeat(64);
     const targetFp = 'f'.repeat(64);
 
-    const a1 = await oracleSignAction(palacePath, palaceFp, 'inscription-updated', targetFp, []);
+    const a1 = await oracleActionStub(palacePath, palaceFp, 'inscription-updated', targetFp, []);
     // tiny delay to ensure different timestamp
     await new Promise((r) => setTimeout(r, 2));
-    const a2 = await oracleSignAction(palacePath, palaceFp, 'inscription-updated', targetFp, []);
+    const a2 = await oracleActionStub(palacePath, palaceFp, 'inscription-updated', targetFp, []);
 
     expect(a1.fp).not.toBe(a2.fp);
   });
 
-  it('AC3: oracleSignAction returns inscription-orphaned correctly', async () => {
+  it('AC3: oracleActionStub returns inscription-orphaned correctly', async () => {
     const { palacePath } = makeTempPalace();
-    const action = await oracleSignAction(
+    const action = await oracleActionStub(
       palacePath, 'g'.repeat(64), 'inscription-orphaned', 'h'.repeat(64), ['parent1']
     );
 
@@ -325,12 +325,12 @@ describe('S4.4 oracleSignAction — oracle-signed actions for file-watcher', () 
     expect(action.parentHashes).toEqual(['parent1']);
   });
 
-  it('AC9: oracleSignAction contains TODO-CRYPTO marker in source', () => {
-    // Verify the TODO-CRYPTO marker exists in oracle.ts at oracleSignAction sites
+  it('AC9: oracleActionStub contains TODO-CRYPTO marker in source', () => {
+    // Verify the TODO-CRYPTO marker exists in oracle.ts at oracleActionStub sites
     const oracleSrc = readFileSync(
       join(__dirname, 'oracle.ts'), 'utf-8'
     );
-    // Count occurrences of TODO-CRYPTO within the oracleSignAction function
+    // Count occurrences of TODO-CRYPTO within the oracleActionStub function
     const cryptoMarkerCount = (oracleSrc.match(/TODO-CRYPTO: oracle key is plaintext/g) ?? []).length;
     // Source carries >= 2 markers (oracle-key read + stub-signer) plus more for
     // every additional bypass site. The hardening pass added markers at each

@@ -559,3 +559,19 @@ export fn verifyMlDsa(
     ml_dsa.verify(sig, msg, pk) catch return 0;
     return 1;
 }
+
+/// Blake3 hash — cross-runtime parity export (HIGH-2 fix, Sprint-1 code review).
+///
+/// Computes Blake3-256 of `input_ptr[0..input_len]` and writes the 32-byte
+/// digest into `out_ptr[0..32]`. The caller must pre-allocate at least 32
+/// bytes at `out_ptr` (use `alloc(32)` from JS).
+///
+/// This eliminates the SHA-256 fallback in `cypher-utils.ts` so that a
+/// field named `source_blake3` actually IS Blake3 in every runtime.
+export fn hashBlake3(input_ptr: u32, input_len: u32, out_ptr: u32) void {
+    const input: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
+    const out: *[32]u8 = @ptrFromInt(out_ptr);
+    var hasher = std.crypto.hash.Blake3.init(.{});
+    hasher.update(input);
+    hasher.final(out);
+}

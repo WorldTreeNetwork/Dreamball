@@ -39,6 +39,7 @@ interface WasmExports {
 		pkPtr: number,
 		pkLen: number
 	) => number;
+	hashBlake3: (inputPtr: number, inputLen: number, outPtr: number) => void;
 	resultErrPtr: () => number;
 	resultErrLen: () => number;
 }
@@ -117,6 +118,47 @@ export async function verifyMlDsa(
 	const el = exp.resultErrLen();
 	const err = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
 	return { ok: false, err };
+}
+
+/**
+ * Compute Blake3-256 of `bytes` and return the 64-char lowercase hex digest.
+ *
+ * Uses the same `std.crypto.hash.Blake3` that the Zig CLI uses, compiled
+ * into `jelly.wasm`. This eliminates the SHA-256 fallback that previously
+ * existed in `cypher-utils.ts` for non-Bun runtimes — a field named
+ * `source_blake3` is now genuinely Blake3 in every runtime (browser,
+ * Bun server, Node tests). See Sprint-1 code review HIGH-2.
+ */
+export async function blake3Hex(bytes: Uint8Array): Promise<string> {
+	const exp = await getInstance();
+	exp.reset();
+	const inPtr = exp.alloc(bytes.length);
+	const outPtr = exp.alloc(32);
+	if (inPtr === 0 || outPtr === 0) throw new Error('blake3Hex: alloc failed');
+	new Uint8Array(exp.memory.buffer, inPtr, bytes.length).set(bytes);
+	exp.hashBlake3(inPtr, bytes.length, outPtr);
+	const digest = new Uint8Array(exp.memory.buffer, outPtr, 32);
+	return Array.from(digest).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Synchronous Blake3 — for call sites that cannot await.
+ *
+ * Only usable after the WASM module has been initialized (i.e., after at
+ * least one `await` of any loader export). Throws if the instance is not
+ * yet cached.
+ */
+export function blake3HexSync(bytes: Uint8Array): string {
+	if (!cachedInstance) throw new Error('blake3HexSync: WASM not yet initialized — call an async export first');
+	const exp = cachedInstance;
+	exp.reset();
+	const inPtr = exp.alloc(bytes.length);
+	const outPtr = exp.alloc(32);
+	if (inPtr === 0 || outPtr === 0) throw new Error('blake3HexSync: alloc failed');
+	new Uint8Array(exp.memory.buffer, inPtr, bytes.length).set(bytes);
+	exp.hashBlake3(inPtr, bytes.length, outPtr);
+	const digest = new Uint8Array(exp.memory.buffer, outPtr, 32);
+	return Array.from(digest).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 let modulePromise: Promise<WebAssembly.Module> | null = null;

@@ -33,20 +33,29 @@ export class CborReader {
     const major = b >> 5;
     const info = b & 0x1f;
     if (info < 24) return { major, arg: info, info };
-    if (info === 24) return { major, arg: this.takeByte(), info };
+    if (info === 24) {
+      const v = this.takeByte();
+      if (major !== 7 && v < 24) throw new Error('cbor: non-canonical integer (info 24, value < 24)');
+      return { major, arg: v, info };
+    }
     if (info === 25) {
       const hi = this.takeByte();
       const lo = this.takeByte();
-      return { major, arg: (hi << 8) | lo, info };
+      const v = (hi << 8) | lo;
+      if (major !== 7 && v < 256) throw new Error('cbor: non-canonical integer (info 25, value < 256)');
+      return { major, arg: v, info };
     }
     if (info === 26) {
       let v = 0;
       for (let i = 0; i < 4; i++) v = (v << 8) | this.takeByte();
-      return { major, arg: v >>> 0, info };
+      v = v >>> 0;
+      if (major !== 7 && v < 0x10000) throw new Error('cbor: non-canonical integer (info 26, value < 65536)');
+      return { major, arg: v, info };
     }
     if (info === 27) {
       let v = 0n;
       for (let i = 0; i < 8; i++) v = (v << 8n) | BigInt(this.takeByte());
+      if (major !== 7 && v < 0x100000000n) throw new Error('cbor: non-canonical integer (info 27, value < 2^32)');
       return { major, arg: v, info };
     }
     throw new Error(`cbor: unsupported info ${info}`);

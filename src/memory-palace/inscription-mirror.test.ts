@@ -189,7 +189,7 @@ describe('AC1 — inscribe mirrors triple to oracle KG + LadybugDB + ActionLog',
 
     await doInscribe(store, palaceFp, roomFp1, docFp, oracleAgentFp);
 
-    const actions = await store.actionsSince(palaceFp, '');
+    const actions = await store.actionsSince(palaceFp);
     const inscribeAction = actions.find((a) => a.actionKind === 'avatar-inscribed');
     expect(inscribeAction).toBeDefined();
     expect(inscribeAction!.targetFp).toBe(docFp);
@@ -268,7 +268,7 @@ describe('AC2 — move updates oracle KG triple + LIVES_IN + ActionLog', () => {
     await doInscribe(store, palaceFp, roomFp1, docFp, oracleAgentFp);
     await doMove(store, palaceFp, docFp, roomFp1, roomFp2!, oracleAgentFp);
 
-    const actions = await store.actionsSince(palaceFp, '');
+    const actions = await store.actionsSince(palaceFp);
     const moveAction = actions.find((a) => a.actionKind === 'move');
     expect(moveAction).toBeDefined();
     expect(moveAction!.targetFp).toBe(docFp);
@@ -374,7 +374,7 @@ describe('AC4 — fault injection: throw after triple-insert before recordAction
       await doInscribe(store, palaceFp, roomFp1, docFp, oracleAgentFp, { failBeforeAction: true });
     } catch { /* expected */ }
 
-    const actions = await store.actionsSince(palaceFp, '');
+    const actions = await store.actionsSince(palaceFp);
     const actionForDoc = actions.find((a) => a.targetFp === docFp);
     expect(actionForDoc).toBeUndefined();
   });
@@ -402,7 +402,7 @@ describe('AC4 — fault injection: throw after triple-insert before recordAction
     const triples2 = await store.triplesFor(oracleAgentFp, docFp);
     const livesInTriples = triples2.filter((t) => t.predicate === 'lives-in');
     expect(livesInTriples.length).toBe(1); // idempotent — no duplicate
-    const actions = await store.actionsSince(palaceFp, '');
+    const actions = await store.actionsSince(palaceFp);
     const actionForDoc = actions.find((a) => a.targetFp === docFp);
     expect(actionForDoc).toBeDefined();
   });
@@ -433,7 +433,7 @@ describe('AC5 — SIGKILL simulation: forced rejection mid-sequence', () => {
     const preMutationTriples = await store.triplesFor(oracleAgentFp, docFp);
     expect(preMutationTriples.length).toBe(0);
 
-    const preMutationActions = await store.actionsSince(palaceFp, '');
+    const preMutationActions = await store.actionsSince(palaceFp);
     const preMutationAction = preMutationActions.find((a) => a.targetFp === docFp);
     expect(preMutationAction).toBeUndefined();
   });
@@ -451,7 +451,7 @@ describe('AC5 — SIGKILL simulation: forced rejection mid-sequence', () => {
     const livesInTriples = triples.filter((t) => t.predicate === 'lives-in');
     expect(livesInTriples.length).toBe(1);
 
-    const actions = await store.actionsSince(palaceFp, '');
+    const actions = await store.actionsSince(palaceFp);
     const action = actions.find((a) => a.targetFp === docFp);
     expect(action).toBeDefined();
     expect(action!.actionKind).toBe('avatar-inscribed');
@@ -478,7 +478,7 @@ describe('AC6 — mirror is synchronous: interleaved reader over 100 iterations'
       const docFp = fp(`doc-ac6-${i}`);
       await doInscribe(store, palaceFp, roomFp1, docFp, oracleAgentFp);
 
-      const actions = await store.actionsSince(palaceFp, '');
+      const actions = await store.actionsSince(palaceFp);
       const action = actions.find((a) => a.targetFp === docFp);
 
       const triples = await store.triplesFor(oracleAgentFp, docFp);
@@ -503,7 +503,7 @@ describe('AC6 — mirror is synchronous: interleaved reader over 100 iterations'
       const triples = await store.triplesFor(oracleAgentFp, docFp);
       const triple = triples.find((t) => t.predicate === 'lives-in');
 
-      const actions = await store.actionsSince(palaceFp, '');
+      const actions = await store.actionsSince(palaceFp);
       const action = actions.find((a) => a.targetFp === docFp);
 
       if (triple !== undefined) {
@@ -681,38 +681,38 @@ describe('store triple verbs (S4.3 domain verbs)', () => {
       parentHashes: [],
       timestamp: Date.now(),
     });
-    const all = await store.actionsSince(palaceFp, '');
+    const all = await store.actionsSince(palaceFp);
     expect(all.length).toBe(1);
   });
 
-  it('actionsSince: cursor filters correctly', async () => {
+  it('actionsSince: timestamp cursor filters correctly (LOW-4 fix)', async () => {
     const palaceFp = fp('palace-actions-2');
     await store.ensurePalace(palaceFp);
-    // Pick two fps with known ordering — hex compare is deterministic.
-    const lowFp = '0' + 'a'.repeat(63);  // starts with '0a...'
-    const highFp = 'f' + 'a'.repeat(63); // starts with 'fa...'
-    const cursorFp = '7' + '0'.repeat(63); // midpoint cursor
+    const t1 = 1000;
+    const t2 = 2000;
     await store.recordAction({
-      fp: lowFp,
+      fp: fp('action-old'),
       palaceFp,
       actionKind: 'avatar-inscribed',
       actorFp: fp('actor'),
       targetFp: fp('target1'),
       parentHashes: [],
-      timestamp: Date.now(),
+      timestamp: t1,
     });
     await store.recordAction({
-      fp: highFp,
+      fp: fp('action-new'),
       palaceFp,
       actionKind: 'avatar-inscribed',
       actorFp: fp('actor'),
       targetFp: fp('target2'),
       parentHashes: [],
-      timestamp: Date.now(),
+      timestamp: t2,
     });
 
-    const since = await store.actionsSince(palaceFp, cursorFp);
+    // Cursor at t1 — only the t2 action should be returned.
+    const since = await store.actionsSince(palaceFp, { afterTimestamp: t1 });
     expect(since.length).toBe(1);
     expect(since[0].targetFp).toBe(fp('target2'));
+    expect(since[0].timestamp).toBe(t2);
   });
 });
