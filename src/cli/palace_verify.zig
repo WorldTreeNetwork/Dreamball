@@ -641,22 +641,20 @@ pub fn run(gpa: Allocator, palace_path: []const u8) !u8 {
         return 1;
     }
 
-    // ── Invariant (b): oracle is sole direct Agent AND its fp matches .oracle.key ──
-    // TODO-CRYPTO: oracle key is plaintext (known-gaps §6)
+    // ── Invariant (b): oracle is sole direct Agent ─────────────────────────────
+    //
+    // The Agent envelope's fp is Blake3(envelope bytes) — a content-address, NOT
+    // the Ed25519-derived fingerprint held in `.oracle.key`. These are two
+    // distinct fp derivations by protocol design: the envelope fp names the
+    // palace-local oracle address; the key-derived fp names the identity that
+    // signs on its behalf. Equality between them is NOT an invariant and MUST
+    // NOT be checked here (an earlier code-review pass added that check and
+    // broke mint). The correct cross-derivation assertion lives in invariant
+    // (f/AC10) below — only when an action's `actor` field claims the envelope
+    // fp identity.
     if (agent_count > 1) {
         try io.writeAllStderr("error: multiple Agents directly contained; exactly one (oracle) permitted (invariant b)\n");
         return 1;
-    }
-    if (oracle_key_loaded and agent_count == 1) {
-        if (!std.mem.eql(u8, &first_agent_fp, &oracle_fp)) {
-            const agent_hex = palace_mint.hexArray(&first_agent_fp);
-            const oracle_hex = palace_mint.hexArray(&oracle_fp);
-            try printStderr(
-                "error: sole Agent envelope fp {s} does not match oracle-key-derived fp {s} (invariant b)\n",
-                .{ &agent_hex, &oracle_hex },
-            );
-            return 1;
-        }
     }
 
     // ── Invariant (c): action parent-hashes resolve ────────────────────────────

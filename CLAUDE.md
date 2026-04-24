@@ -93,6 +93,14 @@ Zig 0.16.0 + Bun. See `README.md` for the full command list.
 Every commit must keep every gate green. CI (`.github/workflows/ci.yml`)
 runs them all.
 
+**Before reporting a fix as "done" / "green" / "verified":** run every gate
+above locally — not just the narrow test nearest the change. A bug shipped
+in commit `06c7b83` precisely because only `zig build test` + narrow
+Vitest were run; `zig build smoke` caught a broken invariant only after
+the commit landed. Narrow tests pass false-positive when a change is
+locally correct but violates an integration assumption. Verification
+without `zig build smoke` is not verification.
+
 ## Style
 
 - Match recrypt's naming and terminology verbatim when the concept overlaps
