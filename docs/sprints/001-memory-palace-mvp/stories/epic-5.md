@@ -30,6 +30,9 @@
 **(f) Storybook story renders with two values — high vs low freshness**
 - Given two side-by-side scenes: `aqueduct-fresh` (last-traversed = now) and `aqueduct-stale` (last-traversed = 60 days ago), When Storybook play-test captures each, Then fresh shows bright particles flowing at conductance-derived speed; stale shows dim particles drifting toward ambient sink; visual diff exceeds configured pixel-delta threshold.
 
+**(g) Library version pin recorded in spike success report** *(added 2026-04-24 per D-009 revision)*
+- Given the spike's success report markdown under `docs/sprints/001-memory-palace-mvp/addenda/`, When the story closes, Then the report records `three@<version>`, `threlte@<version>`, `svelte@<version>` as resolved in the committed `bun.lock`; revalidate the spike before S5.5 if any of the three majors change. Rationale: sprint-004-logavatar retro, compass-not-map learning.
+
 ### Risk gate resolution (D-009)
 - ALL SIX PASS → proceed to S5.2–S5.5.
 - 2+ checkboxes fail → `/replan`; drop to fallback materials (instanced-line aqueducts via Three.js `Line2`).
@@ -97,7 +100,7 @@ New: `src/lib/lenses/room/RoomLens.svelte`, `src/lib/lenses/room/RoomLens.storie
 
 ### Acceptance Criteria
 - **AC1** [five documented surfaces render correctly]: Given inscription with `surface: "scroll"` and body `"Hello palace"`, When renders, Then text visible in 3D on scroll-shaped mesh; full body of `jelly.asset` source rendered verbatim; Storybook play-test captures via `getByText("Hello palace")`. Same for `tablet` (rectangular slab), `book-spread` (left/right pages with spine), `etched-wall` (text inset into wall mesh, low-contrast), `floating-glyph` (each glyph individually-transformed mesh, softly animated).
-- **AC2** [unknown surface falls back to scroll with warning]: Given inscription whose `surface` is not one of five (e.g. `"mosaic"`), When renders, Then falls back to `Scroll.svelte`; single `console.warn` logs `unknown surface: mosaic — falling back to scroll`; fallback does NOT crash; Vitest test asserts both fallback render and warning emission.
+- **AC2** [unknown surface falls back via fallback chain → scroll]: Given inscription whose `surface` is not in the Web lens registry (e.g. `"splat-scene"`), When renders, Then lens walks the optional `fallback` attribute (`["tablet", "scroll"]` per [ADR 2026-04-24-surface-registry](../../../decisions/2026-04-24-surface-registry.md)) until a registered surface is found; absent fallback, falls through to `Scroll.svelte` (canonical baseline); emits one structured log entry `{event: "surface-fallback", requested, resolved, lens: "web"}`; fallback does NOT crash; Vitest covers three shapes — unknown surface with no fallback → scroll; unknown surface with fallback → first-registered; known surface → no fallback walk.
 - **AC3** [body bytes through CAS (TC13)]: Given inscription whose `jelly.asset` source references Blake3 H, When lens resolves body, Then calls `store.inscriptionBody(inscriptionFp)` (D-007 verb); verb returns bytes sourced from CAS; no raw filesystem path constructed in lens; no HTTP fetch to non-local URL (SEC6).
 - **AC4** [latency budget]: Given `scroll` inscription with 10 KB markdown body, When mounts cold, Then first visible text frame within 300ms on mid-range laptop.
 - **AC5** [Storybook + Vitest]: Given five surface stories + one unknown-surface fallback, When `bun run test-storybook` runs, Then all six pass; ≥3 Vitest tests cover scroll render, fallback-with-warning, CAS-body fetch (NFR16).
@@ -133,6 +136,9 @@ New: `src/lib/lenses/inscription/InscriptionLens.svelte` (surface dispatch), `sr
 - `mythos-lantern` stub: single lantern-like light source drawn at palace fountain zero-point; stub MVP-only (full lantern-ring deferred to Growth FR60f, acceptance note in shader file header).
 - `dust-cobweb`: cobweb texture overlays aqueduct path with opacity proportional to decay depth when freshness <90-day cobweb threshold; at freshness floor (<365d sleeping), draws particles drifting toward ambient sink (Vril ADR §9 "return-to-zero-point is visual, not destructive").
 
+**Per-shader micro-spike gate** *(added 2026-04-24 per D-009 revision)*
+- Before each of the three above shaders promotes into its production lens wrapper, a ≤60-minute micro-spike scene is built under `src/lib/stories/spikes/` proving one compile + one live-uniform binding in isolation. Scenes: `RoomPulseSpike.stories.svelte` (capacitance uniform → pulse period), `DustCobwebSpike.stories.svelte` (freshness uniform → opacity), `MythosLanternSpike.stories.svelte` (static lantern at zero-point, no uniform). Each spike asserts: compiles without warnings on WebGL, one uniform changes visibly with a Storybook control, play-test captures a pixel-diff. Spikes are kept in the repo (not deleted after promotion) as reference implementations — matches sprint-004-logavatar's `/spike/splat-{anim,perframe,lbs}` pattern. Any spike that fails triggers a `/replan` with fallback per `sprint-scope.md` (drop `dust-cobweb` + `mythos-lantern` first, keep `room-pulse` + `aqueduct-flow`).
+
 **End-to-end NFR10 latency close**
 - Given palace of 500 rooms × 50 inscriptions (NFR10 upper bound), When opened fresh in `PalaceLens` (cold, mid-range laptop), Then first lit room renders within 2s; 4-shader pack does NOT push any frame >16.7ms (60fps budget); integration test captures via `performance.mark` harness.
 
@@ -162,3 +168,46 @@ New: `src/lib/shaders/{room-pulse,mythos-lantern,dust-cobweb}.{frag,vert}.glsl`,
 - **NFR10 latency budget**: S5.1 sets per-shader (≤2ms frame, ≤200ms first render); S5.2/3/4 each ≤500ms / ≤300ms; S5.5 closes end-to-end ≤2s on 500×50. Mid-sprint replan: drop `dust-cobweb` + `mythos-lantern` first if NFR10 fails at S5.5.
 - **NFR14 shader budget**: 4 materials. Hard cap enforced in S5.5 ACs.
 - **Open questions**: 6 — camera model, freshness half-life tuning, room-default-facing, typography choice, floating-glyph body-length bound, optimistic-preview vs strict-signed ordering. None blocking.
+
+## Reserved extension points (Epic 5 deep-dive, 2026-04-24)
+
+Not sprint-001 deliverables — reserved here so the Web engine's choices
+don't close doors for future rendering engines. See
+[`docs/prd-rendering-engines.md`](../../../prd-rendering-engines.md) for
+the integrating narrative.
+
+| Point | Wire location | Purpose | Web lens status |
+|---|---|---|---|
+| `surface: "splat-scene"` | `jelly.inscription.surface` | 3D Gaussian splat body (SOG / SPZ / PLY media-types on `jelly.asset`) | Not registered; falls back via chain |
+| `jelly.dreamball.field.splat-scene` | field attribute | Environmental splat capture as world-shader shell | Reserved; not rendered |
+| `jelly.dreamball.field.hdri-cubemap` | field attribute | Captured environment probe | Reserved |
+| `jelly.dreamball.field.worldshader-program` | field attribute | Parametric shader DSL | Reserved |
+| `jelly.inscription.fallback: [surface, …]` | inscription attribute | Cross-engine degradation chain | Implemented per S5.4 AC2 |
+| `placement.kind: "euclidean" \| "hyperbolic" \| ...` | placement attribute | Non-euclidean local geometries | Reserved; `euclidean` implicit |
+| Multi-canvas CSS compositing (Strategy C) | `PalaceLens.svelte` shape | Splat + mesh hybrid rendering without WebGPU device-sharing | Pre-committed per ADR; not wired |
+
+Sprint-001 renders NONE of the above except the fallback chain (S5.4
+AC2). All are documented now to prevent later architectural walls —
+the pattern from sprint-004-logavatar's D-002 wall, where a missing
+pre-commitment cost two days.
+
+## Cross-engine notes (renderer-agnostic)
+
+Epic 5 ships the **Web rendering engine**. The envelopes it renders
+are engine-neutral; a future Unreal / Blender / MR engine would ship
+its own `PalaceLens` / `RoomLens` / `InscriptionLens` implementations
+against the same envelopes + store API. Three things Epic 5 holds to
+keep that portable:
+
+1. **No renderer state on the wire.** Freshness, conductance, particle
+   count, frame budget — all computed renderer-side from wire inputs.
+2. **Canonical cartesian + polar at the right layers.** §12.2
+   `omnispherical-grid` is polar (outer field); §13.2
+   `placement.position` is cartesian local-to-parent. Each engine
+   converts to native at the lens boundary per
+   [ADR 2026-04-24-coord-frames](../../../decisions/2026-04-24-coord-frames.md).
+3. **Surface as open string + fallback chain.** Inscriptions author
+   for their primary intent (`scroll`, `splat-scene`, `rune-pillar`,
+   whatever); each lens walks the fallback chain to find one it
+   supports; `scroll` is the canonical baseline every lens MUST
+   render.

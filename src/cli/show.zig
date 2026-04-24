@@ -11,10 +11,14 @@ const args_mod = @import("args.zig");
 const helpers = @import("helpers.zig");
 const identity_envelope = dreamball.identity_envelope;
 const base58 = dreamball.base58;
+const palace_show = @import("palace_show.zig");
 
 const SPECS = [_]args_mod.Spec{
-    .{ .long = "format" },
-    .{ .long = "help", .takes_value = false },
+    .{ .long = "format" },         // 0
+    .{ .long = "help", .takes_value = false }, // 1
+    .{ .long = "as-palace", .takes_value = false }, // 2
+    .{ .long = "json", .takes_value = false },      // 3
+    .{ .long = "archiforms", .takes_value = false }, // 4
 };
 
 /// Render an identity envelope summary to a `*std.Io.Writer`.
@@ -112,9 +116,23 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
             \\jelly show <file.jelly> [--format=text|json]
+            \\       jelly show --as-palace <palace> [--json] [--archiforms]
             \\
         );
         return 0;
+    }
+
+    // AC1/AC2/AC3/AC4: --as-palace routes to palace_show.run
+    if (parsed.flag(2)) {
+        // Rebuild argv without --as-palace so palace_show's parser doesn't
+        // see an unknown flag.
+        var filtered: std.ArrayList([:0]const u8) = .empty;
+        defer filtered.deinit(gpa);
+        for (argv) |a| {
+            if (std.mem.eql(u8, a, "--as-palace")) continue;
+            try filtered.append(gpa, a);
+        }
+        return palace_show.run(gpa, filtered.items);
     }
 
     const path = parsed.positional.items[0];

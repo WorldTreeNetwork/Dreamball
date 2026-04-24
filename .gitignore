@@ -22,6 +22,14 @@ zig-pkg/
 jelly-server/data/
 jelly-server/node_modules/
 
+# kuzu-wasm worker — emitted by bun run bootstrap (scripts/bootstrap-kuzu-wasm.ts)
+static/kuzu_wasm_worker.js
+
+# TypeScript declarations leaked into src/ by publint/tsc during `bun run build`
+# (real .d.ts output goes to /dist/; these are strays)
+src/memory-palace/*.d.ts
+src/lib/bridge/*.d.ts
+
 # OS
 .DS_Store
 Thumbs.db

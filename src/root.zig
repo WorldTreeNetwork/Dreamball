@@ -17,6 +17,7 @@ pub const graph = @import("graph.zig");
 pub const ml_dsa = @import("ml_dsa.zig");
 pub const key_file = @import("key_file.zig");
 pub const identity_envelope = @import("identity_envelope.zig");
+pub const mythos_chain = @import("memory-palace/mythos-chain.zig");
 
 pub const Stage = protocol.Stage;
 pub const DreamBall = protocol.DreamBall;
@@ -44,4 +45,6 @@ test {
     _ = key_file;
     _ = identity_envelope;
     _ = @import("golden.zig");
+    // Palace memory utilities (S3.4) — exported as dreamball.mythos_chain
+    _ = mythos_chain;
 }

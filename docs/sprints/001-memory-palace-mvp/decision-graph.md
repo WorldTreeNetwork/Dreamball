@@ -171,3 +171,51 @@ primary (owns the decision) and secondary (consumer / constraint) roles.
 **D-007 and D-016 are the most cross-cutting decisions** — both CRITICAL and both spanning the majority of epics. They are the load-bearing abstractions (store API surface and graph schema) around which all other stories compose.
 
 **D-014 has the narrowest footprint** — one story (S3.2) owns both primary and sole implementation. No risk of drift.
+
+---
+
+## Epic 5 deep-dive ADRs (2026-04-24)
+
+Three standalone ADRs landed during `/refine --epic=5` to keep Epic 5's
+Web-engine implementation composable with future rendering engines
+(Unreal, Blender, MR/VR). None are load-bearing on sprint-001 execution;
+they document the architecture that lets sprint-002+ add splats and
+cross-engine support without replanning.
+
+### ADR 2026-04-24-surface-registry
+
+**Canonical Epic**: Epic 5
+
+| Story | Role | How referenced |
+|-------|------|---------------|
+| S5.4 | PRIMARY | AC2 revised — walks `Inscription.fallback` chain, logs structured `surface-fallback` event; `scroll` canonical baseline |
+| S5.2–S5.5 | SECONDARY | All lens dispatchers follow the "registry + fallback" pattern for future surfaces |
+
+### ADR 2026-04-24-renderer-compositing
+
+**Canonical Epic**: Epic 5 (architecture only — no sprint-001 code)
+
+| Story | Role | How referenced |
+|-------|------|---------------|
+| — | ARCHITECTURAL | Sprint-001 ships Strategy A (same-pass, splat-free); pre-commits Strategy C (multi-canvas CSS) for splat follow-up |
+
+### ADR 2026-04-24-coord-frames
+
+**Canonical Epic**: Epic 5 (architecture; affirms §12.2 + §13.2)
+
+| Story | Role | How referenced |
+|-------|------|---------------|
+| S5.2 | CONSUMER | `PalaceLens` resolves room world matrices at load from cartesian placements + field's polar shell |
+| S5.3 | CONSUMER | `RoomLens` inherits room's world matrix, composes local cartesian placements |
+| S5.4 | CONSUMER | Inscription placements are cartesian local-to-room |
+
+See also: [`docs/prd-rendering-engines.md`](../../prd-rendering-engines.md)
+for the integrating narrative.
+
+### D-009 revision 2026-04-24
+
+Amendments (documented in-place in `architecture-decisions.md`):
+1. Library version pin added to S5.1 success report (AC g).
+2. Per-shader micro-spike ACs added to S5.5 for `room-pulse`,
+   `dust-cobweb`, `mythos-lantern`. Direct application of
+   sprint-004-logavatar's "spike before promote" learning.

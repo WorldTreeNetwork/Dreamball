@@ -190,6 +190,9 @@ pub const DreamBall = struct {
     /// Fingerprints of DreamBalls this one is derived from.
     derived_from: []const Fingerprint = &.{},
     signatures: []const Signature = &.{},
+    /// §13.1 optional field-kind attribute on jelly.dreamball.field envelopes.
+    /// Values: "palace" | "room" | "ambient" | <open-enum>.  Null = not a field.
+    field_kind: ?[]const u8 = null,
 
     pub fn fingerprint(self: DreamBall) Fingerprint {
         return Fingerprint.fromEd25519(self.identity);

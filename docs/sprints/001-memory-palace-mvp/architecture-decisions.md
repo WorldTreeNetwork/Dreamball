@@ -814,6 +814,59 @@ Aligned with existing pattern: **`bun run build-storybook` CI gate
   these materials (PalaceLens, RoomLens, InscriptionLens basic
   geometry).
 
+### Revision 2026-04-24 — version pin + per-shader micro-spike
+
+Per web3d-space sprint-004-logavatar retrospective (the
+"compass-not-map" learning): research-backed decisions that cite library
+internals are only valid against a pinned library version. D-002 in
+that sprint cited PlayCanvas 2.13–2.16's `gsplat-manager.js`, but
+node_modules shipped 2.17 with a fully-rewritten pipeline; the
+mismatch cost ~2 days before a spike surfaced it.
+
+Two concrete amendments to D-009:
+
+1. **Pin the library versions S5.1's spike validates against.** Story
+   5.1 MUST record in its success report: `three@<version>`,
+   `threlte@<version>`, `svelte@<version>` as resolved in the
+   committed `bun.lock` at the time of spike PASS. If a major version
+   of any of these three bumps before S5.5, the spike is re-run.
+
+2. **Per-shader micro-spikes for S5.5.** Stories S5.5's three remaining
+   shaders (`room-pulse`, `dust-cobweb`, `mythos-lantern` stub) each
+   get a ≤60-minute micro-spike inside a single dedicated Storybook
+   scene, proving one compile + one live-uniform binding before the
+   shader promotes into its production lens. Spikes are kept (not
+   deleted) under `src/lib/stories/spikes/` as reference
+   implementations, matching sprint-004-logavatar's
+   `/spike/splat-{anim,perframe,lbs}` pattern.
+
+Neither amendment changes S5.1's six-checkbox shape — both tighten
+downstream story risk.
+
+### Revision 2026-04-24 — renderer-agnostic structure (Epic 5 deep-dive)
+
+During Epic 5 `/refine --epic=5` deep-dive, three cross-cutting
+decisions were pulled out into standalone ADRs so Epic 5 stays focused
+on the sprint-001 Web engine while the protocol reserves composability
+with future rendering engines (Unreal, Blender, MR/VR):
+
+- [2026-04-24 surface registry](../../decisions/2026-04-24-surface-registry.md)
+  — formalizes `Inscription.surface` as open string + optional
+  `fallback` chain + per-lens registry. Amends S5.4 AC2 (see
+  epic-5.md).
+- [2026-04-24 renderer compositing](../../decisions/2026-04-24-renderer-compositing.md)
+  — sprint-001 ships Strategy A (same-pass), pre-commits Strategy C
+  (multi-canvas CSS) for the follow-up splat path. No S5 code change;
+  prevents mid-sprint wall when splats land.
+- [2026-04-24 coord frames](../../decisions/2026-04-24-coord-frames.md)
+  — polar at the field layer (`omnispherical-grid`), cartesian at the
+  placement layer (`layout.placement.position`), nested reference
+  frames composed as cached world matrices. Affirms §12.2 and §13.2
+  already carry the right shape.
+
+See also [`docs/prd-rendering-engines.md`](../../prd-rendering-engines.md)
+for the integrating narrative across all three.
+
 ---
 
 # 5. Security & Custody

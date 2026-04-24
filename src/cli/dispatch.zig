@@ -20,6 +20,7 @@ const cmd_join_guild = @import("join_guild.zig");
 const cmd_transmit = @import("transmit.zig");
 const cmd_seal_relic = @import("seal_relic.zig");
 const cmd_unlock = @import("unlock.zig");
+const cmd_palace = @import("palace.zig");
 
 pub const Command = struct {
     name: []const u8,
@@ -40,6 +41,7 @@ pub const commands: []const Command = &.{
     .{ .name = "transmit", .summary = "transmit a Tool to a target Agent via a Guild", .run = cmd_transmit.run },
     .{ .name = "seal-relic", .summary = "wrap a DreamBall into a sealed Relic (MOCKED crypto)", .run = cmd_seal_relic.run },
     .{ .name = "unlock", .summary = "unlock a sealed Relic (MOCKED crypto)", .run = cmd_unlock.run },
+    .{ .name = "palace", .summary = "palace verb group (see jelly palace --help)", .run = cmd_palace.run },
 };
 
 pub fn findCommand(name: []const u8) ?Command {

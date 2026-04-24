@@ -47,10 +47,11 @@ export default defineConfig({
     }
   ],
 
-  webServer: {
-    // Simple static file server for the parity test page + kuzu-wasm assets.
-    // We use a one-liner bun static server here to avoid adding a heavy dep.
-    command: `node --input-type=module <<'EOJS'
+  webServer: [
+    {
+      // S2.1 parity fixture server — port 4321
+      // Simple static file server for the parity test page + kuzu-wasm assets.
+      command: `node --input-type=module <<'EOJS'
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -90,8 +91,62 @@ http.createServer((req, res) => {
   fs.createReadStream(filePath).pipe(res);
 }).listen(PORT, () => console.log('parity-server listening on ' + PORT));
 EOJS`,
-    url: 'http://localhost:4321',
-    reuseExistingServer: !process.env.CI,
-    timeout: 15_000
+      url: 'http://localhost:4321',
+      reuseExistingServer: !process.env.CI,
+      timeout: 15_000
+    },
+    {
+      // S2.3 store-browser fixture server — port 4322
+      // Serves tests/store-fixture/index.html + kuzu-wasm assets + static worker.
+      // static/kuzu_wasm_worker.js is served at /kuzu_wasm_worker.js (AC2).
+      command: `node --input-type=module <<'EOJS'
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const ROOT = '${__dirname}';
+const PORT = 4322;
+
+const MIME = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.wasm': 'application/wasm',
+  '.json': 'application/json',
+};
+
+const STATIC_DIR = path.join(ROOT, 'static');
+const WASM_DIR = path.join(ROOT, 'node_modules/kuzu-wasm');
+
+http.createServer((req, res) => {
+  let filePath = null;
+  const url = req.url || '/';
+
+  if (url === '/' || url === '/index.html') {
+    filePath = path.join(ROOT, 'tests/store-fixture/index.html');
+  } else if (url === '/kuzu_wasm_worker.js') {
+    // AC2: worker served from static/ (bootstrap copies it there)
+    filePath = path.join(STATIC_DIR, 'kuzu_wasm_worker.js');
+    // Fallback: serve from node_modules if bootstrap hasn't run yet
+    if (!fs.existsSync(filePath)) {
+      filePath = path.join(WASM_DIR, 'kuzu_wasm_worker.js');
+    }
+  } else if (url.startsWith('/kuzu-wasm/')) {
+    const rel = url.slice('/kuzu-wasm/'.length);
+    filePath = path.join(WASM_DIR, rel);
   }
+
+  if (!filePath || !fs.existsSync(filePath)) {
+    res.writeHead(404); res.end('Not found: ' + url); return;
+  }
+  const ext = path.extname(filePath);
+  res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+  fs.createReadStream(filePath).pipe(res);
+}).listen(PORT, () => console.log('store-server listening on ' + PORT));
+EOJS`,
+      url: 'http://localhost:4322',
+      reuseExistingServer: !process.env.CI,
+      timeout: 15_000
+    }
+  ]
 });

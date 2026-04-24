@@ -327,6 +327,20 @@ else
   ((PASS++)) || true
 fi
 
+# ─── AC8: store round-trip block ────────────────────────────────────────────
+
+info "=== 14. Store round-trip (AC8: open→mint→addRoom→inscribe→close→reopen→verify) ==="
+STORE_SMOKE_OUT=$(bun run "${REPO_ROOT}/scripts/store-smoke.ts" 2>&1)
+STORE_SMOKE_EXIT=$?
+echo "$STORE_SMOKE_OUT"
+if [ "$STORE_SMOKE_EXIT" -eq 0 ]; then
+  green "  PASS  store round-trip (AC8)"
+  ((PASS++)) || true
+else
+  red "  FAIL  store round-trip (AC8)"
+  ((FAIL++)) || true
+fi
+
 # ─── summary ────────────────────────────────────────────────────────────────
 echo
 info "=== Smoke test summary ==="

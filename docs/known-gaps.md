@@ -287,6 +287,107 @@ If you encounter a deferred item during a sprint:
 
 The goal: every residual compromise is visible, dated, and owned.
 
+### 7. Oracle-fp spoofing un-challenged in MVP (S4.2 AC4)
+
+**State**: Open — MVP limitation documented per AC4 (oracle-fp spoofing un-challenged).
+
+**Why deferred**: The MVP threat model is local-first single-custodian. An attacker
+reaching the store in-process already has access to the `.oracle.key` file per D-011,
+so a signature challenge on `requesterFp` provides no additional security in this context.
+
+**Limitation**: `evaluateGuildPolicy` and `isOracleRequester` in S4.2 accept the oracle
+fp at face value — any caller who knows the oracle fp string can claim oracle-bypass
+read access without proving possession of the oracle private key.
+
+**Marker**: `TODO-CRYPTO: requester identity un-challenged in MVP; next sprint adds signed-query envelopes`
+appears in `src/memory-palace/policy.ts` and `src/memory-palace/oracle.ts` at every bypass site.
+
+**Path forward**: Next sprint — add signed-query envelopes: the requester signs the
+query with the oracle private key; the store verifies the signature before granting bypass.
+This mirrors the D-008 signed-action-before-effect pattern applied to read paths.
+
+---
+
+### 8. Oracle action signing is stubbed (`oracleActionStub` gate)
+
+**State**: Open — the WASM-side ML-DSA+Ed25519 dual-signer is not yet
+parameterised over arbitrary keypairs, so `file-watcher.ts` cannot yet
+produce a real oracle-signed action envelope.
+
+**Why deferred**: `jelly.wasm` exposes signing only for the identity that
+was loaded at WASM startup; adding a
+`jelly_sign_action_with_key(keyBytes, msg)` export requires threading the
+oracle keypair through the runtime seam (one more `env.*` import or a
+parameterised export). That work is tracked alongside §6 Phase-D cleanup.
+
+**Limitation**: `oracle.ts` exports `oracleActionStub` (formerly
+`oracleSignAction`) which produces an **unsigned** `SignedAction` suitable
+only for the in-memory ActionLog audit trail. The stub refuses to run
+unless `JELLY_ORACLE_ALLOW_UNSIGNED=1` is exported in the environment, so
+production shells fail closed. Tests that cover the file-watcher flow
+must set the env var explicitly.
+
+**Marker**: the error message itself references this gap; the `file-watcher.ts`
+import uses the new name so any accidental removal of the gate surfaces
+at compile time.
+
+**Path forward**: land the parameterised WASM signer export, replace the
+stub body with a round-trip through the WASM module, remove the env-var
+gate and delete the alias export.
+
+---
+
+### 9. Hash helper Blake3/SHA-256 fallback
+
+**State**: Open — `cypher-utils.hashBytesBlake3Hex` picks Blake3 when Bun is
+available and SHA-256 otherwise (WebCrypto in browsers, `node:crypto` in
+vitest-under-Node).
+
+**Why deferred**: Production paths run under Bun, which ships `Bun.hash.blake3`
+synchronously. Vitest occasionally runs the same code under plain Node for
+pure-logic tests; rather than ship a wasm Blake3 binding for those paths we
+fall back to SHA-256, whose output shape (64-char lowercase hex) is
+indistinguishable from Blake3 to every downstream validator.
+
+**Limitation**: Blake3 and SHA-256 produce *different* hex strings for the
+same input. Any given runtime is internally consistent, but a fingerprint
+computed by Bun is not comparable to one computed by Node. This matters
+whenever `source_blake3` round-trips between runtimes (e.g. tests that
+compare a precomputed Bun-side fp against a Node-side computation).
+
+**Marker**: `cypher-utils.ts` comments the branch and links to this file.
+
+**Path forward**: replace both branches with a shared Blake3 WASM import
+once the jelly-wasm module exposes a `jelly_blake3_hex(bytes)` helper —
+already a candidate export for the WASM signer work in §8.
+
+---
+
+### 10. File-watcher not wired into `palace_open.zig`
+
+**State**: Open — `openPalaceWatcher` in `src/memory-palace/file-watcher.ts`
+is implemented and tested, but no bridge or CLI actually invokes it today.
+
+**Why deferred**: The watcher depends on (a) a live TS `StoreAPI` handle
+returned from `store.server.ts`, and (b) the parameterised oracle signer
+covered by §8. `palace_open.zig` currently returns the opened palace handle
+directly to the CLI without routing through TS, so there's no TS-side
+lifecycle seam where the watcher can be started today.
+
+**Limitation**: Source-file edits outside the palace bridge path don't
+produce `inscription-updated` / `inscription-orphaned` ActionLog rows.
+Tests exercise the watcher API directly; interactive use (CLI + jelly-server)
+does not.
+
+**Marker**: this entry + the unused-but-tested `openPalaceWatcher` export.
+
+**Path forward**: Epic 6 / post-MVP. Wire the watcher from `jelly-server`
+(which already owns an open TS palace handle) alongside the WASM signer work
+in §8; the CLI picks it up when `palace_open.zig` returns a TS-wrapped
+handle as part of the same seam.
+
+---
+
 ### NFR11 K-NN relaxation (added by S2.1 HARD BLOCK)
 
 **State**: HARD BLOCK detected by S2.1 parity spike (2026-04-22).

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<!--
+  S2.3 store-browser e2e fixture page.
+  Loaded by Playwright Chromium to exercise BrowserStore lifecycle.
+
+  The page exposes window.__storeResult for the Playwright spec to read.
+  Each test action is dispatched via window.__runStoreAction(action, payload).
+
+  Worker served from /kuzu_wasm_worker.js (static/ via SvelteKit / bootstrap).
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>S2.3 store-browser fixture</title>
+</head>
+<body>
+<pre id="status">Ready</pre>
+<script type="module">
+import kuzu from '/kuzu-wasm/index.js';
+
+const status = document.getElementById('status');
+function log(msg) {
+  status.textContent += '\n' + msg;
+  console.log('[store-fixture]', msg);
+}
+
+// ── Escape helper (mirrors store.browser.ts) ──────────────────────────────────
+function esc(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+function escArr(arr) {
+  return '[' + arr.map(s => `'${esc(s)}'`).join(', ') + ']';
+}
+function toTimestampLiteral(ts) {
+  const d = ts instanceof Date ? ts : new Date(ts);
+  return d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let db = null;
+let conn = null;
+let workerSet = false;
+
+function ensureWorkerPath() {
+  if (!workerSet) {
+    kuzu.setWorkerPath('/kuzu_wasm_worker.js');
+    workerSet = true;
+  }
+}
+
+async function q(cypher) {
+  const qr = await conn.query(cypher);
+  try {
+    return await qr.getAllObjects();
+  } finally {
+    await qr.close();
+  }
+}
+
+// ── DDL ───────────────────────────────────────────────────────────────────────
+async function runDDL() {
+  const tables = await q('CALL SHOW_TABLES() RETURN *');
+  const existing = new Set(tables.map(r => String(r.name)));
+
+  const nodes = [
+    ['Palace', `CREATE NODE TABLE Palace(fp STRING PRIMARY KEY, format_version INT64, revision INT64, created_at TIMESTAMP, archiform STRING)`],
+    ['Room',   `CREATE NODE TABLE Room(fp STRING PRIMARY KEY, name STRING, revision INT64, archiform STRING, layout_fp STRING)`],
+    ['Inscription', `CREATE NODE TABLE Inscription(fp STRING PRIMARY KEY, source_blake3 STRING, surface STRING, revision INT64, orphaned BOOLEAN, archiform STRING, placement_position STRING, placement_facing STRING, embedding FLOAT[256])`],
+    ['Mythos', `CREATE NODE TABLE Mythos(fp STRING PRIMARY KEY, is_genesis BOOLEAN, body_hash STRING, true_name STRING, form STRING, discovered_in_action_fp STRING)`],
+    ['ActionLog', `CREATE NODE TABLE ActionLog(fp STRING PRIMARY KEY, palace_fp STRING, action_kind STRING, actor_fp STRING, target_fp STRING, parent_hashes STRING[], deps STRING[], nacks STRING[], timestamp TIMESTAMP, cbor_bytes_blake3 STRING)`],
+  ];
+  for (const [label, stmt] of nodes) {
+    if (!existing.has(label)) await q(stmt);
+  }
+
+  const rels = [
+    ['CONTAINS', `CREATE REL TABLE CONTAINS(FROM Palace TO Room, FROM Room TO Inscription, since TIMESTAMP)`],
+    ['MYTHOS_HEAD', `CREATE REL TABLE MYTHOS_HEAD(FROM Palace TO Mythos, set_by_action_fp STRING)`],
+    ['LIVES_IN', `CREATE REL TABLE LIVES_IN(FROM Inscription TO Room, since TIMESTAMP)`],
+  ];
+  for (const [label, stmt] of rels) {
+    if (!existing.has(label)) await q(stmt);
+  }
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+async function open() {
+  ensureWorkerPath();
+
+  // Non-Chromium warning check
+  const ua = navigator.userAgent;
+  const isChromium = ua.includes('Chrome') || ua.includes('Chromium') || ua.includes('HeadlessChrome');
+  if (!isChromium) {
+    console.warn('kuzu-wasm@0.11.3 validated on Chromium only; expect failures');
+  }
+
+  if (conn !== null) {
+    log('open: already open (idempotent — AC10)');
+    return { ok: true, idempotent: true };
+  }
+
+  try { await kuzu.FS.mkdir('/data'); } catch (e) {
+    if (!String(e).includes('already') && !String(e).includes('exists') && !String(e).includes('EEXIST')) throw e;
+  }
+  await kuzu.FS.mountIdbfs('/data');
+  await kuzu.FS.syncfs(true);  // populate from IDB
+
+  db = new kuzu.Database('/data/palace.kz');
+  conn = new kuzu.Connection(db);
+  await runDDL();
+  log('open: done');
+  return { ok: true };
+}
+
+async function close() {
+  if (!conn) { log('close: not open'); return { ok: true }; }
+  await conn.close();
+  await db.close();
+  conn = null;
+  db = null;
+  await kuzu.FS.syncfs(false);  // flush to IDB
+  await kuzu.FS.unmount('/data');
+  log('close: done');
+  return { ok: true };
+}
+
+async function ensurePalace(fp) {
+  const now = toTimestampLiteral(new Date());
+  const ex = await q(`MATCH (p:Palace {fp: '${esc(fp)}'}) RETURN p.fp AS fp`);
+  if (ex.length === 0) {
+    await q(`CREATE (:Palace { fp: '${esc(fp)}', format_version: 3, revision: 1, created_at: TIMESTAMP('${now}'), archiform: '' })`);
+  }
+  return { ok: true };
+}
+
+async function addRoom(palaceFp, roomFp) {
+  const now = toTimestampLiteral(new Date());
+  const ex = await q(`MATCH (r:Room {fp: '${esc(roomFp)}'}) RETURN r.fp AS fp`);
+  if (ex.length === 0) {
+    await q(`CREATE (:Room { fp: '${esc(roomFp)}', name: '${esc(roomFp)}', revision: 1, archiform: '', layout_fp: '' })`);
+  }
+  const ec = await q(`MATCH (p:Palace {fp:'${esc(palaceFp)}'})-[e:CONTAINS]->(r:Room {fp:'${esc(roomFp)}'}) RETURN count(e) AS c`);
+  if (Number(ec[0]?.c) === 0) {
+    await q(`MATCH (p:Palace {fp:'${esc(palaceFp)}'}) MATCH (r:Room {fp:'${esc(roomFp)}'}) CREATE (p)-[:CONTAINS {since: TIMESTAMP('${now}')}]->(r)`);
+  }
+  return { ok: true };
+}
+
+async function rawQuery(cypher) {
+  const rows = await q(cypher);
+  return { ok: true, rows };
+}
+
+// ── Dispatcher ────────────────────────────────────────────────────────────────
+
+window.__runStoreAction = async function(action, payload) {
+  try {
+    let result;
+    if (action === 'open') result = await open();
+    else if (action === 'close') result = await close();
+    else if (action === 'ensurePalace') result = await ensurePalace(payload.fp);
+    else if (action === 'addRoom') result = await addRoom(payload.palaceFp, payload.roomFp);
+    else if (action === 'rawQuery') result = await rawQuery(payload.cypher);
+    else result = { error: 'unknown action: ' + action };
+    window.__storeResult = result;
+    return result;
+  } catch (err) {
+    const r = { error: String(err) };
+    window.__storeResult = r;
+    log('ERROR: ' + err);
+    console.error(err);
+    return r;
+  }
+};
+
+window.__storeReady = true;
+log('fixture ready — window.__runStoreAction available');
+</script>
+</body>
+</html>

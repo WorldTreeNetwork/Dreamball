@@ -1,0 +1,21 @@
+[
+  {"name":"library","kind":"room","default-mythos-hint":"A vast archive of accumulated knowledge, where memory and meaning cohabit the shelves."},
+  {"name":"forge","kind":"room","default-mythos-hint":"A place of transformation where raw material becomes purpose."},
+  {"name":"throne-room","kind":"room","default-mythos-hint":"The seat of sovereignty, where decisions echo through every chamber."},
+  {"name":"garden","kind":"room","default-mythos-hint":"A living space of cultivation, where intention meets growth."},
+  {"name":"courtyard","kind":"room","default-mythos-hint":"An open gathering place that connects all chambers."},
+  {"name":"lab","kind":"room","default-mythos-hint":"A space of systematic inquiry and iterative discovery."},
+  {"name":"crypt","kind":"room","default-mythos-hint":"A hall of deep memory where what was preserved endures."},
+  {"name":"portal","kind":"room","default-mythos-hint":"A threshold between worlds, a point of passage and transition."},
+  {"name":"atrium","kind":"room","default-mythos-hint":"The luminous heart of the palace, where all paths converge."},
+  {"name":"cell","kind":"room","default-mythos-hint":"A contemplative chamber of singular focus and stillness."},
+  {"name":"scroll","kind":"artefact","default-mythos-hint":"A vessel of encoded wisdom, unfurled in time."},
+  {"name":"lantern","kind":"artefact","default-mythos-hint":"A source of illumination carried into the unknown."},
+  {"name":"vessel","kind":"artefact","default-mythos-hint":"A container that shapes what it holds."},
+  {"name":"compass","kind":"artefact","default-mythos-hint":"An instrument of orientation amid uncertainty."},
+  {"name":"seed","kind":"artefact","default-mythos-hint":"A latent beginning holding the shape of what may come."},
+  {"name":"muse","kind":"agent","default-mythos-hint":"The voice that whispers possibility into the listening mind."},
+  {"name":"judge","kind":"agent","default-mythos-hint":"The discerning presence that weighs and decides."},
+  {"name":"midwife","kind":"agent","default-mythos-hint":"The guide who tends the passage from potential to being."},
+  {"name":"trickster","kind":"agent","default-mythos-hint":"The disruptor who reveals hidden truths through misdirection."}
+]

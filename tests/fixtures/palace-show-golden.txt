@@ -1,0 +1,7 @@
+Palace: GOLDEN_PALACE
+  mythos:      smoke test mythos body
+  rooms (1):
+    [ROOM_FP8] library (0 items)
+  timeline head-hashes (1):
+    ACTION_FP64
+  oracle fp:   ORACLE_FP64

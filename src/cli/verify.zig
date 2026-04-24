@@ -17,6 +17,7 @@ const dreamball = @import("dreamball");
 const io = @import("../io.zig");
 const args_mod = @import("args.zig");
 const helpers = @import("helpers.zig");
+const palace_verify = @import("palace_verify.zig");
 
 const SPECS = [_]args_mod.Spec{
     .{ .long = "help", .takes_value = false },
@@ -32,6 +33,18 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     }
 
     const path = parsed.positional.items[0];
+
+    // Palace bundle detection: if path ends with .bundle or has a sibling .bundle,
+    // route to palace_verify.run for the five invariant checks.
+    // Strip trailing .bundle suffix to get the path prefix.
+    const is_bundle = std.mem.endsWith(u8, path, ".bundle");
+    const palace_prefix: []const u8 = if (is_bundle)
+        path[0 .. path.len - ".bundle".len]
+    else
+        path;
+    if (palace_verify.isPalaceBundle(gpa, palace_prefix)) {
+        return palace_verify.run(gpa, palace_prefix);
+    }
     const bytes = helpers.readFile(gpa, path) catch {
         try io.writeAllStderr("error: could not read file\n");
         return 2;

@@ -241,6 +241,7 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
         try asserts.addRawOwned("act", bytes);
     }
 
+    if (db.field_kind) |fk| try asserts.addText("field-kind", fk);
     for (db.guilds) |fp| try asserts.addBytes("guild", &fp.bytes);
     for (db.contains) |fp| try asserts.addBytes("contains", &fp.bytes);
     for (db.derived_from) |fp| try asserts.addBytes("derived-from", &fp.bytes);

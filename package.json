@@ -21,7 +21,9 @@
     "dev:server": "bun run --watch jelly-server/src/index.ts",
     "demo": "bun run --watch jelly-server/src/index.ts & vite dev",
     "server-smoke": "scripts/server-smoke.sh",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "bootstrap": "bun run scripts/bootstrap-kuzu-wasm.ts",
+    "postinstall": "bun run bootstrap"
   },
   "files": [
     "dist",
