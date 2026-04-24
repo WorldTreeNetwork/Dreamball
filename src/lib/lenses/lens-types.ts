@@ -10,7 +10,10 @@ export const ALL_LENSES = [
 	'omnispherical',
 	'flat',
 	'phone',
-	'splat'
+	'splat',
+	'palace',
+	'room',
+	'inscription'
 ] as const;
 
 export type LensName = (typeof ALL_LENSES)[number];

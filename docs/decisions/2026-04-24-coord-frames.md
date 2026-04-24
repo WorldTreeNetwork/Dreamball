@@ -54,6 +54,26 @@ second float carve-out or lossy conversions at the wire.
    - Re-walk only when the envelope tree changes (rare — palace shifts
      per VISION §15.7 trigger a cache invalidation for affected subtrees).
 
+## Implementation status (sprint-001)
+
+The algorithm below is the **normative target** for multi-field / nested-palace
+scenes. Sprint-001 ships **one field with no nesting**, so the lens code takes
+a simplified path:
+
+- `PalaceLens` positions rooms directly in the field's cartesian frame — either
+  from `layout.position` when present, or via the Fibonacci-shell grid fallback
+  (AC3). No `polarShellToCartesian` call is made because every room's effective
+  world matrix reduces to `identity × localMat` in a single-field scene.
+- `RoomLens` applies `placement.position` + `placement.facing` directly to a
+  Threlte `T.Group`. No cached `worldMatrix` is composed because the inscription's
+  parent (the room) is already the render root for that lens.
+
+`polarShellToCartesian()` and `resolveWorldMatrices()` are **Growth-tier work**
+— they land when the first non-trivial nesting case ships (nested guild rooms,
+multi-field composition, or a non-identity `pole-north` basis). The ADR keeps
+the algorithm here as the normative reference so the implementation has a
+pinned target rather than being reinvented later.
+
 ## Algorithm — world-matrix resolution
 
 ```ts
@@ -84,6 +104,14 @@ function resolveWorldMatrices(field: Field): Map<Fp, Mat4> {
 `polarShellToCartesian` converts the omnispherical-grid's (pole-north,
 pole-south, camera-ring) into a cartesian basis for the field's
 origin — runs once per field load.
+
+Canonical basis: align `pole-north` to +Y, `pole-south` to −Y,
+`camera-ring` azimuth-zero to +Z (right-handed). Radius in meters;
+returns a `mat4` whose columns are the field frame's (+X, +Y, +Z, origin)
+in parent coords. For sprint-001 (one field, no nesting), the parent
+is identity. Engines converting to non-Y-up conventions apply the
+per-engine transform in §5 at the lens boundary, not inside
+`polarShellToCartesian`.
 
 ## Why not polar all the way
 

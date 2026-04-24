@@ -111,6 +111,25 @@ export interface InscriptionData {
   revision?: number;
 }
 
+/**
+ * Public metadata for InscriptionLens dispatch (S5.4 / ADR 2026-04-24-surface-registry).
+ *
+ * Not policy-gated — `surface` is an open-enum display attribute on the envelope
+ * and the fallback chain is part of the render contract. The body bytes go through
+ * the policy-gated path (`getInscription` + `inscriptionBody`).
+ */
+export interface InscriptionMeta {
+  /** Blake3 fp of the inscription. */
+  fp: string;
+  /** Surface tag (open-enum, default 'scroll' when absent). */
+  surface: string;
+  /**
+   * Author-attached fallback chain per ADR 2026-04-24-surface-registry §4.
+   * Empty array when the envelope carries no fallback attribute.
+   */
+  fallback: string[];
+}
+
 // ── Write context (S4.2 AC5 / SEC5 file-watcher gate) ────────────────────────
 
 /**
@@ -174,6 +193,53 @@ export interface RecordActionParams {
   timestamp: Date | number | string;
   /** Blake3 of the raw CBOR envelope — TC13: pointer only, not the bytes */
   cborBytesBlake3?: string;
+}
+
+// ── recordTraversal payload (S5.5 — FR18 renderer half) ─────────────────────
+
+/**
+ * Input for store.recordTraversal — triggered by PalaceLens navigate events.
+ *
+ * fromFp and toFp are room fps; the palaceFp is the containing palace. The
+ * optional actorFp is the agent performing the traversal (defaults to the
+ * palace fp — matches the palace-minted "wandering custodian" convention used
+ * by the Zig CLI when no explicit actor is passed).
+ *
+ * timestamp_ms defaults to Date.now() if absent; tests pass explicit values
+ * for determinism.
+ */
+export interface RecordTraversalParams {
+  /** Blake3 fp of the palace containing the two rooms. */
+  palaceFp: string;
+  /** Blake3 fp of the source room. */
+  fromFp: string;
+  /** Blake3 fp of the destination room. */
+  toFp: string;
+  /** Blake3 fp of the actor performing the traversal. Default: palaceFp. */
+  actorFp?: string;
+  /** ms-epoch timestamp. Default: Date.now(). */
+  timestamp?: number;
+}
+
+/**
+ * Output of store.recordTraversal — the sequenced result the renderer uses
+ * to paint the traversal arc (SEC11 — renderer waits until this resolves).
+ */
+export interface RecordTraversalResult {
+  /** Blake3 fp of the move ActionLog entry (persisted). */
+  moveActionFp: string;
+  /** True iff a new aqueduct was materialised during this traversal. */
+  aqueductCreated: boolean;
+  /** Blake3 fp of the aqueduct (new or pre-existing). */
+  aqueductFp: string;
+  /** Aqueduct strength AFTER the Hebbian update (TC17 monotone). */
+  newStrength: number;
+  /** Aqueduct conductance AFTER Ebbinghaus/Hebbian update. */
+  newConductance: number;
+  /** Revision counter AFTER the update (incremented). */
+  newRevision: number;
+  /** Timestamp persisted with the move action. */
+  timestamp: number;
 }
 
 // ── StoreAPI ──────────────────────────────────────────────────────────────────
@@ -339,6 +405,41 @@ export interface StoreAPI {
     timestamp: number
   ): Promise<void>;
 
+  // ── Traversal round-trip (S5.5 — FR18 renderer half, D-007 CRITICAL) ─────
+
+  /**
+   * Record a room → room traversal in a single logical transaction.
+   *
+   * Flow (all within one logical tx — SEC11 ordering):
+   *   1. Look up (or lazily create) the aqueduct between fromFp and toFp via
+   *      getOrCreateAqueduct. First-traversal side-effects: a jelly.aqueduct
+   *      row with D-003 defaults (resistance=0.3, capacitance=0.5, strength=0,
+   *      kind="visit") AND a paired aqueduct-created ActionLog entry (both
+   *      derived fps — replay-reproducible, no timestamps in the fp).
+   *   2. Update Hebbian strength via updateAqueductStrength — TC17 monotone.
+   *   3. Emit a `move` signed-action via recordAction; the ActionLog fp is
+   *      derived from (fromFp, toFp, timestamp, palaceFp). Dual ed25519 +
+   *      ML-DSA-87 signatures are authored by the caller and carried in the
+   *      cbor_bytes_blake3 pointer (TC13); the MVP stub stores the derived fp
+   *      as the cbor_bytes_blake3 pointer until the Zig-side WASM signer
+   *      parameterisation lands (known-gaps §6 — TODO-CRYPTO).
+   *   4. Return a sequenced tuple describing what happened so the renderer
+   *      can only paint the traversal arc after the action's Blake3 has
+   *      persisted (SEC11 ordering — renderer awaits the returned promise).
+   *
+   * Preconditions:
+   *   - Palace, fromRoom, and toRoom MUST exist in the graph. Missing rooms
+   *     throw — the caller must ensure rooms were added via addRoom first.
+   *
+   * D-007: this is the SOLE traversal-event entry point from lens code. Lenses
+   * dispatch `navigate` CustomEvents; the viewer calls this verb; no lens
+   * writes to LadybugDB or CAS directly (SEC11).
+   *
+   * @param params  Traversal parameters.
+   * @returns       Sequenced result the renderer uses to paint the arc.
+   */
+  recordTraversal(params: RecordTraversalParams): Promise<RecordTraversalResult>;
+
   // ── Oracle KG triple verbs (S4.3 — D-007 domain verbs) ───────────────────
 
   /**
@@ -490,6 +591,17 @@ export interface StoreAPI {
    * @param inscriptionFp  Blake3 fp of the inscription avatar
    */
   inscriptionBody(inscriptionFp: string): Promise<Uint8Array>;
+
+  /**
+   * Return public InscriptionLens dispatch metadata (surface + fallback chain)
+   * for an inscription fp. Non-gated — these are display attributes, not sensitive.
+   *
+   * Returns null if the inscription fp is not found.
+   * When the inscription has no `surface` attribute, the returned `surface` is
+   * 'scroll' (ADR 2026-04-24-surface-registry — scroll is the canonical baseline).
+   * When no `fallback` attribute is stored, returns `[]` (absent ≡ empty per ADR §4).
+   */
+  inscriptionMeta(inscriptionFp: string): Promise<InscriptionMeta | null>;
 
   // ── Palace / Room read verbs (S5.2 — PalaceLens consumer) ───────────────
 

@@ -44,6 +44,22 @@ MAY attach a fallback chain.** Concretely:
    stays, but adopts a stable format so other lenses can reproduce it:
    `{level: "info", event: "surface-fallback", requested, resolved, lens}`.
 
+**Semantics of the walk (normative):**
+- Walk stops at the first registered surface encountered.
+- Absent `fallback` attribute is semantically equivalent to
+  `fallback: []` (empty array) — both mean "walk straight to the
+  `scroll` baseline."
+- If the walk encounters a cycle (surface X lists itself or an
+  already-visited predecessor), the lens emits event
+  `surface-fallback-cycle` and breaks to the `scroll` baseline.
+- The `scroll` baseline is always the final step; every lens MUST
+  render `scroll`, so the walk always terminates.
+
+**Implementation note (non-normative):** lenses SHOULD impose a small
+local walk bound (≤ a few hops) as a DoS guard against pathological
+chains. The bound is a lens-local implementation detail; the wire
+carries no hard cap.
+
 ## Wire change
 
 Add one optional attribute to `jelly.inscription` in PROTOCOL.md §13.7:

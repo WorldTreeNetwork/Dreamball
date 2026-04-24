@@ -100,6 +100,7 @@ function makeMockStore(opts: {
     kNN: vi.fn().mockResolvedValue([]),
     getOrCreateAqueduct: vi.fn().mockResolvedValue('aq-fp'),
     updateAqueductStrength: vi.fn(),
+    recordTraversal: vi.fn(),
     insertTriple: vi.fn(),
     deleteTriple: vi.fn(),
     updateTriple: vi.fn(),

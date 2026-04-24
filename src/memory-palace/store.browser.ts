@@ -763,6 +763,74 @@ export class BrowserStore implements StoreAPI {
     );
   }
 
+  // ── Traversal round-trip (S5.5 — FR18 renderer half, D-007 CRITICAL) ────────
+
+  /**
+   * Record a room→room traversal in a single logical transaction.
+   * See StoreAPI.recordTraversal for the full contract. Identical to
+   * store.server.ts implementation (both adapters share the Cypher shape).
+   */
+  async recordTraversal(
+    params: import('./store-types.js').RecordTraversalParams
+  ): Promise<import('./store-types.js').RecordTraversalResult> {
+    this._gateWrite('recordTraversal');
+    const palaceFp = sanitizeFp(params.palaceFp, 'palaceFp');
+    const fromFp = sanitizeFp(params.fromFp, 'fromFp');
+    const toFp = sanitizeFp(params.toFp, 'toFp');
+    const actorFp = sanitizeFp(params.actorFp ?? palaceFp, 'actorFp');
+    const timestamp = sanitizeInt(params.timestamp ?? Date.now(), 'timestamp');
+
+    // Pre-check via the palace-scoped derived aqueduct fp so shared rooms across
+    // palaces don't return each other's flag (M4 review fix). Known race: two
+    // concurrent recordTraversals on the same triple both observe existing=false
+    // and both report aqueductCreated=true; DB state converges because
+    // getOrCreateAqueduct MERGEs on the same derived fp (M5 — awaits BEGIN/COMMIT).
+    const derivedAqFp = await deriveAqueductFp(fromFp, toFp, palaceFp);
+    const existing = await this._q<{ fp: string }>(
+      `MATCH (a:Aqueduct {fp: '${derivedAqFp}'}) RETURN a.fp AS fp`
+    );
+    const aqueductCreated = existing.length === 0;
+
+    const aqueductFp = await this.getOrCreateAqueduct(fromFp, toFp, palaceFp);
+    await this.updateAqueductStrength(aqueductFp, actorFp, timestamp);
+
+    // Derived fp for the move action — palace-scoped (M6 review fix) so palaces
+    // that share rooms don't collide on the same (fromFp, toFp, timestamp) triple.
+    const moveActionFp = await deriveTripleFp(fromFp, toFp, `move:${palaceFp}`, String(timestamp));
+    await this.recordAction({
+      fp: moveActionFp,
+      palaceFp,
+      actionKind: 'move',
+      actorFp,
+      targetFp: aqueductFp,
+      parentHashes: [],
+      timestamp,
+      cborBytesBlake3: moveActionFp,
+    });
+
+    const rows = await this._q<{
+      strength: number;
+      conductance: number;
+      revision: number;
+    }>(
+      `MATCH (a:Aqueduct {fp: '${aqueductFp}'})
+       RETURN a.strength AS strength, a.conductance AS conductance, a.revision AS revision`
+    );
+    if (rows.length === 0) {
+      throw new Error(`recordTraversal: Aqueduct '${aqueductFp}' vanished post-write`);
+    }
+
+    return {
+      moveActionFp,
+      aqueductCreated,
+      aqueductFp,
+      newStrength: Number(rows[0].strength),
+      newConductance: Number(rows[0].conductance),
+      newRevision: Number(rows[0].revision),
+      timestamp,
+    };
+  }
+
   // ── Oracle KG triple verbs (native graph storage) ───────────────────────────
 
   async insertTriple(agentFp: string, subject: string, predicate: string, object: string): Promise<void> {
@@ -1029,6 +1097,17 @@ export class BrowserStore implements StoreAPI {
    * No cross-origin fetch — the browser store only reads from the same-origin jelly-server.
    * Hash-verifies: asserts Blake3(bytes) === source_blake3. Throws on mismatch.
    */
+  async inscriptionMeta(inscriptionFp: string): Promise<import('./store-types.js').InscriptionMeta | null> {
+    const iFp = sanitizeFp(inscriptionFp, 'inscriptionFp');
+    const rows = await this._q<{ surface: string | null }>(
+      `MATCH (i:Inscription {fp: '${iFp}'}) RETURN i.surface AS surface`
+    );
+    if (rows.length === 0) return null;
+    const surface = rows[0].surface != null ? String(rows[0].surface) : 'scroll';
+    // Fallback chain not yet persisted on the Inscription node (see store.server.ts).
+    return { fp: iFp, surface, fallback: [] };
+  }
+
   async inscriptionBody(inscriptionFp: string): Promise<Uint8Array> {
     const iFp = sanitizeFp(inscriptionFp, 'inscriptionFp');
     // 1. Resolve source_blake3 from DB.

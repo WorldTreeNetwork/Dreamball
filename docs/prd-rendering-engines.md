@@ -77,9 +77,11 @@ HDRI-equivalent for Dreamball scenes.
 
 - **`splat-scene` attribute**: a field MAY carry a 3D Gaussian splat asset
   (`jelly.asset` with media-type `application/splat+sog` or `+spz`) as its
-  environmental geometry — this is the "memory palace as a splat capture of
-  my real office" path. The splat is the shell; the inscriptions and rooms
-  live inside it in local cartesian frames.
+  environmental geometry. The splat sits as the shell; inscriptions and
+  rooms live inside it in local cartesian frames. Authoring tooling for
+  importing splat captures into a Dreamball field is a future concern
+  (see §8 "real-space import pipeline") — the protocol just reserves the
+  slot.
 - **`hdri-cubemap` attribute**: reserved for captured environment probes.
 - **`worldshader-program` attribute**: reserved for parametric shader
   programs (e.g. a noise-field, a caustic, a dynamic sky). Renderer-engine-
@@ -271,9 +273,13 @@ See [ADR 2026-04-24-surface-registry.md](decisions/2026-04-24-surface-registry.m
 | `jelly.inscription.fallback` | PROTOCOL.md §13.7 | Cross-engine surface degradation |
 | `application/splat+sog` / `+spz` / `+ply` media-types | `jelly.asset` | Splat content modality |
 | `application/worldshader+v1` media-type | `jelly.asset` | Procedural shader DSL |
+| Real-space import pipeline | Tooling (not protocol) | Convert captured spaces (photogrammetry / LiDAR / splat) into `jelly.dreamball.field` bundles with splat-scene + layout | Offline tool; no wire change |
 
-None require a format-version bump to land (all optional attributes or
-new media-types on existing envelope slots).
+None of the wire-level entries require a format-version bump to land
+(all optional attributes or new media-types on existing envelope
+slots). The real-space import pipeline is tooling that emits
+already-canonical envelopes — it adds capability without changing the
+protocol.
 
 ---
 

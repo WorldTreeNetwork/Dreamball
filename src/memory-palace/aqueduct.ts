@@ -198,3 +198,56 @@ export const DEFAULT_ALPHA = 0.1;
 
 /** Default Ebbinghaus time constant: 30 days in milliseconds. */
 export const DEFAULT_TAU_MS = 30 * 24 * 60 * 60 * 1000;
+
+// ── Vril ADR renderer-side thresholds (half-life constants) ───────────────────
+//
+// Per docs/decisions/2026-04-21-vril-flow-model.md §7, the renderer uses three
+// visual-threshold constants derived from time-since-last-traversal. These are
+// renderer-side tunables — NOT wire-format values — and they are exported from
+// THIS module (not copied into shader wrappers) so Epic 5 shaders and any
+// parity unit test (S5.5 R7) import bit-identical Float64 numerics.
+//
+//   DUSTY_MS    = 30d  → "dusty" threshold (τ): freshness ≈ exp(-1) ≈ 0.368
+//   COBWEBS_MS  = 90d  → "cobwebs" — dust-cobweb overlay engages
+//   SLEEPING_MS = 365d → "sleeping" — ghost-luminance only
+//
+// The shader uses these as visual anchors; changing them here reshapes the
+// palace's lived-in feeling globally.
+
+/** Vril-ADR "dusty" threshold: 30 days in ms. Also the default Ebbinghaus τ. */
+export const DUSTY_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Vril-ADR "cobwebs" threshold: 90 days in ms. dust-cobweb overlay engages. */
+export const COBWEBS_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Vril-ADR "sleeping" threshold: 365 days in ms. Ghost-luminance only. */
+export const SLEEPING_MS = 365 * 24 * 60 * 60 * 1000;
+
+// ── freshness (renderer-consumer-facing wrapper) ──────────────────────────────
+
+/**
+ * Compute renderer-side freshness from (now, lastTraversed).
+ *
+ * This is the call-site shape Epic 5 lenses use directly:
+ *
+ *   const f = freshness(Date.now(), aqueduct.last_traversed)
+ *
+ * Under the hood it is freshnessForRender(1.0, now - lastTraversed, tau),
+ * preserving the R7 pure-function bit-identity contract. We export this as
+ * a thin alias rather than copying the decay formula into the shader wrapper
+ * so there is ONE implementation of freshness in the codebase
+ * (docs/decisions/2026-04-21-vril-flow-model.md §7).
+ *
+ * @param now_ms          Current wall-clock in ms (Date.now()).
+ * @param lastTraversed_ms Last-traversal timestamp in ms (from Aqueduct row).
+ * @param tau_ms          Ebbinghaus time constant; defaults to DUSTY_MS (30d).
+ * @returns               Freshness ∈ [0, 1]; 1.0 at now == lastTraversed.
+ */
+export function freshness(
+  now_ms: number,
+  lastTraversed_ms: number,
+  tau_ms: number = DUSTY_MS
+): number {
+  const t = Math.max(0, now_ms - lastTraversed_ms);
+  return freshnessForRender(1.0, t, tau_ms);
+}

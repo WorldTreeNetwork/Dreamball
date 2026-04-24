@@ -119,8 +119,10 @@ describe('AC3: TODO-CRYPTO marker at every .oracle.key read site', () => {
 
         // Zig multiline string literal lines start with \\
         if (trimmed.startsWith('\\\\')) continue;
-        // Zig module doc comments start with //!
-        if (trimmed.startsWith('//!')) continue;
+        // Single-line comments (// prose, //! module docs, /// doc comments) that
+        // are not themselves the TODO-CRYPTO marker — these are narrative prose
+        // about the key, not code sites that read it.
+        if (trimmed.startsWith('//') && !trimmed.includes('TODO-CRYPTO')) continue;
         // JSDoc comment lines (not the marker itself) — * but not TODO-CRYPTO
         if (trimmed.startsWith('*') && !trimmed.includes('TODO-CRYPTO')) continue;
 
@@ -164,6 +166,7 @@ describe('buildSystemPrompt', () => {
       kNN: vi.fn(),
       getOrCreateAqueduct: vi.fn(),
       updateAqueductStrength: vi.fn(),
+      recordTraversal: vi.fn(),
       __rawQuery: vi.fn().mockImplementation(async (cypher: string) => {
         if (cypher.includes('RETURN m.body AS body')) {
           return [{ body: mythosBody }];

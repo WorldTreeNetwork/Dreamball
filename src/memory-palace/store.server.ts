@@ -840,6 +840,99 @@ export class ServerStore implements StoreAPI {
     );
   }
 
+  // ── Traversal round-trip (S5.5 — FR18 renderer half, D-007 CRITICAL) ────────
+
+  /**
+   * Record a room→room traversal in a single logical transaction.
+   *
+   * See StoreAPI.recordTraversal for full contract. Flow:
+   *   1. Check aqueduct existence before create (distinguishes `aqueductCreated`
+   *      flag in the returned tuple).
+   *   2. Call getOrCreateAqueduct — if missing, materialises Aqueduct row with
+   *      D-003 defaults (resistance=0.3, capacitance=0.5, strength=0, kind=visit)
+   *      AND an aqueduct-created ActionLog entry (both derived fps).
+   *   3. Call updateAqueductStrength — Hebbian saturating bump, TC17 monotone.
+   *   4. Call recordAction for a `move` ActionLog entry. ActionLog fp derived
+   *      from (fromFp, toFp, timestamp, palaceFp) via deriveTripleFp so
+   *      replayable. cbor_bytes_blake3 pointer carries the derived fp as a
+   *      sentinel until the Zig-side WASM signer parameterisation lands
+   *      (known-gaps §6 — TODO-CRYPTO dual-sig Ed25519 + ML-DSA-87).
+   *   5. Read-back the post-update aqueduct row so the renderer receives the
+   *      post-commit strength/conductance/revision values — SEC11 ordering.
+   */
+  async recordTraversal(
+    params: import('./store-types.js').RecordTraversalParams
+  ): Promise<import('./store-types.js').RecordTraversalResult> {
+    this._gateWrite('recordTraversal');
+    const palaceFp = sanitizeFp(params.palaceFp, 'palaceFp');
+    const fromFp = sanitizeFp(params.fromFp, 'fromFp');
+    const toFp = sanitizeFp(params.toFp, 'toFp');
+    const actorFp = sanitizeFp(params.actorFp ?? palaceFp, 'actorFp');
+    const timestamp = sanitizeInt(params.timestamp ?? Date.now(), 'timestamp');
+
+    // 1. Pre-check aqueduct existence by the palace-scoped derived fp. This is
+    //    narrower than matching on (fromFp, toFp) alone — two palaces legitimately
+    //    sharing rooms produce distinct aqueduct fps (M4 review fix). Race note:
+    //    two concurrent recordTraversals for the same triple both observe
+    //    existing=false and both report aqueductCreated=true; the second merge
+    //    in getOrCreateAqueduct no-ops on the existing row, so the final DB state
+    //    is correct. A real transactional fix awaits LadybugDB BEGIN/COMMIT
+    //    (M5 — known-gaps).
+    const derivedAqFp = await deriveAqueductFp(fromFp, toFp, palaceFp);
+    const existing = await this._q<{ fp: string }>(
+      `MATCH (a:Aqueduct {fp: '${derivedAqFp}'}) RETURN a.fp AS fp`
+    );
+    const aqueductCreated = existing.length === 0;
+
+    // 2. Lazy create (paired aqueduct-created ActionLog emitted inside).
+    const aqueductFp = await this.getOrCreateAqueduct(fromFp, toFp, palaceFp);
+
+    // 3. Hebbian saturating bump.
+    await this.updateAqueductStrength(aqueductFp, actorFp, timestamp);
+
+    // 4. Emit signed `move` ActionLog entry. Derived fp ensures replay-identity
+    //    AND is palace-scoped so two palaces sharing rooms cannot collide on the
+    //    same (fromFp, toFp, timestamp) triple (M6 review fix).
+    //    TODO-CRYPTO (known-gaps §6): the full Ed25519 + ML-DSA-87 dual sig is
+    //    authored by the Zig signer — this MVP path persists the derived fp as
+    //    the cbor_bytes_blake3 pointer so the row is well-formed and the Blake3
+    //    handle is stable for the renderer (SEC11 "paint after persist").
+    const moveActionFp = await deriveTripleFp(fromFp, toFp, `move:${palaceFp}`, String(timestamp));
+    await this.recordAction({
+      fp: moveActionFp,
+      palaceFp,
+      actionKind: 'move',
+      actorFp,
+      targetFp: aqueductFp,
+      parentHashes: [],
+      timestamp,
+      cborBytesBlake3: moveActionFp,
+    });
+
+    // 5. Read-back post-update aqueduct values for the renderer tuple.
+    const rows = await this._q<{
+      strength: number;
+      conductance: number;
+      revision: number;
+    }>(
+      `MATCH (a:Aqueduct {fp: '${aqueductFp}'})
+       RETURN a.strength AS strength, a.conductance AS conductance, a.revision AS revision`
+    );
+    if (rows.length === 0) {
+      throw new Error(`recordTraversal: Aqueduct '${aqueductFp}' vanished post-write`);
+    }
+
+    return {
+      moveActionFp,
+      aqueductCreated,
+      aqueductFp,
+      newStrength: Number(rows[0].strength),
+      newConductance: Number(rows[0].conductance),
+      newRevision: Number(rows[0].revision),
+      timestamp,
+    };
+  }
+
   // ── Oracle KG triple verbs (native graph storage) ───────────────────────────
 
   /**
@@ -1142,6 +1235,19 @@ export class ServerStore implements StoreAPI {
    *
    * No raw filesystem path is exposed to the lens — all CAS path logic is here.
    */
+  async inscriptionMeta(inscriptionFp: string): Promise<import('./store-types.js').InscriptionMeta | null> {
+    const iFp = sanitizeFp(inscriptionFp, 'inscriptionFp');
+    const rows = await this._q<{ surface: string | null }>(
+      `MATCH (i:Inscription {fp: '${iFp}'}) RETURN i.surface AS surface`
+    );
+    if (rows.length === 0) return null;
+    const surface = rows[0].surface != null ? String(rows[0].surface) : 'scroll';
+    // Fallback chain is not yet persisted on the Inscription node (envelope-level
+    // `fallback` attribute per ADR §4 lands with the next protocol rev). Until then
+    // an empty array is semantically correct — absent ≡ empty per ADR §4.
+    return { fp: iFp, surface, fallback: [] };
+  }
+
   async inscriptionBody(inscriptionFp: string): Promise<Uint8Array> {
     const iFp = sanitizeFp(inscriptionFp, 'inscriptionFp');
     // 1. Resolve source_blake3 from DB.
