@@ -8,6 +8,8 @@
  * Exit 0 = pass, exit 1 = fail.
  *
  * Uses a temp directory that is cleaned up on exit.
+ *
+ * Note: all fps must be 64-char lowercase hex (sanitizeFp constraint).
  */
 
 import * as fs from 'node:fs';
@@ -28,6 +30,14 @@ function fail(label: string, detail: string): void {
   FAIL.push(label);
 }
 
+// Valid 64-char hex fps for all store operations
+const PALACE_FP  = 'aa00000000000000aa00000000000000aa00000000000000aa00000000000000';
+const ROOM_FP    = 'bb00000000000000bb00000000000000bb00000000000000bb00000000000000';
+const INS_FP     = 'cc00000000000000cc00000000000000cc00000000000000cc00000000000000';
+const SRC_FP     = 'dd00000000000000dd00000000000000dd00000000000000dd00000000000000';
+const ACTION_FP  = 'ee00000000000000ee00000000000000ee00000000000000ee00000000000000';
+const ACTOR_FP   = 'ff00000000000000ff00000000000000ff00000000000000ff00000000000000';
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dreamball-ac8-'));
 const dbPath = path.join(dir, 'palace.lbug');
 
@@ -37,14 +47,14 @@ try {
     const store = new ServerStore(dbPath);
     await store.open();
 
-    await store.ensurePalace('smoke-palace');
-    await store.addRoom('smoke-palace', 'smoke-room-1', { name: 'Smoke Room 1' });
-    await store.inscribeAvatar('smoke-room-1', 'smoke-ins-1', 'blake3-smoke-1');
+    await store.ensurePalace(PALACE_FP);
+    await store.addRoom(PALACE_FP, ROOM_FP, { name: 'Smoke Room 1' });
+    await store.inscribeAvatar(ROOM_FP, INS_FP, SRC_FP);
     await store.recordAction({
-      fp: 'smoke-act-mint',
-      palaceFp: 'smoke-palace',
+      fp: ACTION_FP,
+      palaceFp: PALACE_FP,
       actionKind: 'palace-minted',
-      actorFp: 'smoke-agent',
+      actorFp: ACTOR_FP,
       parentHashes: [],
       timestamp: new Date()
     });
@@ -59,16 +69,16 @@ try {
     await store2.open();
 
     const palaceRows = await store2.__rawQuery<{ fp: string }>(
-      `MATCH (p:Palace {fp: 'smoke-palace'}) RETURN p.fp AS fp`
+      `MATCH (p:Palace {fp: '${PALACE_FP}'}) RETURN p.fp AS fp`
     );
-    if (palaceRows.length === 1 && String(palaceRows[0].fp) === 'smoke-palace') {
+    if (palaceRows.length === 1 && String(palaceRows[0].fp) === PALACE_FP) {
       pass('Phase 2: Palace persists after reopen');
     } else {
       fail('Phase 2: Palace persists after reopen', `got ${JSON.stringify(palaceRows)}`);
     }
 
     const chainRows = await store2.__rawQuery<{ cnt: number }>(
-      `MATCH (:Palace {fp: 'smoke-palace'})-[:CONTAINS]->(:Room)-[:CONTAINS]->(:Inscription)
+      `MATCH (:Palace {fp: '${PALACE_FP}'})-[:CONTAINS]->(:Room)-[:CONTAINS]->(:Inscription)
        RETURN count(*) AS cnt`
     );
     const cnt = Number(chainRows[0]?.cnt ?? -1);
@@ -79,7 +89,7 @@ try {
     }
 
     const actionRows = await store2.__rawQuery<{ fp: string }>(
-      `MATCH (a:ActionLog {fp: 'smoke-act-mint'}) RETURN a.fp AS fp`
+      `MATCH (a:ActionLog {fp: '${ACTION_FP}'}) RETURN a.fp AS fp`
     );
     if (actionRows.length === 1) {
       pass('Phase 2: ActionLog row persists after reopen');
@@ -87,8 +97,8 @@ try {
       fail('Phase 2: ActionLog row persists after reopen', `got ${JSON.stringify(actionRows)}`);
     }
 
-    const heads = await store2.headHashes('smoke-palace');
-    if (heads.includes('smoke-act-mint')) {
+    const heads = await store2.headHashes(PALACE_FP);
+    if (heads.includes(ACTION_FP)) {
       pass('Phase 2: headHashes returns action fp after reopen');
     } else {
       fail('Phase 2: headHashes returns action fp after reopen', `heads = ${JSON.stringify(heads)}`);

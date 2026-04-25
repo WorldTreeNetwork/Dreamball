@@ -372,15 +372,20 @@ export interface StoreAPI {
   reembed(fp: string, newBytes: Uint8Array, newVec: Float32Array): Promise<void>;
 
   /**
-   * K-nearest-neighbour query over Inscription.embedding.
-   * @throws NotImplementedInS22 until S2.5 ships.
-   * TODO-EMBEDDING: implement in S2.5
+   * K-nearest-neighbour query over Inscription.embedding (low-level adapter verb).
+   *
+   * D-016 Cypher: QUERY_VECTOR_INDEX → YIELD node AS i, distance →
+   * MATCH (i:Inscription)-[:LIVES_IN]->(r:Room) → RETURN fp, roomFp, distance
+   * ORDER BY distance ASC.
+   *
+   * Called by the high-level `kNN(query, k)` domain function in knn.ts.
+   * Direct callers: knn.ts only — no raw vec call in epic code (D-007).
    */
   kNN(
     vec: Float32Array,
     k: number,
     filter?: { palaceFp?: string; roomFp?: string }
-  ): Promise<Array<{ fp: string; distance: number }>>;
+  ): Promise<Array<{ fp: string; roomFp: string; distance: number }>>;
 
   // ── Aqueduct helpers (S2.5 — FR26 / AC10) ────────────────────────────────
 
@@ -666,6 +671,40 @@ export interface StoreAPI {
 
   /** Register an oracle fp for a palace (S4.2) — declared here so TS callers see it on the interface. */
   registerOracleFp(palaceFp: string, oracleFp: string): void;
+}
+
+// ── K-NN types (S6.3) ────────────────────────────────────────────────────────
+
+/**
+ * A single K-NN result hit returned by the high-level `kNN()` domain function.
+ *
+ * `fp`       — Blake3 fp of the matched Inscription.
+ * `roomFp`   — Blake3 fp of the room the inscription LIVES_IN (graph join).
+ * `distance` — cosine distance (lower = closer; range [0, 2]).
+ */
+export interface KnnHit {
+  fp: string;
+  roomFp: string;
+  distance: number;
+}
+
+/**
+ * Thrown by the high-level `kNN()` domain function when the embedding service
+ * is unreachable (NFR11 offline graceful-degradation, S6.3 AC4, AC5).
+ *
+ * Contract (AC5): ALWAYS thrown, NEVER returns resolved Promise with stale results.
+ * `cached` is always an empty array — stale-result logic belongs in consumer epics.
+ */
+export class OfflineKnnError extends Error {
+  /** Always 'embedding-service-unreachable' — typed for consumer catch branches. */
+  public readonly reason: 'embedding-service-unreachable' = 'embedding-service-unreachable';
+  /** Always [] — stale-result fallback is consumer-epic responsibility. */
+  public readonly cached: [] = [];
+
+  constructor(cause?: unknown) {
+    super('kNN: embedding service unreachable', cause ? { cause } : undefined);
+    this.name = 'OfflineKnnError';
+  }
 }
 
 // ── Policy errors ─────────────────────────────────────────────────────────────

@@ -241,8 +241,14 @@ grep -q "inscribed" inscribe-mythos.out
 
 echo "==> palace inscribe: AC9 — --embed-via unreachable exits nonzero"
 # Port 1 on 127.0.0.1 is always unreachable
-inscribe_embed_out=$("$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" 2>&1 || true)
-"$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" > /dev/null 2>&1 && {
+inscribe_embed_out=$(PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
+  PALACE_DB_PATH="$WORK/palace-smoke.db" \
+  PALACE_BUN="$(command -v bun)" \
+  "$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" 2>&1 || true)
+PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
+  PALACE_DB_PATH="$WORK/palace-smoke.db" \
+  PALACE_BUN="$(command -v bun)" \
+  "$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" > /dev/null 2>&1 && {
   echo "FAIL: inscribe with unreachable --embed-via should exit nonzero"; exit 1;
 } || true
 echo "$inscribe_embed_out" | grep -q "embedding service unreachable"

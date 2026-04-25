@@ -40,7 +40,15 @@ export default defineConfig({
 					name: 'server',
 					environment: 'node',
 					include: ['src/**/*.{test,spec}.{js,ts}', 'jelly-server/src/**/*.{test,spec}.{js,ts}'],
-					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}'],
+					// S6.1: jelly-server tests must not attempt to start the server
+					// or load the Qwen3 model (weights not present in CI).
+					// These vars are set here (not only in test files) because ESM
+					// top-level await in index.ts runs before test-file assignments.
+					env: {
+						JELLY_SERVER_NO_LISTEN: '1',
+						JELLY_EMBED_MOCK: '1'
+					}
 				}
 			},
 			{

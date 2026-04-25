@@ -78,7 +78,10 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
             \\  --mythos        Inline genesis mythos body for this inscription
             \\  --mythos-file   Path to mythos body file
             \\  --archiform     Avatar archiform name (e.g. scroll, lantern, muse)
-            \\  --embed-via     Embedding service URL (graceful failure if unreachable)
+            \\  --embed-via     Embedding service URL (default: http://localhost:9808/embed)
+            \\                  Embedding is the single sanctioned network exit (NFR11).
+            \\                  When unreachable: inscription-pending-embedding action committed,
+            \\                  inscription stored without embedding, exit code 2.
             \\  --surface       Surface type (default: scroll)
             \\  --placement     Placement hint (default: auto)
             \\
@@ -134,16 +137,15 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         }
     }
 
-    // AC9: if --embed-via is provided, check reachability before any mutation
-    if (embed_via) |url| {
-        const reachable = checkEmbedVia(gpa, url);
-        if (!reachable) {
-            try io.writeAllStderr("embedding service unreachable — palace otherwise operational\n");
-            return 1;
-        }
-    }
+    // TODO-EMBEDDING: bring-model-local-or-byo
+    //   --embed-via <url> is opt-in (NFR13). When provided, the bridge calls
+    //   the embedding service and falls back to inscription-pending-embedding
+    //   when unreachable (AC4 graceful-degradation). Default URL used only when
+    //   the flag is explicitly supplied; absent flag = no embedding attempt.
+    //   Exit code 2 signals the offline path to calling shells.
+    const embed_via_url: ?[]const u8 = embed_via; // null = no embedding requested
 
-    return runInscribe(gpa, palace_path, room_fp_hex, source_path, mythos_body, archiform_name, surface, placement);
+    return runInscribe(gpa, palace_path, room_fp_hex, source_path, mythos_body, archiform_name, surface, placement, embed_via_url);
 }
 
 fn isValidArchiform(name: []const u8) bool {
@@ -223,6 +225,7 @@ fn runInscribe(
     archiform_name: ?[]const u8,
     surface: []const u8,
     placement: []const u8,
+    embed_via_url: ?[]const u8,
 ) !u8 {
     const now_ms: i64 = io.unixSeconds() * 1000;
 
@@ -394,11 +397,14 @@ fn runInscribe(
     // Write bundle manifest for bridge
     // Format lines: palace_fp, room_fp, inscription_fp, action_fp,
     //               source_blake3_hex, mythos_fp_hex, archiform_fp_hex,
-    //               mythos_present, archiform_present
+    //               mythos_present, archiform_present,
+    //               source_path (absolute, for bridge to read content for embedding),
+    //               actor_fp_hex (custodian fp for recordAction)
     const palace_fp_hex = palace_mint.hexArray(&palace_fp);
     const room_fp_hex_arr = palace_mint.hexArray(&room_fp);
     const inscription_fp_hex = palace_mint.hexArray(&inscription_fp);
     const action_fp_hex = palace_mint.hexArray(&action_fp);
+    const actor_fp_hex = palace_mint.hexArray(&actor_fp);
     const mythos_fp_hex: [64]u8 = if (mythos_fp) |mfp| palace_mint.hexArray(&mfp) else [_]u8{'0'} ** 64;
     const archiform_fp_hex: [64]u8 = if (archiform_fp) |afp| palace_mint.hexArray(&afp) else [_]u8{'0'} ** 64;
     const mythos_present: u8 = if (mythos_fp != null) '1' else '0';
@@ -408,7 +414,7 @@ fn runInscribe(
     defer gpa.free(bundle_staging_path);
 
     const bundle_str = try std.fmt.allocPrint(gpa,
-        "{s}\n{s}\n{s}\n{s}\n{s}\n{s}\n{s}\n{c}\n{c}\n",
+        "{s}\n{s}\n{s}\n{s}\n{s}\n{s}\n{s}\n{c}\n{c}\n{s}\n{s}\n",
         .{
             &palace_fp_hex,
             &room_fp_hex_arr,
@@ -419,13 +425,15 @@ fn runInscribe(
             &archiform_fp_hex,
             mythos_present,
             archiform_present,
+            source_path,
+            &actor_fp_hex,
         },
     );
     defer gpa.free(bundle_str);
     try palace_mint.writeBytesToPath(bundle_staging_path, bundle_str);
 
     // ── 10. Invoke bridge ─────────────────────────────────────────────────────
-    const bridge_exit = invokeBridge(gpa, staging_path, bundle_staging_path) catch |err| blk: {
+    const bridge_exit = invokeBridge(gpa, staging_path, bundle_staging_path, embed_via_url) catch |err| blk: {
         const prefix = "error: palace-inscribe bridge spawn error: ";
         _ = std.c.write(2, prefix.ptr, prefix.len);
         const name_err = @errorName(err);
@@ -434,6 +442,13 @@ fn runInscribe(
         break :blk @as(u8, 1);
     };
     if (bridge_exit != 0) {
+        // Exit code 2 from bridge = offline / embedding service unreachable (AC4 S6.2).
+        // Inscription-pending-embedding action was committed by the bridge; do NOT roll back.
+        // Any other non-zero exit = hard failure → roll back staging.
+        if (bridge_exit == 2) {
+            std.Io.Dir.cwd().deleteTree(io.io(), staging_path) catch {};
+            return 2;
+        }
         std.Io.Dir.cwd().deleteTree(io.io(), staging_path) catch {};
         try io.writeAllStderr("error: palace-inscribe bridge failed — rolling back\n");
         return 1;
@@ -574,7 +589,7 @@ fn encodeSignedAction(
     return ai.toOwnedSlice();
 }
 
-fn invokeBridge(allocator: Allocator, staging_path: []const u8, bundle_path: []const u8) !u8 {
+fn invokeBridge(allocator: Allocator, staging_path: []const u8, bundle_path: []const u8, embed_via_url: ?[]const u8) !u8 {
     const bridge_script = blk: {
         const env_c = std.c.getenv("PALACE_BRIDGE_DIR");
         if (env_c != null) {
@@ -606,6 +621,11 @@ fn invokeBridge(allocator: Allocator, staging_path: []const u8, bundle_path: []c
             const val = entry[eq + 1 ..];
             try env_map.put(key, val);
         }
+    }
+    // Pass embed-via URL to bridge as env var only when flag was explicitly given (NFR13 opt-in).
+    // Bridge reads PALACE_EMBED_VIA; absent = no embedding attempt (legacy inscribe path).
+    if (embed_via_url) |url| {
+        try env_map.put("PALACE_EMBED_VIA", url);
     }
 
     const result = try std.process.run(allocator, io.io(), .{

@@ -434,3 +434,100 @@ HTTP /kNN endpoint. Offline K-NN is degraded for MVP. Epic 6 must add the
 **Path forward**: S2.3 implements HTTP fallback kNN; S6.3 adds /kNN endpoint.
 TODO-KNN-FALLBACK markers must be preserved until both stories land.
 
+---
+
+### 12. Qwen3-Embedding-0.6B weights not bundled (S6.1 TODO-EMBEDDING)
+
+**State**: Open — S6.1 landed the `/embed` endpoint, mock seam, and ONNX adapter.
+Model weights are NOT in the repository.
+
+**Why deferred**: The ONNX model (`onnx-community/Qwen3-Embedding-0.6B-ONNX`) is
+~600 MB fp32 / ~150 MB uint8 quantised. Bundling it in the repo is impractical.
+The download/provision step is a deployment concern, not a code concern.
+
+**Limitation**: `jelly-server` fails fast at boot with:
+  `embedding model not found at <path>`
+if `JELLY_EMBED_MODEL_PATH` is absent and `JELLY_EMBED_MOCK` is not set.
+All CI gates use `JELLY_EMBED_MOCK=1` (blake3-seeded deterministic mock).
+
+**Markers**: `TODO-EMBEDDING: bring-model-local-or-byo` appears in:
+  - `jelly-server/src/embedding/qwen3.ts` (model-load site, ×2)
+  - `jelly-server/src/routes/embed.ts` (route handler, ×1)
+  - `jelly-server/src/routes/embed.mock.ts` (mock module, ×1)
+  - `src/memory-palace/embedding-client.ts` (S4.4 client seam, ×2)
+Total ≥ 6 markers across the embedding surface.
+
+**Path forward**:
+1. Create `scripts/download-embed-model.ts` that runs:
+   `huggingface-cli download onnx-community/Qwen3-Embedding-0.6B-ONNX`
+   or uses the HF Hub API to fetch to `./models/Qwen3-Embedding-0.6B-ONNX/`.
+2. Add a CI job that provisions the model from a cache/artifact store when
+   `JELLY_EMBED_MOCK` is unset (optional; mock is sufficient for sprint-001).
+3. Consider the uint8-quantised variant (`electroglyph/Qwen3-Embedding-0.6B-onnx-uint8`)
+   to reduce memory footprint; MRL prefix property is preserved under quantisation.
+4. S6.2 and S6.3 inherit this gap — they also use `JELLY_EMBED_MOCK=1` in tests.
+
+See `docs/decisions/2026-04-24-qwen3-embedding-loader.md` for the full loader ADR.
+
+---
+
+### 13. K-NN over memory-nodes not in MVP scope (S6.3 OQ-E6-2)
+
+**State**: Open — S6.3 `store.kNN` queries the `Inscription` vector index only.
+FR20 names memory-nodes (Room, Palace, ActionLog) as potential K-NN targets
+but MVP scope is inscriptions only.
+
+**Why deferred**: Memory-node embeddings (palace-level summaries, room-level
+context vectors) require a separate indexing pass and a second vector index
+(`CALL CREATE_VECTOR_INDEX('Room', ...)` etc.). The D-016 Cypher pattern
+extends naturally but the embedding ingestion pipeline (which inscription to
+summarise, when, with what content) is an Epic 4/5 design question.
+
+**Limitation**: `store.kNN` only matches `Inscription` nodes. Queries that
+should surface rooms or palaces by semantic similarity return no results.
+
+**Path forward**: Post-MVP — design the memory-node embedding schedule
+(triggered by re-embed events or oracle sweep), add a vector index per node
+type, extend `store.kNN` with an optional `nodeType` filter parameter.
+
+---
+
+### 14. Quantised vectors deferred (PRD FR83)
+
+**State**: Open — all embeddings stored as `FLOAT[256]` (fp32). The Qwen3
+uint8-quantised variant (`electroglyph/Qwen3-Embedding-0.6B-onnx-uint8`)
+would cut storage by ~4×.
+
+**Why deferred**: MRL prefix property is preserved under uint8 quantisation
+but kuzu's vector index interoperability with quantised input needs a
+verification spike. The 500-inscription corpus in MVP is small enough that
+fp32 storage is not a practical concern.
+
+**Limitation**: At large corpus sizes (>100k inscriptions) fp32 storage
+may become a constraint. K-NN distance metrics may shift slightly under
+quantisation (empirical validation needed before production use).
+
+**Path forward**: Spike quantised model against D-015 parity test; if
+distance delta < threshold, switch `PALACE_EMBED_MODEL_PATH` to uint8
+variant and confirm `inscription_emb` index precision is acceptable.
+
+---
+
+### 15. Hybrid lexical + semantic search not implemented (S6.3 OQ-E6-1 / post-MVP)
+
+**State**: Open — `store.kNN` is pure vector K-NN. No BM25 or full-text
+scoring is combined with embedding distance.
+
+**Why deferred**: kuzu does not yet expose a first-class hybrid
+(vector + keyword) search primitive. Implementing BM25 in Cypher would
+require a separate full-text index and manual score fusion (RRF or linear
+blend) in the application layer.
+
+**Limitation**: Short exact-match queries (e.g. `"palace fp: aa00..."`)
+may rank poorly when the embedding distance favours semantic neighbours
+over the literal match.
+
+**Path forward**: Post-MVP — evaluate kuzu's full-text index support when
+available; implement RRF score fusion in a new `store.hybridSearch` method
+that merges `kNN` hits with a Cypher `WHERE i.content CONTAINS $q` scan.
+

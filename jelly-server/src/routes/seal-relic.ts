@@ -48,7 +48,8 @@ export const sealRelicRoute = new Elysia().post(
 
       const relicJson = readFileSync(outPath, 'utf-8');
       const relic = JSON.parse(relicJson) as Record<string, unknown>;
-      const fingerprint = storeDreamBall(relic);
+      // seal-relic output is JSON (no raw CBOR available); pass JSON bytes as envelope bytes
+      const fingerprint = storeDreamBall(new TextEncoder().encode(relicJson), relic);
 
       return { fingerprint, relic };
     } finally {

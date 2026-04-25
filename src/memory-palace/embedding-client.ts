@@ -1,19 +1,21 @@
 /**
- * embedding-client.ts — Seam for computing inscription embeddings (S4.4 / Epic 6).
+ * embedding-client.ts — HTTP client for the /embed endpoint (S4.4 / S6.2 / Epic 6).
  *
  * Exports:
+ *   embedFor(content, contentType, embedViaUrl): Promise<number[]>
+ *     — D-012 wire shape: POST { content, contentType } → { vector, model, dimension, truncation }
  *   computeEmbedding(bytes: Uint8Array): Promise<number[]>
- *   EmbeddingServiceUnreachable — thrown when /embed returns 5xx
+ *     — Legacy S4.4 surface: converts bytes → text, delegates to embedFor.
+ *   EmbeddingServiceUnreachable — thrown when service is unreachable or returns 5xx.
  *
- * Epic 6 contract: plug in Qwen3-Embedding-0.6B by pointing
- *   JELLY_EMBED_BASE at a server that implements:
- *     POST /embed  body: raw bytes  response: { embedding: number[] }
- *   The seam does NOT need to change — Epic 6 only implements the server side.
+ * S6.2 contract: embedFor is the SOLE HTTP call site for embedding.
+ *   file-watcher.ts and inscribe-bridge.ts both import from here; neither
+ *   re-implements the fetch. This is the single sanctioned network exit (NFR11).
  *
  * Test-only mock mode: JELLY_EMBED_MOCK=hash returns a deterministic
  * pseudo-random float array derived from the input bytes (SHA-256 based).
  * This is NOT suitable for production use — it is only for unit tests.
- * TODO-EMBEDDING: bring-model-local-or-byo (Epic 6 replaces mock with Qwen3)
+ * TODO-EMBEDDING: bring-model-local-or-byo
  *
  * Decisions: D-012 (single POST, no batch), D-007 (no DB access here).
  * FR21: computeEmbedding is called only when source bytes changed (AC2 guard
@@ -23,73 +25,123 @@
 // ── EmbeddingServiceUnreachable ───────────────────────────────────────────────
 
 /**
- * Thrown when the /embed endpoint responds with a 5xx status (AC4).
+ * Thrown when the /embed endpoint is unreachable (network error) or returns 5xx.
  * file-watcher.ts catches this to surface "embedding service unreachable".
+ * inscribe-bridge.ts catches this to emit inscription-pending-embedding action (S6.2 AC4).
  */
 export class EmbeddingServiceUnreachable extends Error {
-  public readonly statusCode: number;
+  public readonly statusCode: number | null;
+  public readonly embedUrl: string;
 
-  constructor(statusCode: number, url: string) {
-    super(`embedding service unreachable: POST ${url} returned ${statusCode}`);
+  constructor(statusOrNull: number | null, url: string, cause?: unknown) {
+    const msg = statusOrNull !== null
+      ? `embedding service unreachable at ${url} (HTTP ${statusOrNull})`
+      : `embedding service unreachable at ${url}`;
+    super(msg, cause ? { cause } : undefined);
     this.name = 'EmbeddingServiceUnreachable';
-    this.statusCode = statusCode;
+    this.statusCode = statusOrNull;
+    this.embedUrl = url;
   }
 }
 
-// ── computeEmbedding ──────────────────────────────────────────────────────────
+// ── D-012 response shape ──────────────────────────────────────────────────────
+
+interface EmbedResponse {
+  vector: number[];
+  model: string;
+  dimension: number;
+  truncation: string;
+}
+
+// ── embedFor ──────────────────────────────────────────────────────────────────
 
 const EMBEDDING_DIM = 256;
 
 /**
- * Compute an embedding vector for the given byte payload.
+ * Compute an embedding vector for the given text content using D-012 wire shape.
  *
- * In production: HTTP POST to ${JELLY_EMBED_BASE}/embed.
- * In test mock mode (JELLY_EMBED_MOCK=hash): returns a deterministic
- * pseudo-random float array derived from a hash of the bytes.
+ * This is the SOLE HTTP call site for embedding (NFR11 sanctioned exit).
+ * inscribe-bridge.ts and file-watcher.ts both delegate here; neither re-implements fetch.
+ *
+ * In production: HTTP POST { content, contentType } to embedViaUrl.
+ * In test mock mode (JELLY_EMBED_MOCK=hash): returns deterministic hash-derived floats.
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
- *   Epic 6 implements the real Qwen3-Embedding-0.6B endpoint. This
- *   seam requires no change on the caller side — only the server /embed
- *   route needs to be implemented.
+ *   This client calls the jelly-server /embed endpoint (S6.1). Replace with
+ *   a local WASM/ONNX call once weights are bundled locally.
  *
- * @param bytes  Raw source bytes for the inscription
- * @returns      256-dimensional float array (MRL-truncated per D-002)
- * @throws EmbeddingServiceUnreachable when /embed responds with 5xx
+ * @param content      Text content to embed
+ * @param contentType  MIME type (text/markdown, text/plain, text/asciidoc)
+ * @param embedViaUrl  Full URL of the /embed endpoint (default: http://localhost:9808/embed)
+ * @returns            256-dimensional float array (MRL-truncated per D-002)
+ * @throws EmbeddingServiceUnreachable when unreachable or returns 5xx/415
  */
-export async function computeEmbedding(bytes: Uint8Array): Promise<number[]> {
-  // Test-only mock mode: deterministic hash → float array
+export async function embedFor(
+  content: string,
+  contentType: string,
+  embedViaUrl = 'http://localhost:9808/embed'
+): Promise<number[]> {
+  // Test-only mock mode: deterministic hash → float array.
+  // JELLY_EMBED_MOCK='1' (jelly-server convention, vite.config.ts) or
+  // JELLY_EMBED_MOCK='hash' (legacy embedding-client convention) both activate mock.
   // TODO-EMBEDDING: bring-model-local-or-byo
-  if (typeof process !== 'undefined' && process.env.JELLY_EMBED_MOCK === 'hash') {
+  const mockEnv = typeof process !== 'undefined' ? process.env.JELLY_EMBED_MOCK : undefined;
+  if (mockEnv === '1' || mockEnv === 'hash') {
+    const bytes = new TextEncoder().encode(content);
     return _hashToFloats(bytes);
   }
 
-  const base = (typeof process !== 'undefined' && process.env.JELLY_EMBED_BASE)
-    ? process.env.JELLY_EMBED_BASE
-    : 'http://localhost:9808';
-
-  const url = `${base}/embed`;
-
   // TODO-EMBEDDING: bring-model-local-or-byo
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
-    body: bytes.buffer as ArrayBuffer,
-  });
+  //   HTTP call site: POST D-012 wire shape to embedViaUrl.
+  //   Single sanctioned network exit for the memory-palace (NFR11).
+  let response: Response;
+  try {
+    response = await fetch(embedViaUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, contentType }),
+    });
+  } catch (err) {
+    // Network error (ECONNREFUSED, ETIMEDOUT, DNS failure, etc.)
+    throw new EmbeddingServiceUnreachable(null, embedViaUrl, err);
+  }
 
-  if (response.status >= 500) {
-    throw new EmbeddingServiceUnreachable(response.status, url);
+  if (response.status >= 500 || response.status === 415) {
+    throw new EmbeddingServiceUnreachable(response.status, embedViaUrl);
   }
 
   if (!response.ok) {
-    throw new Error(`computeEmbedding: unexpected HTTP ${response.status} from ${url}`);
+    throw new Error(`embedFor: unexpected HTTP ${response.status} from ${embedViaUrl}`);
   }
 
-  const json = (await response.json()) as { embedding: number[] };
-  if (!Array.isArray(json.embedding)) {
-    throw new Error(`computeEmbedding: response missing "embedding" array from ${url}`);
+  const json = (await response.json()) as EmbedResponse;
+  if (!Array.isArray(json.vector)) {
+    throw new Error(`embedFor: response missing "vector" array from ${embedViaUrl}`);
   }
 
-  return json.embedding;
+  return json.vector;
+}
+
+// ── computeEmbedding (legacy S4.4 surface) ────────────────────────────────────
+
+/**
+ * Legacy S4.4 surface: compute embedding for raw bytes.
+ * Converts bytes to UTF-8 text and delegates to embedFor.
+ *
+ * @deprecated Prefer embedFor() directly. This surface exists for file-watcher.ts
+ *             backwards compatibility. It uses JELLY_EMBED_BASE env for the URL.
+ *
+ * @param bytes  Raw source bytes for the inscription
+ * @returns      256-dimensional float array (MRL-truncated per D-002)
+ * @throws EmbeddingServiceUnreachable when /embed responds with 5xx or is unreachable
+ */
+export async function computeEmbedding(bytes: Uint8Array): Promise<number[]> {
+  const base = (typeof process !== 'undefined' && process.env.JELLY_EMBED_BASE)
+    ? process.env.JELLY_EMBED_BASE
+    : 'http://localhost:9808';
+  const url = `${base}/embed`;
+  const content = new TextDecoder().decode(bytes);
+  return embedFor(content, 'text/plain', url);
 }
 
 // ── _hashToFloats (test-only mock) ────────────────────────────────────────────

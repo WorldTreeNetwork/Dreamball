@@ -693,21 +693,26 @@ export class ServerStore implements StoreAPI {
 
   /**
    * K-nearest-neighbour query over Inscription.embedding (server side).
+   *
+   * D-016 Cypher pattern: QUERY_VECTOR_INDEX → YIELD node AS i, distance →
+   * MATCH (i:Inscription)-[:LIVES_IN]->(r:Room) → RETURN fp, roomFp, distance
+   * ORDER BY distance ASC. (AC2)
    */
   async kNN(
     vec: Float32Array,
     k: number,
     _filter?: { palaceFp?: string; roomFp?: string }
-  ): Promise<Array<{ fp: string; distance: number }>> {
+  ): Promise<Array<{ fp: string; roomFp: string; distance: number }>> {
     const kInt = sanitizeInt(k, 'k');
     const arr = `[${Array.from(vec).map((f) => sanitizeFloat(f, 'embedding')).join(',')}]`;
-    const results = await this._q<{ fp: string; distance: number }>(
+    const results = await this._q<{ fp: string; roomFp: string; distance: number }>(
       `CALL QUERY_VECTOR_INDEX('Inscription', 'inscription_emb', CAST(${arr} AS FLOAT[256]), ${kInt})
-       YIELD node, distance
-       RETURN node.fp AS fp, distance
-       ORDER BY distance`
+       YIELD node AS i, distance
+       MATCH (i:Inscription)-[:LIVES_IN]->(r:Room)
+       RETURN i.fp AS fp, r.fp AS roomFp, distance
+       ORDER BY distance ASC`
     );
-    return results.map((r) => ({ fp: String(r.fp), distance: Number(r.distance) }));
+    return results.map((r) => ({ fp: String(r.fp), roomFp: String(r.roomFp), distance: Number(r.distance) }));
   }
 
   // ── Aqueduct helpers ─────────────────────────────────────────────────────────

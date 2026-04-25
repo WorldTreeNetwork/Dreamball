@@ -15,6 +15,7 @@
  *   POST   /dreamballs/:fp/transmit     — transmit (CLI subprocess)
  *   POST   /relics                      — seal relic (CLI subprocess)
  *   POST   /relics/:id/unlock           — unlock relic (CLI subprocess)
+ *   POST   /embed                       — compute 256d embedding (Qwen3, S6.1)
  *   GET    /.well-known/mcp             — MCP self-documentation
  *   GET    /.well-known/mcp/types       — JSON Schema bundle
  *   GET    /swagger                     — OpenAPI UI
@@ -34,6 +35,8 @@ import { joinGuildRoute } from './routes/join-guild.js';
 import { transmitRoute } from './routes/transmit.js';
 import { sealRelicRoute } from './routes/seal-relic.js';
 import { unlockRelicRoute } from './routes/unlock-relic.js';
+import { embedRoute } from './routes/embed.js';
+import { loadQwen3Model } from './embedding/qwen3.js';
 import { buildMcpDoc, buildTypesDoc } from './mcp-doc.js';
 
 const PORT = Number(process.env.JELLY_SERVER_PORT ?? 9808);
@@ -116,7 +119,8 @@ export const app = new Elysia()
   .use(joinGuildRoute)
   .use(transmitRoute)
   .use(sealRelicRoute)
-  .use(unlockRelicRoute);
+  .use(unlockRelicRoute)
+  .use(embedRoute);
 
 // ---------------------------------------------------------------------------
 // Start server (skipped when imported in tests)
@@ -129,6 +133,21 @@ export const app = new Elysia()
 // can defeat.
 if (process.env.JELLY_SERVER_NO_LISTEN !== '1') {
   try {
+    // Load Qwen3-Embedding-0.6B once at boot — fail-fast if model absent (S6.1 AC10).
+    // In mock mode (JELLY_EMBED_MOCK=1), loadQwen3Model() is a no-op.
+    // This runs inside the listen guard so test imports (JELLY_SERVER_NO_LISTEN=1)
+    // never trigger the model load or process.exit path.
+    await loadQwen3Model().catch((err: unknown) => {
+      process.stderr.write(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: 'embedding_model_load_failed',
+          error: err instanceof Error ? err.message : String(err),
+        }) + '\n'
+      );
+      process.exit(1);
+    });
+
     app.listen(PORT, () => {
       process.stdout.write(
         JSON.stringify({

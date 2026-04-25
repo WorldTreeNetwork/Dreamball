@@ -99,7 +99,9 @@ cleanup() {
 trap cleanup EXIT
 
 info "Starting jelly-server on port $PORT..."
-JELLY_SERVER_PORT=$PORT bun run "${REPO_ROOT}/jelly-server/src/index.ts" &
+# JELLY_EMBED_MOCK=1: use deterministic blake3-seeded mock (no Qwen3 weights needed in CI).
+# The real model is deferred per TODO-EMBEDDING in jelly-server/src/routes/embed.ts.
+JELLY_SERVER_PORT=$PORT JELLY_EMBED_MOCK=1 bun run "${REPO_ROOT}/jelly-server/src/index.ts" &
 SERVER_PID=$!
 
 # Wait for the server to be ready (up to 15 seconds)
@@ -327,9 +329,48 @@ else
   ((PASS++)) || true
 fi
 
+# ─── S6.1 AC9: POST /embed ──────────────────────────────────────────────────
+
+info "=== 14. POST /embed (S6.1 AC9: dimension==256 && model==qwen3-embedding-0.6b) ==="
+EMBED_RAW=$(curl -s -w '\n__STATUS__%{http_code}' \
+  -X POST \
+  -H 'content-type: application/json' \
+  -d '{"content":"hello palace","contentType":"text/markdown"}' \
+  "${BASE}/embed")
+split_response "$EMBED_RAW"
+assert_ok "POST /embed returns 200" "$STATUS" "$BODY"
+
+# Check dimension==256 and model=="qwen3-embedding-0.6b" (AC9 jq assertion)
+EMBED_JQ_PASS=$(echo "$BODY" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+ok = d.get('dimension')==256 and d.get('model')=='qwen3-embedding-0.6b'
+print('1' if ok else '0')
+" 2>/dev/null || echo "0")
+if [ "$EMBED_JQ_PASS" = "1" ]; then
+  green "  PASS  /embed: dimension==256 && model=='qwen3-embedding-0.6b'"
+  ((PASS++)) || true
+else
+  red "  FAIL  /embed: dimension==256 && model=='qwen3-embedding-0.6b'"
+  red "        body: ${BODY:0:300}"
+  ((FAIL++)) || true
+fi
+
+# Check vector.length == 256
+EMBED_VLEN=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('vector',[])))" 2>/dev/null || echo "0")
+if [ "$EMBED_VLEN" = "256" ]; then
+  green "  PASS  /embed vector.length == 256"
+  ((PASS++)) || true
+else
+  red "  FAIL  /embed vector.length != 256 (got $EMBED_VLEN)"
+  ((FAIL++)) || true
+fi
+
+assert_contains "/embed has truncation mrl-256" "$BODY" '"mrl-256"'
+
 # ─── AC8: store round-trip block ────────────────────────────────────────────
 
-info "=== 14. Store round-trip (AC8: open→mint→addRoom→inscribe→close→reopen→verify) ==="
+info "=== 15. Store round-trip (AC8: open→mint→addRoom→inscribe→close→reopen→verify) ==="
 STORE_SMOKE_OUT=$(bun run "${REPO_ROOT}/scripts/store-smoke.ts" 2>&1)
 STORE_SMOKE_EXIT=$?
 echo "$STORE_SMOKE_OUT"
@@ -338,6 +379,20 @@ if [ "$STORE_SMOKE_EXIT" -eq 0 ]; then
   ((PASS++)) || true
 else
   red "  FAIL  store round-trip (AC8)"
+  ((FAIL++)) || true
+fi
+
+# ─── S6.3 AC9: K-NN round-trip block ────────────────────────────────────────
+
+info "=== 16. K-NN round-trip (S6.3 AC9: mint→addRoom→inscribe 3 docs→kNN query) ==="
+KNN_SMOKE_OUT=$(JELLY_EMBED_MOCK=1 bun run "${REPO_ROOT}/scripts/knn-smoke.ts" 2>&1)
+KNN_SMOKE_EXIT=$?
+echo "$KNN_SMOKE_OUT"
+if [ "$KNN_SMOKE_EXIT" -eq 0 ]; then
+  green "  PASS  K-NN round-trip (AC9)"
+  ((PASS++)) || true
+else
+  red "  FAIL  K-NN round-trip (AC9)"
   ((FAIL++)) || true
 fi
 
