@@ -18,6 +18,9 @@ zig-pkg/
 # OMC
 .omc/
 
+# Claude Code local harness state
+.claude/
+
 # jelly-server runtime data (generated; contains secret keys — never commit)
 jelly-server/data/
 jelly-server/node_modules/
