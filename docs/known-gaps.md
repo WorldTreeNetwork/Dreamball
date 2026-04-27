@@ -7,6 +7,43 @@ lingers here without a clear next step.
 
 ---
 
+## Steering decision — 2026-04-25 — Defer post-quantum and key-custody hardening
+
+The user has explicitly deferred all post-quantum + secure-key-custody
+work to a later **cryptography/security pass**. Until that pass:
+
+- **Ed25519-only signing is acceptable.** The dual-sig (Ed25519 +
+  ML-DSA-87) requirement that motivated NFR12 is relaxed in
+  implementation. ML-DSA-87 verify continues to land where it already
+  has (jelly.wasm), but minting/signing call sites may use Ed25519
+  alone without raising a blocker.
+- **Plaintext keys held with `0600` perms are acceptable.** D-011's
+  custody choice stands; recrypt-wallet integration is not gating any
+  story.
+- **`oracleSignAction`, `recordTraversal`, and any other call site
+  currently using a derived-fp sentinel** should be migrated to **real
+  Ed25519 single signatures over the action payload bytes**. Those call
+  sites already exist; the change is small and unblocks honest signed
+  envelopes immediately.
+- **All affected sections below remain open** — they're now grouped
+  under this single deferral. Each retains its `TODO-CRYPTO` marker so
+  the future security pass can find them by grep.
+
+**Sections grouped under this deferral**: §1 (browser ML-DSA polish),
+§3 (chained recryption), §6 (Phase D dual-sig + recrypt keyspaces),
+§7 (oracle-fp spoofing prevention), §8 (oracle action signing stub),
+plus the dual-sig sentinel call sites in `oracle.ts oracleSignAction`
+and `store.recordTraversal` introduced by S4.4 / S5.5.
+
+**When the security pass runs**, the work becomes: parameterise
+`signActionEnvelope(keypair, payload)` over arbitrary keypairs in
+`jelly.wasm`, swap Ed25519-only signing for dual-sig at all flagged
+call sites, integrate recrypt-wallet for key custody, and challenge
+the oracle-fp spoofing surface. None of this gates further feature
+work.
+
+---
+
 ## Active gaps (post v2.1)
 
 ### 1. Browser-side ML-DSA-87 verification

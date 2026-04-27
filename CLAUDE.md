@@ -18,27 +18,53 @@
   document; contribute to it as you learn.
 - [`docs/known-gaps.md`](docs/known-gaps.md) — residual `TODO-CRYPTO`
   markers and deferred work with tracking entries.
+- [`docs/decisions/`](docs/decisions/) — dated architecture decisions.
+  The 2026-04-25 set (archiform-registry, json-schema-canonical,
+  action-manifest, wasm-runtime) defines the JSON-Schema / archiform /
+  wasm shift landing in sprint-002.
 - [`../recrypt/docs/wire-protocol.md`](../recrypt/docs/wire-protocol.md) —
   sibling crypto methodology; our conventions inherit from this.
 
 ## The cross-runtime invariant
 
-**There is one place the wire format lives: `src/*.zig`.** Every other
-surface (CLI, `jelly.wasm`, Svelte lib, `jelly-server`, MCP docs) is
-derived from the Zig code. Concretely:
+**The wire format factors into two parts, each with one canonical
+location:**
+
+1. **CBOR encoding algorithm — `src/*.zig`.** Canonical map ordering,
+   integer width rules, bytes-vs-text discipline, golden test vectors.
+   Every runtime must reproduce these bytes for the same logical value.
+2. **Field shapes — JSON Schema, vendored from aspects.sh.** Root types
+   (`schemas/root-X.Y.Z.json`) and archiform extensions
+   (`schemas/<archiform>-X.Y.Z.json`) are the canonical source. Zig
+   types, TS types, Valibot schemas, CBOR codecs, and
+   `src/memory-palace/schema.cypher` are all *derived* from them.
+
+Concretely:
 
 - No TypeScript code encodes or decodes CBOR by hand — it goes through
   the WASM module.
 - No hand-maintained schemas exist anywhere. `types.ts`, `schemas.ts`
-  (Valibot), and `cbor.ts` are all generated from
-  `tools/schema-gen/main.zig`. Regenerate via `bun run codegen`.
-- The browser and server load the same `jelly.wasm` binary. Host-supplied
-  randomness via one `env.getRandomBytes` import is the entire runtime
-  seam; see [`docs/VISION.md §14`](docs/VISION.md) and ADR-1 in
-  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+  (Valibot), `cbor.ts`, and `schema.cypher` are all generated.
+  Regenerate via `bun run codegen`.
+- The browser and server load the same `jelly.wasm` binary.
+  Host-supplied randomness via one `env.getRandomBytes` import is the
+  entire runtime seam; see [`docs/VISION.md §14`](docs/VISION.md) and
+  ADR-1 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+- Archiform-specific node and edge types (`Inscription`, `Room`,
+  `Aqueduct`) come from the vendored archiform schema, not hand-written
+  Zig.
 
 If you find yourself writing a second implementation of something the
-Zig core already does — stop. Regenerate from the Zig side instead.
+codegen pipeline already produces — stop. Regenerate from the JSON
+Schema source instead.
+
+**Migration status (2026-04-25):** the codegen-direction inversion is
+sprint-002 work; see
+[`docs/decisions/2026-04-25-json-schema-canonical.md`](docs/decisions/2026-04-25-json-schema-canonical.md)
+and siblings. Until those stories land, `tools/schema-gen/main.zig`
+remains the de-facto source for root and Memory Palace types. The
+*direction* the codebase is moving is JSON-Schema-canonical — read the
+decision notes before adding new fields.
 
 ## Operating principle — document the why, not only the what
 

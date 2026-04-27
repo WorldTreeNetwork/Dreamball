@@ -37,7 +37,8 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Canvas } from '@threlte/core';
+  import { Canvas, T } from '@threlte/core';
+  import { OrbitControls } from '@threlte/extras';
   import type { StoreAPI } from '../../../memory-palace/store-types.js';
   import Scroll from './surfaces/Scroll.svelte';
   import Tablet from './surfaces/Tablet.svelte';
@@ -244,6 +245,16 @@
       All five surfaces accept `body` as the decoded text string.
     -->
     <Canvas>
+      <!--
+        Lens-level camera + orbit controls — every surface lives at the local
+        origin, so framing them once here is simpler than each surface managing
+        its own camera. fov=45 with z=5.5 frames a ~3×3 subject comfortably
+        (etched-wall is the widest at 3.0×2.4).
+      -->
+      <T.PerspectiveCamera makeDefault fov={45} position={[0, 0, 5.5]}>
+        <OrbitControls enableDamping dampingFactor={0.08} enablePan={false} />
+      </T.PerspectiveCamera>
+
       {#if resolvedSurface === 'scroll'}
         <Scroll body={bodyText} />
       {:else if resolvedSurface === 'tablet'}

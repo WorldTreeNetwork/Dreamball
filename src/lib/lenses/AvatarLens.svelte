@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
 	import { Canvas, T } from '@threlte/core';
+	import { OrbitControls } from '@threlte/extras';
 	import type { DreamBall } from '../generated/types.js';
 
 	interface Props {
@@ -32,16 +33,19 @@
 
 <div class="wrap" style="--bg:{colorHex}">
 	<Canvas>
-		<T.PerspectiveCamera makeDefault position={[2.5, 1.5, 3.5]} fov={55} />
+		<T.PerspectiveCamera makeDefault position={[2.5, 1.5, 3.5]} fov={55}>
+			<OrbitControls enableDamping dampingFactor={0.08} target={[0, 0, 0]} />
+		</T.PerspectiveCamera>
 		<T.DirectionalLight position={[3, 5, 2]} intensity={1.2} />
-		<T.AmbientLight intensity={0.4} />
+		<T.DirectionalLight position={[-4, 2, -3]} intensity={0.5} color="#a0c8ff" />
+		<T.AmbientLight intensity={0.45} />
 		<T.Mesh position={[0, 0, 0]}>
 			<T.IcosahedronGeometry args={[1, 1]} />
 			<T.MeshStandardMaterial color="#e0b7ff" metalness={0.2} roughness={0.35} />
 		</T.Mesh>
 		<T.Mesh position={[0, -1.1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
 			<T.CircleGeometry args={[4, 48]} />
-			<T.MeshStandardMaterial color={colorHex} />
+			<T.MeshStandardMaterial color={colorHex} metalness={0.0} roughness={0.8} />
 		</T.Mesh>
 	</Canvas>
 	<div class="label">{ball.name ?? '(unnamed)'}</div>

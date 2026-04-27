@@ -14,13 +14,21 @@
 	const size = 220;
 	const center = size / 2;
 	const ringRadius = 80;
+	// Labels sit at `ringRadius + labelPad` from center; the viewBox expands by
+	// that same amount plus a text-width allowance so "arousal 0.40"-class
+	// labels on the extreme left/right can't clip against the canvas edge.
+	const labelPad = 20;
+	const labelMargin = 44;
 </script>
 
 <div class="es-wrap">
 	{#if axes.length === 0}
 		<p class="empty">No emotional register on this DreamBall.</p>
 	{:else}
-		<svg viewBox={`0 0 ${size} ${size}`} xmlns="http://www.w3.org/2000/svg">
+		<svg
+			viewBox={`${-labelMargin} ${-labelPad} ${size + labelMargin * 2} ${size + labelPad * 2}`}
+			xmlns="http://www.w3.org/2000/svg"
+		>
 			<circle cx={center} cy={center} r={ringRadius} stroke="#333" fill="none" />
 			<circle cx={center} cy={center} r={ringRadius / 2} stroke="#222" fill="none" />
 			{#each axes as axis, i (axis.name)}
@@ -29,11 +37,22 @@
 				{@const r = ringRadius * normalized}
 				{@const x = center + r * Math.cos(angle)}
 				{@const y = center + r * Math.sin(angle)}
-				{@const labelX = center + (ringRadius + 20) * Math.cos(angle)}
-				{@const labelY = center + (ringRadius + 20) * Math.sin(angle)}
+				{@const labelX = center + (ringRadius + labelPad) * Math.cos(angle)}
+				{@const labelY = center + (ringRadius + labelPad) * Math.sin(angle)}
+				{@const cosA = Math.cos(angle)}
+				{@const sinA = Math.sin(angle)}
+				{@const anchor = cosA > 0.3 ? 'start' : cosA < -0.3 ? 'end' : 'middle'}
+				{@const baseline = sinA > 0.3 ? 'hanging' : sinA < -0.3 ? 'auto' : 'middle'}
 				<line x1={center} y1={center} x2={x} y2={y} stroke="#e0b7ff" stroke-width="2" />
 				<circle cx={x} cy={y} r="4" fill="#e0b7ff" />
-				<text x={labelX} y={labelY} fill="#e8ecf8" font-size="10" text-anchor="middle">
+				<text
+					x={labelX}
+					y={labelY}
+					fill="#e8ecf8"
+					font-size="10"
+					text-anchor={anchor}
+					dominant-baseline={baseline}
+				>
 					{axis.name} {axis.value.toFixed(2)}
 				</text>
 			{/each}
@@ -46,6 +65,7 @@
 		background: #0b1020;
 		border-radius: 1rem;
 		padding: 0.5rem;
+		max-width: 360px;
 	}
 	.empty {
 		padding: 2rem;

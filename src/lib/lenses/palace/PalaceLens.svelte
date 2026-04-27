@@ -98,11 +98,13 @@
   /** Default shell radius (meters) for grid-fallback placement. */
   const SHELL_RADIUS = 5;
 
-  /** Onion-shell sphere radius around each room node (meters). */
-  const ONION_RADIUS = 0.35;
+  /** Onion-shell sphere radius around each room node (meters).
+   *  Sized so the AC2 omnispherical wrapper is visually distinct from the
+   *  inner node when seen from the orbit camera at ~9–12m. */
+  const ONION_RADIUS = 0.95;
 
   /** Room node sphere radius (meters). */
-  const NODE_RADIUS = 0.18;
+  const NODE_RADIUS = 0.45;
 
   // ─── Decoded palace data ──────────────────────────────────────────────────
 
@@ -251,24 +253,35 @@
   // ─── Materials ────────────────────────────────────────────────────────────
 
   const nodeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x7ec8e3,
-    emissive: 0x1a3a4a,
-    roughness: 0.4,
-    metalness: 0.2
+    color: 0x9fdcef,
+    emissive: 0x2a5a78,
+    roughness: 0.35,
+    metalness: 0.25
   });
 
   const onionMaterial = new THREE.MeshStandardMaterial({
     color: 0xaad8f0,
-    emissive: 0x0a2030,
+    emissive: 0x0e2a40,
     roughness: 0.7,
     metalness: 0.0,
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.22,
     side: THREE.BackSide
   });
 
-  const nodeGeometry = new THREE.SphereGeometry(NODE_RADIUS, 16, 12);
-  const onionGeometry = new THREE.SphereGeometry(ONION_RADIUS, 16, 12);
+  // Faint outer "omnisphere" — visualizes the palace's polar shell so the
+  // rooms read as inhabitants of a bounded space rather than dots in void.
+  // Wireframe + low opacity keeps it scenic, not occluding.
+  const shellMaterial = new THREE.MeshBasicMaterial({
+    color: 0x2a4a68,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.18
+  });
+
+  const nodeGeometry = new THREE.SphereGeometry(NODE_RADIUS, 24, 18);
+  const onionGeometry = new THREE.SphereGeometry(ONION_RADIUS, 20, 16);
+  const shellGeometry = new THREE.SphereGeometry(SHELL_RADIUS, 24, 16);
 
   // ─── Mount logic ──────────────────────────────────────────────────────────
 
@@ -297,8 +310,10 @@
     return () => {
       nodeMaterial.dispose();
       onionMaterial.dispose();
+      shellMaterial.dispose();
       nodeGeometry.dispose();
       onionGeometry.dispose();
+      shellGeometry.dispose();
     };
   });
 
@@ -348,9 +363,12 @@
       <T.DirectionalLight position={[10, 12, 8]} intensity={1.2} />
 
       <!-- Orbit camera (sprint-001 default; first-person deferred to Growth). -->
-      <T.PerspectiveCamera makeDefault fov={60} position={[0, 2, 12]}>
+      <T.PerspectiveCamera makeDefault fov={60} position={[0, 2.5, 9]}>
         <OrbitControls enableDamping dampingFactor={0.08} />
       </T.PerspectiveCamera>
+
+      <!-- Outer omnispherical shell (scenic boundary; not interactive). -->
+      <T.Mesh geometry={shellGeometry} material={shellMaterial} />
 
       <!-- Room nodes + onion-shell wrappers. -->
       {#each roomNodes as room (room.fp)}

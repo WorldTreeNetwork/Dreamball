@@ -84,14 +84,22 @@
   /** Spacing between items in the planar grid fallback (meters). */
   const GRID_SPACING = 1.5;
 
-  /** Height of inscription meshes in world coords (meters). */
-  const INSCRIPTION_HEIGHT = 0.7;
+  /** Height of inscription meshes in world coords (meters).
+   *  Sized so a placement at y=0.5 stands the inscription's base on the floor
+   *  (centre at 0.5, half-height 0.5 → base at 0). */
+  const INSCRIPTION_HEIGHT = 1.0;
 
   /** Width of inscription placeholder mesh (meters). */
-  const INSCRIPTION_WIDTH = 0.5;
+  const INSCRIPTION_WIDTH = 0.9;
 
   /** Depth of inscription placeholder mesh (meters). */
   const INSCRIPTION_DEPTH = 0.08;
+
+  /** Interior dimensions of the visible room shell (meters). */
+  const ROOM_HALF_X = 5;
+  const ROOM_HALF_Z = 4.5;
+  const ROOM_HEIGHT = 4;
+  const WALL_THICKNESS = 0.1;
 
   // ─── State ────────────────────────────────────────────────────────────────
 
@@ -232,13 +240,33 @@
     metalness: 0.0
   });
 
+  // Walls: a touch lighter than the floor so the room volume is legible without
+  // pulling focus from the inscriptions. Front wall is omitted so the orbit
+  // camera can look in from +Z.
+  const wallMaterial = new THREE.MeshStandardMaterial({
+    color: 0x363a4d,
+    roughness: 0.95,
+    metalness: 0.0
+  });
+
   const inscriptionGeometry = new THREE.BoxGeometry(
     INSCRIPTION_WIDTH,
     INSCRIPTION_HEIGHT,
     INSCRIPTION_DEPTH
   );
 
-  const floorGeometry = new THREE.PlaneGeometry(20, 20);
+  const floorGeometry = new THREE.PlaneGeometry(ROOM_HALF_X * 2, ROOM_HALF_Z * 2);
+
+  const backWallGeometry = new THREE.BoxGeometry(
+    ROOM_HALF_X * 2,
+    ROOM_HEIGHT,
+    WALL_THICKNESS
+  );
+  const sideWallGeometry = new THREE.BoxGeometry(
+    WALL_THICKNESS,
+    ROOM_HEIGHT,
+    ROOM_HALF_Z * 2
+  );
 
   // ─── Mount logic ──────────────────────────────────────────────────────────
 
@@ -258,8 +286,11 @@
     return () => {
       inscriptionMaterial.dispose();
       floorMaterial.dispose();
+      wallMaterial.dispose();
       inscriptionGeometry.dispose();
       floorGeometry.dispose();
+      backWallGeometry.dispose();
+      sideWallGeometry.dispose();
     };
   });
 
@@ -293,8 +324,8 @@
       <T.DirectionalLight position={[-4, 6, -4]} intensity={0.4} />
 
       <!-- Orbit camera for interior (sprint-001 default). -->
-      <T.PerspectiveCamera makeDefault fov={60} position={[0, 3, 8]}>
-        <OrbitControls enableDamping dampingFactor={0.08} />
+      <T.PerspectiveCamera makeDefault fov={60} position={[0, 2.2, 6.5]}>
+        <OrbitControls enableDamping dampingFactor={0.08} target={[0, 0.8, 0]} />
       </T.PerspectiveCamera>
 
       <!-- Room floor plane for spatial reference. -->
@@ -303,6 +334,23 @@
         material={floorMaterial}
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0, 0]}
+      />
+
+      <!-- Three walls (back + sides; front omitted so the orbit camera can look in). -->
+      <T.Mesh
+        geometry={backWallGeometry}
+        material={wallMaterial}
+        position={[0, ROOM_HEIGHT / 2, -ROOM_HALF_Z]}
+      />
+      <T.Mesh
+        geometry={sideWallGeometry}
+        material={wallMaterial}
+        position={[-ROOM_HALF_X, ROOM_HEIGHT / 2, 0]}
+      />
+      <T.Mesh
+        geometry={sideWallGeometry}
+        material={wallMaterial}
+        position={[ROOM_HALF_X, ROOM_HEIGHT / 2, 0]}
       />
 
       <!-- Inscription nodes. -->
