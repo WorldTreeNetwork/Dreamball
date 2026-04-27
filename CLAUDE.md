@@ -137,6 +137,20 @@ without `zig build smoke` is not verification.
 - Tests live inline in `src/**.zig` (`test "…"` blocks). Integration tests
   live in `scripts/cli-smoke.sh`.
 
+## Debug artefacts — keep them out of the repo
+
+Playwright snapshots, ad-hoc Storybook screenshots, REPL dumps, and any
+other throwaway debugging output go under `tmp/` (gitignored). **Never**
+write debug screenshots to the repo root. If you reach for
+`browser_take_screenshot` or `page.screenshot(...)`, target a path under
+`tmp/screenshots/<topic>-<state>.png`. Same for any other scratch byte
+output — `tmp/` is the only blessed scratch location.
+
+The repo root is for source, config, and intentional fixtures only. If a
+screenshot is genuinely a documentation artefact, place it under
+`docs/images/` and reference it from a markdown file; otherwise it
+belongs in `tmp/`.
+
 ## Deferred / known gaps
 
 Tracked in `README.md` under "Roadmap". When you resolve one, remove the

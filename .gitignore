@@ -33,6 +33,9 @@ static/kuzu_wasm_worker.js
 src/memory-palace/*.d.ts
 src/lib/bridge/*.d.ts
 
+# Debug / scratch artefacts (Playwright snapshots, ad-hoc screenshots, REPL dumps)
+tmp/
+
 # OS
 .DS_Store
 Thumbs.db
