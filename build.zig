@@ -132,6 +132,38 @@ pub fn build(b: *std.Build) void {
     const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts");
     schemagen_step.dependOn(&schemagen_run.step);
 
+    // schemagen-spike — Story 1.1 codegen-inversion spike.
+    // Reads tools/schema-gen/spike/schemas/*.json and emits byte-equivalent
+    // fixtures under tools/schema-gen/spike/out/. The byte-equivalence diff
+    // against tools/schema-gen/legacy-spike-fixture/ is AC2 of the story.
+    // See docs/decisions/2026-04-28-codegen-spike-findings.md for AC3 gaps.
+    const schemagen_spike_mod = b.createModule(.{
+        .root_source_file = b.path("tools/schema-gen/spike/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const schemagen_spike_exe = b.addExecutable(.{
+        .name = "schema-gen-spike",
+        .root_module = schemagen_spike_mod,
+    });
+    const schemagen_spike_run = b.addRunArtifact(schemagen_spike_exe);
+    const schemagen_spike_step = b.step(
+        "schemagen-spike",
+        "Run the Story 1.1 JSON-Schema-consumer spike (writes tools/schema-gen/spike/out/)",
+    );
+    schemagen_spike_step.dependOn(&schemagen_spike_run.step);
+
+    // Story 1.1 AC1 round-trip tests over the spike consumer.
+    const schemagen_spike_tests = b.addTest(.{
+        .root_module = schemagen_spike_mod,
+    });
+    const run_schemagen_spike_tests = b.addRunArtifact(schemagen_spike_tests);
+    const schemagen_spike_test_step = b.step(
+        "schemagen-spike-test",
+        "Run the Story 1.1 spike's AC1 round-trip tests",
+    );
+    schemagen_spike_test_step.dependOn(&run_schemagen_spike_tests.step);
+
     // export-envelope-fixtures — write fixtures/envelope_golden/<type>.cbor for
     // Vitest round-trip parity tests (Story 1.5 / AC2).
     const envelope_fixture_mod = b.createModule(.{
@@ -280,4 +312,30 @@ pub fn build(b: *std.Build) void {
     });
     const wasm_step = b.step("wasm", "Build jelly.wasm for the Svelte lib");
     wasm_step.dependOn(&wasm_install.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.1 spike: minimal Zig wasm host for Cluster E.
+    // See docs/decisions/2026-04-28-wasm-runtime-selection.md.
+    //
+    // The spike runs natively on the host machine (darwin/linux); it
+    // builds the hand-authored hello.wasm + hello-bad.wasm bytes
+    // in-process and exercises the in-tree Zig wasm runtime. No
+    // wasm32 target is involved on the host side.
+    // ----------------------------------------------------------------
+    const wasm_spike_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/spike/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const wasm_spike_exe = b.addExecutable(.{
+        .name = "wasm-spike-host",
+        .root_module = wasm_spike_mod,
+    });
+    b.installArtifact(wasm_spike_exe);
+    const wasm_spike_run = b.addRunArtifact(wasm_spike_exe);
+    const wasm_spike_step = b.step(
+        "wasm-spike-host",
+        "Run Story 5.1 wasm host spike: load hello.wasm, broker WASI, reject hello-bad.wasm",
+    );
+    wasm_spike_step.dependOn(&wasm_spike_run.step);
 }

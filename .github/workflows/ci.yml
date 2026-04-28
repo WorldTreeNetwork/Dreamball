@@ -33,6 +33,19 @@ jobs:
           test "$gz" -le 65536
       - name: zig build smoke
         run: zig build smoke
+      - name: wasm-spike (Story 5.1 — AC3 linux parity, AC6 perf publish)
+        # Runs the same `zig build wasm-spike-host` invocation as the
+        # darwin developer baseline. Per Story 5.1 AC3, the same Zig
+        # source must produce identical guest output on linux without
+        # per-platform divergence. AC6 publishes the measured cold
+        # instantiation time; if it exceeds NFR4's 100 ms budget the
+        # spike exits non-zero (no silent budget relaxation).
+        run: |
+          out=$(zig build wasm-spike-host 2>&1)
+          echo "$out"
+          echo "$out" | grep -q 'spike: hello.wasm wrote: HELLO_FROM_DREAMBALL_SPIKE'
+          echo "$out" | grep -q 'spike: hello-bad.wasm rejected import env.malicious_function'
+          echo "$out" | grep -q 'spike: all ACs (2,4,5,6) green'
       - name: Upload jelly.wasm artifact
         uses: actions/upload-artifact@v4
         with:

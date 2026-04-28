@@ -560,6 +560,173 @@ export fn verifyMlDsa(
     return 1;
 }
 
+/// Sign an action payload with an Ed25519 keypair.
+///
+/// Inputs:
+///   keypair_bytes_ptr / keypair_bytes_len — 64-byte Ed25519 secret key
+///     (the same secret key bytes produced by mintDreamBall / lastSecretPtr).
+///   payload_bytes_ptr / payload_bytes_len — arbitrary bytes to sign (the
+///     serialised action envelope payload).
+///
+/// Returns a packed u64 = (sig_ptr << 32) | sig_len pointing at the
+/// 64-byte Ed25519 signature written into the bump allocator.  Returns 0
+/// on any error (check resultErr for a diagnostic).
+///
+/// Per D-023 / SEC6: Ed25519-only single signatures for sprint-002.
+/// PQ / ML-DSA-87 dual-sig is explicitly deferred to the security pass.
+/// The existing `env.getRandomBytes` import is NOT used — Ed25519 sign
+/// is deterministic given the secret key; no new host imports are added.
+///
+/// This is the single seam through which action signatures are produced;
+/// no TS/browser code path emits signatures without going through this
+/// export.
+export fn signActionEnvelope(
+    keypair_bytes_ptr: u32,
+    keypair_bytes_len: u32,
+    payload_bytes_ptr: u32,
+    payload_bytes_len: u32,
+) u64 {
+    if (keypair_bytes_len != 64) {
+        setErr("signActionEnvelope: keypair must be 64 bytes, got {d}", .{keypair_bytes_len});
+        return 0;
+    }
+    const alloc_ = fba_state.allocator();
+    const keypair_bytes: []const u8 = @as([*]const u8, @ptrFromInt(keypair_bytes_ptr))[0..keypair_bytes_len];
+    const payload_bytes: []const u8 = @as([*]const u8, @ptrFromInt(payload_bytes_ptr))[0..payload_bytes_len];
+
+    var sk_bytes: [64]u8 = undefined;
+    @memcpy(&sk_bytes, keypair_bytes);
+    const sk = Ed25519.SecretKey.fromBytes(sk_bytes) catch {
+        setErr("signActionEnvelope: invalid Ed25519 secret key", .{});
+        return 0;
+    };
+    const kp = Ed25519.KeyPair.fromSecretKey(sk) catch {
+        setErr("signActionEnvelope: fromSecretKey failed", .{});
+        return 0;
+    };
+    const sig = kp.sign(payload_bytes, null) catch {
+        setErr("signActionEnvelope: Ed25519 sign failed", .{});
+        return 0;
+    };
+    const sig_bytes = sig.toBytes();
+
+    const out = alloc_.alloc(u8, sig_bytes.len) catch {
+        setErr("signActionEnvelope: OOM allocating signature output", .{});
+        return 0;
+    };
+    @memcpy(out, &sig_bytes);
+    return packResult(out);
+}
+
+// ============================================================================
+// Inline KAT — verifies signActionEnvelope round-trips through verifyEd25519.
+// Uses a deterministic all-zeros seed so the expected signature is a fixed
+// known-answer vector (matches the golden vector in sign-action-envelope.test.ts).
+// ============================================================================
+
+test "signActionEnvelope KAT — all-zeros seed + empty payload" {
+    // Reset allocator state for a clean test.
+    fba_state.reset();
+
+    // Deterministic keypair from all-zeros seed.
+    const seed: [Ed25519.KeyPair.seed_length]u8 = .{0} ** Ed25519.KeyPair.seed_length;
+    const kp = try Ed25519.KeyPair.generateDeterministic(seed);
+    const sk_bytes = kp.secret_key.toBytes();
+    const pk_bytes = kp.public_key.toBytes();
+
+    const payload = "dreamball-action-envelope-kat";
+
+    // Write secret key into linear memory via bump allocator.
+    const sk_slot = try fba_state.allocator().alloc(u8, 64);
+    @memcpy(sk_slot, &sk_bytes);
+
+    // Write payload.
+    const pl_slot = try fba_state.allocator().alloc(u8, payload.len);
+    @memcpy(pl_slot, payload);
+
+    const result = signActionEnvelope(
+        @intCast(@intFromPtr(sk_slot.ptr)),
+        @intCast(sk_slot.len),
+        @intCast(@intFromPtr(pl_slot.ptr)),
+        @intCast(pl_slot.len),
+    );
+    try std.testing.expect(result != 0);
+
+    const sig_ptr = @as(usize, @intCast(result >> 32));
+    const sig_len = @as(usize, @intCast(result & 0xFFFFFFFF));
+    try std.testing.expectEqual(@as(usize, 64), sig_len);
+
+    const sig_out: []const u8 = @as([*]const u8, @ptrFromInt(sig_ptr))[0..sig_len];
+    var sig_arr: [Ed25519.Signature.encoded_length]u8 = undefined;
+    @memcpy(&sig_arr, sig_out);
+    const sig_obj = Ed25519.Signature.fromBytes(sig_arr);
+
+    // Verify the signature using the corresponding public key.
+    const pk_obj = try Ed25519.PublicKey.fromBytes(pk_bytes);
+    try sig_obj.verify(payload, pk_obj);
+}
+
+test "signActionEnvelope tamper test — bit-flipped payload produces different sig and fails verify" {
+    fba_state.reset();
+
+    const seed: [Ed25519.KeyPair.seed_length]u8 = .{0xAB} ** Ed25519.KeyPair.seed_length;
+    const kp = try Ed25519.KeyPair.generateDeterministic(seed);
+    const sk_bytes = kp.secret_key.toBytes();
+    const pk_bytes = kp.public_key.toBytes();
+
+    const payload = "action-payload-for-tamper-test";
+    var payload_mut: [payload.len]u8 = undefined;
+    @memcpy(&payload_mut, payload);
+
+    // Sign original payload.
+    const sk_slot1 = try fba_state.allocator().alloc(u8, 64);
+    @memcpy(sk_slot1, &sk_bytes);
+    const pl_slot1 = try fba_state.allocator().alloc(u8, payload.len);
+    @memcpy(pl_slot1, payload);
+
+    const result1 = signActionEnvelope(
+        @intCast(@intFromPtr(sk_slot1.ptr)),
+        @intCast(sk_slot1.len),
+        @intCast(@intFromPtr(pl_slot1.ptr)),
+        @intCast(pl_slot1.len),
+    );
+    try std.testing.expect(result1 != 0);
+    const sig1_ptr = @as(usize, @intCast(result1 >> 32));
+    const sig1_len = @as(usize, @intCast(result1 & 0xFFFFFFFF));
+    const sig1_out: [64]u8 = @as([*]const u8, @ptrFromInt(sig1_ptr))[0..sig1_len].*;
+
+    // Flip bit 0 of byte 0 in payload.
+    payload_mut[0] ^= 0x01;
+
+    // Sign flipped payload.
+    const sk_slot2 = try fba_state.allocator().alloc(u8, 64);
+    @memcpy(sk_slot2, &sk_bytes);
+    const pl_slot2 = try fba_state.allocator().alloc(u8, payload_mut.len);
+    @memcpy(pl_slot2, &payload_mut);
+
+    const result2 = signActionEnvelope(
+        @intCast(@intFromPtr(sk_slot2.ptr)),
+        @intCast(sk_slot2.len),
+        @intCast(@intFromPtr(pl_slot2.ptr)),
+        @intCast(pl_slot2.len),
+    );
+    try std.testing.expect(result2 != 0);
+    const sig2_ptr = @as(usize, @intCast(result2 >> 32));
+    const sig2_len = @as(usize, @intCast(result2 & 0xFFFFFFFF));
+    const sig2_out: [64]u8 = @as([*]const u8, @ptrFromInt(sig2_ptr))[0..sig2_len].*;
+
+    // The two signatures must differ.
+    try std.testing.expect(!std.mem.eql(u8, &sig1_out, &sig2_out));
+
+    // Verifying sig1 against the flipped payload must fail.
+    var sig1_arr: [Ed25519.Signature.encoded_length]u8 = undefined;
+    @memcpy(&sig1_arr, &sig1_out);
+    const sig1_obj = Ed25519.Signature.fromBytes(sig1_arr);
+    const pk_obj = try Ed25519.PublicKey.fromBytes(pk_bytes);
+    const verify_result = sig1_obj.verify(&payload_mut, pk_obj);
+    try std.testing.expectError(error.SignatureVerificationFailed, verify_result);
+}
+
 /// Blake3 hash — cross-runtime parity export (HIGH-2 fix, Sprint-1 code review).
 ///
 /// Computes Blake3-256 of `input_ptr[0..input_len]` and writes the 32-byte

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dreamball:root.sealed-body@2.0.0",
+  "title": "SealedBody",
+  "description": "The sealed-body wire shape (src/protocol.zig Relic struct). Spike target #2: required content hash + required guild fingerprint + optional reveal hint + optional epoch-time gate. Captures the 'sealed body' framing — bytes32 + fp + open string + tag-1 epoch — that the Relic variant inlines on jelly.dreamball.relic envelopes.",
+  "type": "object",
+  "x-zig-type": "Relic",
+  "x-wire-type": "jelly.dreamball.relic",
+  "x-format-version": 2,
+  "x-cbor-attribute-encoding": "v2-tag-200-envelope-with-tag-201-leaf-and-attribute-pairs",
+  "required": ["sealed-payload-hash", "unlock-guild"],
+  "additionalProperties": false,
+  "properties": {
+    "sealed-payload-hash": {
+      "$comment": "fp:bytes32 — blake3 of the sealed inner envelope bytes.",
+      "type": "string",
+      "x-cbor": "byte-string-32",
+      "x-zig": "[32]u8",
+      "x-cbor-section": "attribute",
+      "x-ts-type": "Bytes32"
+    },
+    "unlock-guild": {
+      "$comment": "fp:bytes32 — Guild fingerprint authorised to unlock this relic.",
+      "type": "string",
+      "x-cbor": "byte-string-32",
+      "x-zig": "Fingerprint",
+      "x-cbor-section": "attribute",
+      "x-ts-type": "Fingerprint"
+    },
+    "reveal-hint": {
+      "type": ["string", "null"],
+      "x-cbor": "text-string",
+      "x-zig": "?[]const u8",
+      "x-cbor-section": "attribute",
+      "x-optional": true
+    },
+    "sealed-until": {
+      "$comment": "Optional time-gate; RFC 3339 at JSON, tag-1 epoch-time at CBOR.",
+      "type": ["string", "null"],
+      "x-cbor": "tag-1-epoch-time",
+      "x-zig": "?i64",
+      "x-cbor-section": "attribute",
+      "x-optional": true,
+      "x-ts-type": "Rfc3339"
+    }
+  }
+}
