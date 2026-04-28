@@ -29,7 +29,7 @@ import {
 	decodeInscription,
 	decodeMythos,
 	decodeArchiform
-} from './cbor.js';
+} from './generated/cbor.js';
 
 import {
 	LayoutSchema,
@@ -41,10 +41,10 @@ import {
 	InscriptionSchema,
 	MythosSchema,
 	ArchiformSchema
-} from './schemas.js';
+} from './generated/schemas.js';
 
-// Resolve the fixtures relative to the repo root (5 levels up from src/lib/generated/).
-const FIXTURES = resolve(__dirname, '..', '..', '..', 'fixtures', 'envelope_golden');
+// Resolve the fixtures relative to the repo root (3 levels up from src/lib/).
+const FIXTURES = resolve(__dirname, '..', '..', 'fixtures', 'envelope_golden');
 
 function loadFixture(name: string): Uint8Array {
 	return new Uint8Array(readFileSync(resolve(FIXTURES, name)));

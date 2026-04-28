@@ -1,0 +1,526 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dreamball:memory-palace@0.1.0",
+  "title": "DreamBall Memory Palace Archiform Schema",
+  "description": "Per-archiform JSON Schema for the Memory Palace archiform (D-018, D-017). Canonical field shapes for all Memory Palace node and relationship tables, derived faithfully from src/memory-palace/schema.cypher and the Memory-Palace-specific types in src/protocol_v2.zig. TRANSLATION ONLY — no semantic change. The CBOR encoding algorithm stays canonical in Zig (src/*.zig) with golden test vectors. Generated outputs (Zig, TS, Valibot, Cypher DDL) are Story 2.2 deliverables. x-extension keys (x-zig, x-zig-type, x-cbor, x-cbor-section, x-wire-type, x-format-version, x-cypher-table, x-cypher-kind, x-cypher-rel-pairs, x-merge-key, x-merge-key-derivation) carry generator hints; validators ignore them, generators consume them. D-028: Triple is a schema citizen with fp MERGE key = blake3(agent_fp || '\\0' || subject || '\\0' || predicate || '\\0' || object); Agent.knowledge_graph STRING is NOT present (removed per D-028). IC1: archiform_fp is declared as an optional surface so codegen is ready for Story 2.3 (genesis envelope extension ships in Story 2.3, not here).",
+  "type": "object",
+  "$defs": {
+
+    "PalaceNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE Palace. Primary graph node for a Memory Palace instance.",
+      "type": "object",
+      "x-zig-type": "PalaceNode",
+      "x-cypher-table": "Palace",
+      "x-cypher-kind": "node",
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY — blake3 fingerprint of the palace genesis envelope.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "created_at": {
+          "type": ["integer", "null"],
+          "x-cbor": "smallest-uint",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "mythos_head_fp": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "guild_fps": {
+          "$comment": "STRING[] DEFAULT [] — array of guild fingerprints.",
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-cbor": "array-of-text-string",
+          "x-zig": "[]const []const u8"
+        },
+        "archiform_fp": {
+          "$comment": "IC1 — optional archiform_fp surface for Story 2.3 genesis envelope extension. Declared here so codegen is ready; the envelope field itself ships in Story 2.3.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+
+    "RoomNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE Room.",
+      "type": "object",
+      "x-zig-type": "RoomNode",
+      "x-cypher-table": "Room",
+      "x-cypher-kind": "node",
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "created_at": {
+          "type": ["integer", "null"],
+          "x-cbor": "smallest-uint",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+
+    "InscriptionNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE Inscription (RC1, RC3). Carries policy + revision columns; source_blake3 is the asset hash; orphaned written by file-watcher (S4.4); embedding is FLOAT[256] for kNN recall.",
+      "type": "object",
+      "x-zig-type": "InscriptionNode",
+      "x-cypher-table": "Inscription",
+      "x-cypher-kind": "node",
+      "x-wire-type": "jelly.inscription",
+      "x-format-version": 2,
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "source_blake3": {
+          "$comment": "RC3: asset hash (not body_hash).",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "orphaned": {
+          "$comment": "RC1: BOOL DEFAULT false — set by file-watcher (S4.4).",
+          "type": "boolean",
+          "x-cbor": "bool",
+          "x-zig": "bool"
+        },
+        "embedding": {
+          "$comment": "FLOAT[256] — kNN embedding vector. Null until embedding run.",
+          "type": ["array", "null"],
+          "items": { "type": "number", "x-cbor": "smallest-float" },
+          "minItems": 256,
+          "maxItems": 256,
+          "x-cbor": "array-of-smallest-float",
+          "x-zig": "?[256]f32",
+          "x-optional": true
+        },
+        "created_at": {
+          "type": ["integer", "null"],
+          "x-cbor": "smallest-uint",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "policy": {
+          "$comment": "DEFAULT 'public'. Access policy gate for getInscription.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "revision": {
+          "$comment": "INT64 DEFAULT 0 — incremented by file-watcher on reembed.",
+          "type": "integer",
+          "x-cbor": "smallest-uint",
+          "x-zig": "i64"
+        },
+        "surface": {
+          "$comment": "Open-enum surface from jelly.inscription wire type; e.g. scroll, tablet, book-spread.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "placement": {
+          "$comment": "auto = renderer chooses; curator = parent room's jelly.layout.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+
+    "AgentNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE Agent (S4.1). Carries 4 slot columns as JSON strings. knowledge_graph STRING is NOT present — removed per D-028 (Triple-native KG storage). knowledge graph is now modelled as Triple nodes via HAS_KNOWLEDGE rel.",
+      "type": "object",
+      "x-zig-type": "AgentNode",
+      "x-cypher-table": "Agent",
+      "x-cypher-kind": "node",
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "created_at": {
+          "type": ["integer", "null"],
+          "x-cbor": "smallest-uint",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "personality_master_prompt": {
+          "$comment": "Seed asset bytes (oracle-prompt.md). DEFAULT ''.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "memory": {
+          "$comment": "JSON array of memory entries (empty at mint). DEFAULT '[]'.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "emotional_register": {
+          "$comment": "JSON object {curiosity,warmth,patience} at 0.5 each. DEFAULT '{\"curiosity\":0.5,\"warmth\":0.5,\"patience\":0.5}'.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "interaction_set": {
+          "$comment": "JSON array of interaction records (empty at mint). DEFAULT '[]'.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        }
+      }
+    },
+
+    "TripleNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE Triple + D-028. Native KG triple row — one per (agent, subject, predicate, object) tuple. Replaces the prior Agent.knowledge_graph STRING DEFAULT '[]' JSON blob. fp MERGE key derivation: blake3(agent_fp || '\\0' || subject || '\\0' || predicate || '\\0' || object). Idempotent insert via fp existence check. CBOR wire format on ActionLog envelopes; Triple rows are derived state replayable from ActionLog per D-021.",
+      "type": "object",
+      "x-zig-type": "TripleNode",
+      "x-cypher-table": "Triple",
+      "x-cypher-kind": "node",
+      "x-merge-key": "fp",
+      "x-merge-key-derivation": "blake3(agent_fp || '\\0' || subject || '\\0' || predicate || '\\0' || object)",
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY — deterministic MERGE key. Derivation: blake3(agent_fp || '\\0' || subject || '\\0' || predicate || '\\0' || object). Per D-028.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "agent_fp": {
+          "$comment": "Foreign key to Agent.fp — the oracle agent that owns this triple.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "subject": {
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "predicate": {
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "object": {
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "created_at": {
+          "type": ["integer", "null"],
+          "x-cbor": "smallest-uint",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+
+    "MythosNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE Mythos. Stores the canonicality tag and discovered_in_action_fp as a STRING property (not a relationship) per AC2/D-016.",
+      "type": "object",
+      "x-zig-type": "MythosNode",
+      "x-cypher-table": "Mythos",
+      "x-cypher-kind": "node",
+      "x-wire-type": "jelly.mythos",
+      "x-format-version": 2,
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "body": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "canonicality": {
+          "$comment": "Open-enum; e.g. 'poetic', 'canonical'.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "discovered_in_action_fp": {
+          "$comment": "DISCOVERED_IN is NOT a relationship — stored as Mythos.discovered_in_action_fp STRING per AC2/D-016.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "created_at": {
+          "type": ["integer", "null"],
+          "x-cbor": "smallest-uint",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+
+    "AqueductNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE Aqueduct + src/protocol_v2.zig Aqueduct (PROTOCOL.md §13.4). All 6 AC1-required properties: resistance, capacitance, strength, conductance, phase, last_traversal_ts. Note: the wire-protocol field is last-traversed (Aqueduct struct in protocol_v2.zig); the DB column is last_traversal_ts (schema.cypher). This is a faithful translation of both sources — the cypher column name takes precedence for the DB schema citizen shape.",
+      "type": "object",
+      "x-zig-type": "AqueductNode",
+      "x-cypher-table": "Aqueduct",
+      "x-cypher-kind": "node",
+      "x-wire-type": "jelly.aqueduct",
+      "x-format-version": 2,
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "from_fp": {
+          "$comment": "Origin Room fingerprint.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "to_fp": {
+          "$comment": "Destination Room fingerprint.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "resistance": {
+          "$comment": "DOUBLE DEFAULT 0.3 — flow resistance.",
+          "type": "number",
+          "x-cbor": "smallest-float",
+          "x-zig": "f64"
+        },
+        "capacitance": {
+          "$comment": "DOUBLE DEFAULT 0.5 — flow capacitance.",
+          "type": "number",
+          "x-cbor": "smallest-float",
+          "x-zig": "f64"
+        },
+        "strength": {
+          "$comment": "DOUBLE DEFAULT 0.0 — connection strength.",
+          "type": "number",
+          "x-cbor": "smallest-float",
+          "x-zig": "f64"
+        },
+        "conductance": {
+          "$comment": "DOUBLE DEFAULT 0.0 — snapshot accumulator; not load-bearing (TC16).",
+          "type": "number",
+          "x-cbor": "smallest-float",
+          "x-zig": "f64"
+        },
+        "phase": {
+          "$comment": "STRING DEFAULT 'standing'. Open-enum phase; known values: in, out, standing, resonant.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "revision": {
+          "$comment": "INT64 DEFAULT 0.",
+          "type": "integer",
+          "x-cbor": "smallest-uint",
+          "x-zig": "i64"
+        },
+        "last_traversal_ts": {
+          "$comment": "INT64 DEFAULT 0 — Unix timestamp ms of last traversal. DB column name; wire-protocol field is last-traversed.",
+          "type": "integer",
+          "x-cbor": "smallest-uint",
+          "x-zig": "i64"
+        }
+      }
+    },
+
+    "ActionLogNode": {
+      "$comment": "Per schema.cypher CREATE NODE TABLE ActionLog. The logical commit record per D-021 (LadybugDB transactional model). ActionLog is the truth; rows derived from it can be regenerated by replaying envelopes from CAS. RC2: action_kind STRING accepts all 9 known action kinds.",
+      "type": "object",
+      "x-zig-type": "ActionLogNode",
+      "x-cypher-table": "ActionLog",
+      "x-cypher-kind": "node",
+      "required": ["fp"],
+      "additionalProperties": false,
+      "properties": {
+        "fp": {
+          "$comment": "PRIMARY KEY — blake3 of the CBOR action envelope.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "palace_fp": {
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "action_kind": {
+          "$comment": "RC2: open-string accepting all 9 action kinds. Examples: palace-minted, room-added, avatar-inscribed, aqueduct-created, move, true-naming, inscription-updated, inscription-orphaned, inscription-pending-embedding.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "actor_fp": {
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "target_fp": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "parent_hashes": {
+          "$comment": "STRING[] — array of parent action blake3 hashes.",
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-cbor": "array-of-text-string",
+          "x-zig": "[]const []const u8"
+        },
+        "timestamp": {
+          "type": ["integer", "null"],
+          "x-cbor": "smallest-uint",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "cbor_bytes_blake3": {
+          "$comment": "blake3 hex of the raw CBOR envelope bytes — CAS content address.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+
+    "ContainsRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE CONTAINS. Multi-pair containment edges: Palace→Room, Room→Inscription, Palace→Inscription, Palace→Agent. Single rel table covering all containment in the Memory Palace.",
+      "type": "object",
+      "x-cypher-table": "CONTAINS",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Palace", "to": "Room"},
+        {"from": "Room", "to": "Inscription"},
+        {"from": "Palace", "to": "Inscription"},
+        {"from": "Palace", "to": "Agent"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "MythosHeadRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE MYTHOS_HEAD. Unique 1-edge pointer from Palace to its current head Mythos.",
+      "type": "object",
+      "x-cypher-table": "MYTHOS_HEAD",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Palace", "to": "Mythos"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "PredecessorRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE PREDECESSOR. Mythos chain — each Mythos points to its predecessor.",
+      "type": "object",
+      "x-cypher-table": "PREDECESSOR",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Mythos", "to": "Mythos"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "LivesInRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE LIVES_IN. Inscription lives in a Room (complement to CONTAINS Room→Inscription).",
+      "type": "object",
+      "x-cypher-table": "LIVES_IN",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Inscription", "to": "Room"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "AqueductFromRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE AQUEDUCT_FROM. Aqueduct originates from a Room.",
+      "type": "object",
+      "x-cypher-table": "AQUEDUCT_FROM",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Aqueduct", "to": "Room"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "AqueductToRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE AQUEDUCT_TO. Aqueduct terminates at a Room.",
+      "type": "object",
+      "x-cypher-table": "AQUEDUCT_TO",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Aqueduct", "to": "Room"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "KnowsRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE KNOWS. Reserved for oracle/quorum graph — Agent→Agent knowledge edges. Defined upfront even if unused in Epic 2.",
+      "type": "object",
+      "x-cypher-table": "KNOWS",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Agent", "to": "Agent"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "HasKnowledgeRel": {
+      "$comment": "Per schema.cypher CREATE REL TABLE HAS_KNOWLEDGE + D-028. Agent owns a set of Triple nodes in its knowledge graph. Replaces the prior Agent.knowledge_graph JSON STRING column. Per D-028: HAS_KNOWLEDGE rel from Agent to Triple is declared as a schema citizen.",
+      "type": "object",
+      "x-cypher-table": "HAS_KNOWLEDGE",
+      "x-cypher-kind": "rel",
+      "x-cypher-rel-pairs": [
+        {"from": "Agent", "to": "Triple"}
+      ],
+      "additionalProperties": false,
+      "properties": {}
+    }
+  }
+}

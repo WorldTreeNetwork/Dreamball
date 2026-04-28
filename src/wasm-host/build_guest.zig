@@ -392,6 +392,194 @@ pub fn buildNowMsGuest(allocator: std.mem.Allocator) !TestGuestSpec {
     };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Story 5.3 failure-path test guests
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Build a wasm guest that imports `env.malicious_function` — an import
+/// outside the `dreamball.*` allowlist. Used by the import-violation
+/// fixture test (AC2). The host's `verifyImports` check rejects this
+/// module BEFORE instantiation.
+///
+/// Guest body: just calls the bad import once (never actually runs
+/// because the host rejects it at load time).
+pub fn buildBadImportGuest(allocator: std.mem.Allocator) ![]u8 {
+    var out: Builder = .{};
+    errdefer out.deinit(allocator);
+
+    try out.writeBytes(allocator, &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 });
+
+    // Types:
+    //   0: () -> ()   malicious_function
+    //   1: () -> ()   _start
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 2);
+        try s.writeByte(allocator, 0x60);
+        try s.writeULeb(allocator, 0);
+        try s.writeULeb(allocator, 0);
+        try s.writeByte(allocator, 0x60);
+        try s.writeULeb(allocator, 0);
+        try s.writeULeb(allocator, 0);
+        try encodeSection(allocator, &out, 1, s.buf.items);
+    }
+
+    // Imports: env.malicious_function — outside dreamball.* allowlist.
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeName(allocator, "env");
+        try s.writeName(allocator, "malicious_function");
+        try s.writeByte(allocator, 0x00);
+        try s.writeULeb(allocator, 0);
+        try encodeSection(allocator, &out, 2, s.buf.items);
+    }
+
+    // Functions: _start.
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeULeb(allocator, 1);
+        try encodeSection(allocator, &out, 3, s.buf.items);
+    }
+
+    // Memory: 1 page.
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeByte(allocator, 0x00);
+        try s.writeULeb(allocator, 1);
+        try encodeSection(allocator, &out, 5, s.buf.items);
+    }
+
+    // Exports: _start.
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeName(allocator, "_start");
+        try s.writeByte(allocator, 0x00);
+        try s.writeULeb(allocator, 1);
+        try encodeSection(allocator, &out, 7, s.buf.items);
+    }
+
+    // Code: _start calls import 0 (unreachable in tests; host rejects first).
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+
+        var body: Builder = .{};
+        defer body.deinit(allocator);
+        try body.writeULeb(allocator, 0);
+        try body.writeByte(allocator, 0x10); // call 0
+        try body.writeULeb(allocator, 0);
+        try body.writeByte(allocator, 0x0b); // end
+
+        try s.writeULeb(allocator, body.buf.items.len);
+        try s.writeBytes(allocator, body.buf.items);
+        try encodeSection(allocator, &out, 10, s.buf.items);
+    }
+
+    return out.buf.toOwnedSlice(allocator);
+}
+
+/// Build a wasm guest that declares more memory than `max_mib` allows.
+/// The host's `checkMemoryLimit` rejects this module BEFORE instantiation
+/// (AC3 / NFR7). Used by the memory-limit fixture test.
+///
+/// `pages` — number of 64 KiB pages to declare. Pass a value that
+/// exceeds the configured limit to trigger the rejection.
+pub fn buildOomGuest(allocator: std.mem.Allocator, pages: u32) ![]u8 {
+    var out: Builder = .{};
+    errdefer out.deinit(allocator);
+
+    try out.writeBytes(allocator, &.{ 0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00 });
+
+    // Types:
+    //   0: (i32 i32) -> i32   emit_action_envelope (need a valid import)
+    //   1: () -> ()           _start
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 2);
+        try s.writeByte(allocator, 0x60);
+        try s.writeULeb(allocator, 2);
+        try s.writeBytes(allocator, &.{ 0x7f, 0x7f });
+        try s.writeULeb(allocator, 1);
+        try s.writeByte(allocator, 0x7f);
+
+        try s.writeByte(allocator, 0x60);
+        try s.writeULeb(allocator, 0);
+        try s.writeULeb(allocator, 0);
+        try encodeSection(allocator, &out, 1, s.buf.items);
+    }
+
+    // Imports: dreamball.emit_action_envelope (valid import so import check passes).
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeName(allocator, "dreamball");
+        try s.writeName(allocator, "emit_action_envelope");
+        try s.writeByte(allocator, 0x00);
+        try s.writeULeb(allocator, 0);
+        try encodeSection(allocator, &out, 2, s.buf.items);
+    }
+
+    // Functions: _start.
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeULeb(allocator, 1);
+        try encodeSection(allocator, &out, 3, s.buf.items);
+    }
+
+    // Memory: `pages` pages — deliberately large to exceed the limit.
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeByte(allocator, 0x00);
+        try s.writeULeb(allocator, pages);
+        try encodeSection(allocator, &out, 5, s.buf.items);
+    }
+
+    // Exports: _start.
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+        try s.writeName(allocator, "_start");
+        try s.writeByte(allocator, 0x00);
+        try s.writeULeb(allocator, 1);
+        try encodeSection(allocator, &out, 7, s.buf.items);
+    }
+
+    // Code: _start is a no-op (host rejects at checkMemoryLimit; never runs).
+    {
+        var s: Builder = .{};
+        defer s.deinit(allocator);
+        try s.writeULeb(allocator, 1);
+
+        var body: Builder = .{};
+        defer body.deinit(allocator);
+        try body.writeULeb(allocator, 0);
+        try body.writeByte(allocator, 0x0b); // end
+
+        try s.writeULeb(allocator, body.buf.items.len);
+        try s.writeBytes(allocator, body.buf.items);
+        try encodeSection(allocator, &out, 10, s.buf.items);
+    }
+
+    return out.buf.toOwnedSlice(allocator);
+}
+
 const SingleArgGuestArgs = struct {
     import_module: []const u8,
     import_name: []const u8,

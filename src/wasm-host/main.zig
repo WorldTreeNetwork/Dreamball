@@ -15,6 +15,14 @@
 //!   5. Surfaces non-zero exit on any AC failure (no silent
 //!      substitutions, per `feedback_dreamball_ac_scope_retreat`).
 //!
+//! Story 5.3 adds three failure paths to the invocation flow:
+//!   - verifyBlake3 (SEC4 / D-031): abort BEFORE instantiation if
+//!     blake3(wasm_bytes) ≠ manifest-declared fp.
+//!   - verifyImports (SEC1 / D-033): walk import table BEFORE
+//!     instantiation; reject any import outside dreamball.*.
+//!   - checkMemoryLimit (NFR7): enforce 16 MiB initial / 64 MiB
+//!     hard ceiling; OOM traps to structured event.
+//!
 //! Output schema (parsed by CI / smoke gates):
 //!
 //!   wasm-host: invocation ok action=mint module_fp=… emit_count=1 …
@@ -22,11 +30,13 @@
 //!
 //! Per D-032 the source compiles for both CLI (today) and browser
 //! (sprint-003). All platform-shimmed I/O lives in this file (the
-//! library code at `imports.zig` and `runtime.zig` stays platform-pure).
+//! library code at `imports.zig`, `runtime.zig`, and `failure_paths.zig`
+//! stays platform-pure).
 
 const std = @import("std");
 const runtime = @import("runtime.zig");
 const imports_mod = @import("imports.zig");
+const failure = @import("failure_paths.zig");
 const guest = @import("build_guest.zig");
 
 /// AC6 / NFR3 budget: ≤ 50 ms p95 on M-series Mac for a trivial action.
@@ -81,12 +91,28 @@ fn emitInvocationEvent(
     writeStderr(line);
 }
 
-/// Run a single invocation through the host: parse + instantiate +
-/// invokeStart, capturing duration and outcome. The caller emits the
-/// NFR11 structured event from the returned data.
+/// Run a single invocation through the host: parse + failure-path checks
+/// + instantiate + invokeStart, capturing duration and outcome.
+///
+/// Story 5.3 failure paths are applied in order before any guest code runs:
+///   1. verifyBlake3: compare blake3(wasm_bytes) to host.module_fp.
+///   2. verifyImports: walk import table against the dreamball.* allowlist.
+///   3. checkMemoryLimit: reject if initial pages exceed max_mib.
+///
+/// The caller emits the NFR11 structured event from the returned data.
 const InvocationResult = struct {
     duration_ms: u64,
     outcome: imports_mod.Outcome,
+    /// Populated on fp_mismatch: actual digest of wasm_bytes.
+    actual_fp: ?[32]u8 = null,
+    /// Populated on import_violation: the offending import.
+    offending_import: ?runtime.Import = null,
+};
+
+/// Configuration for a single invocation (AC3/AC4 memory limit).
+pub const InvokeConfig = struct {
+    /// Initial memory limit in MiB. Default: 16 MiB (NFR7).
+    mem_mib: u32 = failure.DEFAULT_MEM_MIB,
 };
 
 fn invokeOnce(
@@ -94,8 +120,21 @@ fn invokeOnce(
     host: *imports_mod.Host,
     wasm_bytes: []const u8,
     bindings: []const runtime.ImportBinding,
+    cfg: InvokeConfig,
 ) !InvocationResult {
     const t_start = std.Io.Clock.Timestamp.now(iface(), std.Io.Clock.awake);
+
+    // --- Step 1: verify-before-instantiate (SEC4 / D-031 / AC1) ---
+    // Compute blake3(wasm_bytes); compare to host.module_fp.
+    // Abort BEFORE any guest code runs on mismatch.
+    if (!failure.verifyBlake3(wasm_bytes, host.module_fp)) {
+        return .{
+            .duration_ms = elapsedMs(t_start),
+            .outcome = .fp_mismatch,
+            .actual_fp = failure.computeBlake3(wasm_bytes),
+        };
+    }
+
     var module = runtime.parse(allocator, wasm_bytes) catch |e| {
         return .{
             .duration_ms = elapsedMs(t_start),
@@ -103,6 +142,24 @@ fn invokeOnce(
         };
     };
     defer module.deinit();
+
+    // --- Step 2: import-violation check (SEC1 / D-033 / AC2) ---
+    // Walk import table; reject anything outside dreamball.* BEFORE instantiation.
+    if (failure.verifyImports(&module)) |bad_import| {
+        return .{
+            .duration_ms = elapsedMs(t_start),
+            .outcome = .import_violation,
+            .offending_import = bad_import,
+        };
+    }
+
+    // --- Step 3: memory-limit check (NFR7 / AC3 / AC4) ---
+    _ = failure.checkMemoryLimit(&module, cfg.mem_mib) catch {
+        return .{
+            .duration_ms = elapsedMs(t_start),
+            .outcome = .trap,
+        };
+    };
 
     var instance = runtime.Instance.init(allocator, &module, .{
         .imports = bindings,
@@ -181,7 +238,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     host.beginInvocation(action_name, actor_fp, archiform_fp, module_fp);
 
-    const result = try invokeOnce(gpa, &host, wasm_bytes, &bindings);
+    const result = try invokeOnce(gpa, &host, wasm_bytes, &bindings, .{});
     try emitInvocationEvent(gpa, &host, result.duration_ms, result.outcome);
 
     if (result.outcome != .ok) {
@@ -213,7 +270,7 @@ pub fn main(init: std.process.Init) !u8 {
         var iter_host = imports_mod.Host.init(gpa, keypair_bytes, &.{});
         defer iter_host.deinit();
         iter_host.beginInvocation(action_name, actor_fp, archiform_fp, module_fp);
-        const r = try invokeOnce(gpa, &iter_host, wasm_bytes, &bindings);
+        const r = try invokeOnce(gpa, &iter_host, wasm_bytes, &bindings, .{});
         if (r.outcome != .ok) {
             try printStderrFmt(gpa, "wasm-host: BLOCKER — iteration {d} outcome={s}\n", .{
                 i,

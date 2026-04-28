@@ -118,7 +118,13 @@ pub fn build(b: *std.Build) void {
     const smoke_step = b.step("smoke", "Run end-to-end CLI smoke test");
     smoke_step.dependOn(&smoke_cmd.step);
 
-    // schema-gen — Zig tool that emits src/lib/generated/*.ts
+    // schema-gen — Story 1.3 / D-030 Option A JSON-Schema-canonical
+    // orchestrator. Dispatches to the per-target generators
+    // (gen_zig, gen_ts, gen_valibot, gen_cbor, gen_cypher) under
+    // `tools/schema-gen/`. The legacy static-text generator is
+    // preserved at `tools/schema-gen/legacy/main.zig` and exposed via
+    // `zig build schemagen-legacy` until Story 1.4 wires the
+    // byte-equivalence diff and Story 1.5 deletes legacy.
     const schemagen_mod = b.createModule(.{
         .root_source_file = b.path("tools/schema-gen/main.zig"),
         .target = target,
@@ -129,8 +135,27 @@ pub fn build(b: *std.Build) void {
         .root_module = schemagen_mod,
     });
     const schemagen_run = b.addRunArtifact(schemagen_exe);
-    const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts");
+    const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts + src/memory-palace/schema.cypher");
     schemagen_step.dependOn(&schemagen_run.step);
+
+    // schemagen-legacy — D-030 Option A shadow-phase target. Runs
+    // the preserved legacy static-text emitter so Story 1.4 can
+    // byte-diff its output against the new orchestrator's output.
+    const schemagen_legacy_mod = b.createModule(.{
+        .root_source_file = b.path("tools/schema-gen/legacy/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const schemagen_legacy_exe = b.addExecutable(.{
+        .name = "schema-gen-legacy",
+        .root_module = schemagen_legacy_mod,
+    });
+    const schemagen_legacy_run = b.addRunArtifact(schemagen_legacy_exe);
+    const schemagen_legacy_step = b.step(
+        "schemagen-legacy",
+        "Run the preserved legacy static-text generator (D-030 Option A shadow phase)",
+    );
+    schemagen_legacy_step.dependOn(&schemagen_legacy_run.step);
 
     // schemagen-spike — Story 1.1 codegen-inversion spike.
     // Reads tools/schema-gen/spike/schemas/*.json and emits byte-equivalent
@@ -424,4 +449,65 @@ pub fn build(b: *std.Build) void {
     );
     wasm_host_audit_step.dependOn(&wasm_host_audit.step);
     test_step.dependOn(&wasm_host_audit.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.3: Wasm Host Failure Paths
+    //   - failure_paths.zig: verifyBlake3, verifyImports, checkMemoryLimit
+    //   - failure_paths_test.zig: Zig-level unit tests for AC1/AC2/AC3/AC4/AC5
+    //   - failure_test_main.zig: standalone binary whose JSON output is
+    //     consumed by the AC8 TypeScript fixture tests
+    // ----------------------------------------------------------------
+
+    // Story 5.3 failure-path Zig unit tests.
+    const wasm_host_failure_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/failure_paths_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_failure_test_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_failure_tests = b.addTest(.{
+        .root_module = wasm_host_failure_test_mod,
+    });
+    const run_wasm_host_failure_tests = b.addRunArtifact(wasm_host_failure_tests);
+    const wasm_host_failure_test_step = b.step(
+        "wasm-host-failure-test-zig",
+        "Story 5.3: Zig-level failure-path unit tests (AC1/AC2/AC3/AC4/AC5)",
+    );
+    wasm_host_failure_test_step.dependOn(&run_wasm_host_failure_tests.step);
+    test_step.dependOn(&run_wasm_host_failure_tests.step);
+
+    // Story 5.3 AC6: grep audit — failure helpers live in src/wasm-host/.
+    const failure_helpers_audit = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        // Confirm verifyBlake3, verifyImports, checkMemoryLimit all exist in
+        // src/wasm-host/ (not per-platform files). Per D-032 / AC6.
+        "grep -RE 'verifyBlake3|verifyImports|checkMemoryLimit' src/wasm-host/ --include='*.zig' > /dev/null",
+    });
+    const failure_helpers_audit_step = b.step(
+        "wasm-host-failure-audit",
+        "Story 5.3 AC6: grep audit — failure helpers in shared src/wasm-host/",
+    );
+    failure_helpers_audit_step.dependOn(&failure_helpers_audit.step);
+    test_step.dependOn(&failure_helpers_audit.step);
+
+    // Story 5.3 AC8: standalone binary for TypeScript fixture tests.
+    // The binary exercises all three failure scenarios and emits JSON.
+    const wasm_host_failure_main_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/failure_test_main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_failure_main_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_failure_exe = b.addExecutable(.{
+        .name = "wasm-host-failure-test",
+        .root_module = wasm_host_failure_main_mod,
+    });
+    b.installArtifact(wasm_host_failure_exe);
+    const wasm_host_failure_run = b.addRunArtifact(wasm_host_failure_exe);
+    const wasm_host_failure_step = b.step(
+        "wasm-host-failure-test",
+        "Story 5.3 AC8: run failure-path test binary (fp-mismatch + import-violation + oom)",
+    );
+    wasm_host_failure_step.dependOn(&wasm_host_failure_run.step);
 }

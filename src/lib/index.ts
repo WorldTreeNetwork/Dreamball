@@ -59,11 +59,14 @@ export {
 	EmotionalRegisterSchema,
 	GuildPolicySchema,
 	OmnisphericalGridSchema,
-	parseDreamBall,
-	safeParseDreamBall,
 	type DreamBallValidated,
 	type ParseResult
 } from './generated/schemas.js';
+
+// Publish-boundary parse helpers live outside `generated/` per NFR8 +
+// Story 1.3 AC7 grep audit (no Valibot.parse / safeParse call sites
+// inside `src/lib/generated/`).
+export { parseDreamBall, safeParseDreamBall } from './parse.js';
 
 export { ALL_LENSES, type LensName } from './lenses/lens-types.js';
 

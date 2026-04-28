@@ -5,10 +5,9 @@ import {
 	DreamBallAgentSchema,
 	DreamBallUntypedSchema,
 	SignatureSchema,
-	AssetSchema,
-	safeParseDreamBall,
-	parseDreamBall
-} from './schemas.js';
+	AssetSchema
+} from './generated/schemas.js';
+import { safeParseDreamBall, parseDreamBall } from './parse.js';
 
 describe('Valibot schemas', () => {
 	it('validates a minimal untyped v1 DreamBall', () => {

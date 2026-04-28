@@ -19,10 +19,10 @@
 import type { DreamBall } from '../generated/types.js';
 import {
 	DreamBallSchema,
-	safeParseDreamBall,
 	type DreamBallValidated,
 	type ParseResult
 } from '../generated/schemas.js';
+import { safeParseDreamBall } from '../parse.js';
 import * as v from 'valibot';
 
 interface WasmExports {
