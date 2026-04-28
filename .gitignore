@@ -55,3 +55,4 @@ storybook-static
 .playwright-mcp
 .firecrawl
 .omc/
+palace.db
