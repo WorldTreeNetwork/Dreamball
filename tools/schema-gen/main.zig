@@ -1,8 +1,7 @@
-//! Story 1.3 — JSON-Schema-canonical generator orchestrator.
+//! JSON-Schema-canonical generator orchestrator (D-030 Option A).
 //!
-//! Repurpose of the legacy `tools/schema-gen/main.zig` (now at
-//! `tools/schema-gen/legacy/main.zig` per D-030 Option A). This
-//! orchestrator:
+//! Introduced in Story 1.3. Legacy static-text generator deleted in
+//! Story 1.5 (cutover). This orchestrator:
 //!
 //!   1. Reads `schemas/root-2.0.0.json` from disk.
 //!   2. Verifies the pin file `schemas/.pins/root-2.0.0.fp` matches
@@ -29,9 +28,9 @@
 //! mint-time authoring); decode paths take the raw CBOR-derived
 //! object directly.
 //!
-//! Per AC1 the new generator surface is exactly:
+//! Per D-030 the generator surface is:
 //!   main.zig, gen_zig.zig, gen_ts.zig, gen_valibot.zig,
-//!   gen_cbor.zig, gen_cypher.zig, legacy/.
+//!   gen_cbor.zig, gen_cypher.zig.
 //! Provenance helpers (NFR9) are intentionally folded into this file
 //! rather than living in a sibling `provenance.zig` so the AC1 grep
 //! audit succeeds.

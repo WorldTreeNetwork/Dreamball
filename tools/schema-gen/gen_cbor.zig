@@ -20,10 +20,8 @@
 //! (`Valibot.parse` / `safeParse`); validation runs at publish
 //! boundaries via `src/lib/parse.ts`.
 //!
-//! The body strings below are byte-for-byte the canonical legacy
-//! emission (see `tools/schema-gen/legacy/main.zig` `CBOR_SRC` +
-//! `cbor.test.ts`). Story 1.4 wires the byte-equivalence diff against
-//! `legacy/`; Story 1.5 deletes legacy.
+//! The body strings below are the canonical emission, byte-equivalent
+//! to the legacy static-text generator (deleted in Story 1.5).
 
 const std = @import("std");
 const main_mod = @import("main.zig");

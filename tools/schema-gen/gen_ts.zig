@@ -1,11 +1,9 @@
 //! Story 1.3 — gen_ts per-target generator.
 //!
 //! Emits TypeScript type declarations for the DreamBall root
-//! protocol surface to `src/lib/generated/types.ts`. During the D-030
-//! Option A shadow phase the canonical body is the same byte-text
-//! the legacy generator (`tools/schema-gen/legacy/main.zig`) emits
-//! for these types. Story 1.4 wires the byte-equivalence diff that
-//! gates the final cutover; Story 1.5 removes the legacy generator.
+//! protocol surface to `src/lib/generated/types.ts`. The canonical
+//! body is byte-equivalent to the legacy static-text generator
+//! (deleted in Story 1.5 cutover per D-030 Option A).
 //!
 //! Spike findings (docs/decisions/2026-04-28-codegen-spike-findings.md)
 //! show JSON Schema 2020-12 + the small `x-` extension vocabulary is

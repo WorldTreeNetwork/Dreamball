@@ -118,13 +118,10 @@ pub fn build(b: *std.Build) void {
     const smoke_step = b.step("smoke", "Run end-to-end CLI smoke test");
     smoke_step.dependOn(&smoke_cmd.step);
 
-    // schema-gen — Story 1.3 / D-030 Option A JSON-Schema-canonical
-    // orchestrator. Dispatches to the per-target generators
-    // (gen_zig, gen_ts, gen_valibot, gen_cbor, gen_cypher) under
-    // `tools/schema-gen/`. The legacy static-text generator is
-    // preserved at `tools/schema-gen/legacy/main.zig` and exposed via
-    // `zig build schemagen-legacy` until Story 1.4 wires the
-    // byte-equivalence diff and Story 1.5 deletes legacy.
+    // schema-gen — D-030 Option A JSON-Schema-canonical orchestrator.
+    // Dispatches to the per-target generators (gen_zig, gen_ts,
+    // gen_valibot, gen_cbor, gen_cypher) under `tools/schema-gen/`.
+    // Legacy static-text generator deleted in Story 1.5 (cutover).
     const schemagen_mod = b.createModule(.{
         .root_source_file = b.path("tools/schema-gen/main.zig"),
         .target = target,
@@ -137,25 +134,6 @@ pub fn build(b: *std.Build) void {
     const schemagen_run = b.addRunArtifact(schemagen_exe);
     const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts + src/memory-palace/schema.cypher");
     schemagen_step.dependOn(&schemagen_run.step);
-
-    // schemagen-legacy — D-030 Option A shadow-phase target. Runs
-    // the preserved legacy static-text emitter so Story 1.4 can
-    // byte-diff its output against the new orchestrator's output.
-    const schemagen_legacy_mod = b.createModule(.{
-        .root_source_file = b.path("tools/schema-gen/legacy/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const schemagen_legacy_exe = b.addExecutable(.{
-        .name = "schema-gen-legacy",
-        .root_module = schemagen_legacy_mod,
-    });
-    const schemagen_legacy_run = b.addRunArtifact(schemagen_legacy_exe);
-    const schemagen_legacy_step = b.step(
-        "schemagen-legacy",
-        "Run the preserved legacy static-text generator (D-030 Option A shadow phase)",
-    );
-    schemagen_legacy_step.dependOn(&schemagen_legacy_run.step);
 
     // schemagen-spike — Story 1.1 codegen-inversion spike.
     // Reads tools/schema-gen/spike/schemas/*.json and emits byte-equivalent
