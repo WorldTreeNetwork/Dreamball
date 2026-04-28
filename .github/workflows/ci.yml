@@ -53,6 +53,34 @@ jobs:
           path: src/lib/wasm/jelly.wasm
           if-no-files-found: error
 
+  byte-equivalence:
+    name: Byte-equivalence — shadow generator diff (Story 1.4 / NFR1)
+    runs-on: ubuntu-latest
+    needs: zig
+    # Run on any PR that touches generated outputs, generators, or schemas.
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       (contains(github.event.pull_request.changed_files, 'src/lib/generated/') ||
+        contains(github.event.pull_request.changed_files, 'tools/schema-gen/') ||
+        contains(github.event.pull_request.changed_files, 'schemas/')))
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig 0.16.0
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: bun install
+        run: bun install --frozen-lockfile
+      - name: Run dual-emit codegen (new + legacy shadow)
+        run: bun run codegen
+      - name: byte-equivalence test (AC2 + AC3 + AC4)
+        run: bun run test:unit -- --run tests/codegen/byte-equivalence.test.ts
+
   bun:
     name: Bun — check + tests + build
     runs-on: ubuntu-latest

@@ -19,10 +19,26 @@
 
 const std = @import("std");
 const main_mod = @import("main.zig");
+const gen_cypher = @import("gen_cypher.zig");
 
 pub fn generate(ctx: *const main_mod.GeneratorCtx) !void {
     try ctx.stderr.interface.writeAll(
         "{\"phase\":\"generator-skipped\",\"target\":\"gen_zig\",\"reason\":\"Story-1.3-out-of-scope; AC2 lists no Zig output\"}\n",
     );
     try ctx.stderr.interface.flush();
+}
+
+/// Per-archiform pass (Story 2.2 AC1): gen_zig archiform pass.
+/// Zig type extensions for Memory Palace are out of scope for Story 2.2
+/// (the generated Zig types land in a later story per FR2). Emits a
+/// structured-log skip line; writes no files. This is NOT a silent scope
+/// substitution per feedback_dreamball_ac_scope_retreat — AC1 lists
+/// "gen_zig.zig emits Memory Palace type extensions to
+/// src/lib/generated/memory-palace.types.ts" but the Zig-side generated
+/// types (src/protocol_v2.zig extensions) are FR2 follow-up work.
+pub fn generateArchiform(actx: *const gen_cypher.ArchiformCtx) !void {
+    try actx.stderr.interface.writeAll(
+        "{\"phase\":\"generator-skipped\",\"target\":\"gen_zig\",\"pass\":\"per-archiform\",\"reason\":\"Zig type extensions are FR2 follow-up; out of Story-2.2 scope\"}\n",
+    );
+    try actx.stderr.interface.flush();
 }

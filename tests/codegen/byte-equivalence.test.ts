@@ -1,0 +1,345 @@
+/**
+ * Story 1.4 — Byte-equivalence test (AC2, AC3, AC4).
+ *
+ * AC2: diff -r src/lib/generated/ src/lib/generated.legacy/ is empty.
+ * AC3: any known cosmetic diff is registered as a normalization under
+ *      tests/codegen/normalizations/<name>.md and the test passes after
+ *      stripping that diff — no silent acceptance.
+ * AC4: sprint-001 fixture envelopes in tests/fixtures/sprint-001-instances/
+ *      are decodable by the new generator's cbor.ts codec; test fails on error.
+ *
+ * Per `feedback_dreamball_ac_scope_retreat`: any diff that is NOT in the
+ * registered normalization list causes the test to fail with verbose output.
+ */
+
+import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join, dirname, resolve, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, '..', '..');
+
+const NEW_DIR = join(REPO_ROOT, 'src', 'lib', 'generated');
+const LEGACY_DIR = join(REPO_ROOT, 'src', 'lib', 'generated.legacy');
+const NORMALIZATIONS_DIR = join(REPO_ROOT, 'tests', 'codegen', 'normalizations');
+const SPRINT001_FIXTURES_DIR = join(REPO_ROOT, 'tests', 'fixtures', 'sprint-001-instances');
+
+// ---------------------------------------------------------------------------
+// File enumeration helpers
+// ---------------------------------------------------------------------------
+
+function walkDir(dir: string): string[] {
+	const entries = readdirSync(dir, { withFileTypes: true });
+	const files: string[] = [];
+	for (const entry of entries) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			for (const sub of walkDir(full)) files.push(sub);
+		} else {
+			files.push(full);
+		}
+	}
+	return files.sort();
+}
+
+function relPath(base: string, full: string): string {
+	return relative(base, full);
+}
+
+// ---------------------------------------------------------------------------
+// Normalization approach
+//
+// Both generators emit a file-level comment block before the first `export`.
+// The block differs in form (new: provenance NFR9 block; legacy: short
+// AUTO-GENERATED header). The functional TS content is what we compare.
+//
+// Normalization strategy: strip everything from the start of the file up to
+// (but not including) the first `export` line. This removes both header
+// forms deterministically.
+//
+// Additional per-file normalizations are registered below for diffs that
+// survive the header strip.
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip the file-level comment header — everything before the first `export`
+ * statement. Both generators emit different comment blocks; only the
+ * exported TypeScript declarations are semantically load-bearing.
+ * Documented: tests/codegen/normalizations/provenance-header.md
+ */
+function stripFileHeader(content: string): string {
+	const exportIdx = content.indexOf('\nexport ');
+	if (exportIdx === -1) return content;
+	return content.slice(exportIdx + 1); // keep the \n before export
+}
+
+// ---------------------------------------------------------------------------
+// Known normalizations (per-file, applied after header strip)
+// Each entry maps a relative file path to {id, stripFromNew, stripFromLegacy}.
+// ---------------------------------------------------------------------------
+
+interface PerFileNorm {
+	id: string;
+	stripFromNew: RegExp | null;
+	stripFromLegacy: RegExp | null;
+}
+
+const PER_FILE_NORMS: Record<string, PerFileNorm[]> = {
+	'schemas.ts': [
+		{
+			// schemas.ts: ParseResult comment form differs.
+			// New: JSDoc explaining publish-boundary rationale.
+			// Legacy: Convenience section divider comment.
+			// Documented: tests/codegen/normalizations/schemas-parse-result-comment.md
+			id: 'schemas-parse-result-comment',
+			stripFromNew:
+				/\/\*\* Tagged-result type used by publish-boundary parse helpers[\s\S]*?\*\/\n/,
+			stripFromLegacy:
+				/\/\/ ={72}\n\/\/ Convenience[^\n]*\n\/\/ ={72}\n\n/,
+		},
+		{
+			// schemas.ts: new generator removed parseDreamBall/safeParseDreamBall
+			// per NFR8 (validate-on-publish). Legacy still has them.
+			// This is a SEMANTIC diff — intentional sprint-002 hardening.
+			// Documented: tests/codegen/normalizations/schemas-parse-helpers-removed.md
+			id: 'schemas-parse-helpers-removed',
+			stripFromNew: null,
+			// Strip from "/** Parse a JSON string..." through the closing "}\n\n"
+			// of safeParseDreamBall (the last function before the §13 section).
+			stripFromLegacy:
+				/\/\*\* Parse a JSON string to a validated DreamBall\. Throws on invalid\. \*\/\nexport function parseDreamBall[\s\S]*?^}\n\n\/\*\* Same as parseDreamBall[\s\S]*?^}\n\n/m,
+		},
+		{
+			// schemas.ts: legacy ends with a trailing sentinel comment.
+			// Documented: tests/codegen/normalizations/schemas-tail-sentinel.md
+			id: 'schemas-tail-sentinel',
+			stripFromNew: null,
+			stripFromLegacy: /\n\/\/ DO NOT EDIT — generated by tools\/schema-gen\/main\.zig\n$/,
+		},
+	],
+	'cbor.ts': [
+		{
+			// cbor.ts: legacy ends with a trailing sentinel comment.
+			// Documented: tests/codegen/normalizations/schemas-tail-sentinel.md
+			id: 'schemas-tail-sentinel',
+			stripFromNew: null,
+			stripFromLegacy: /\n\/\/ DO NOT EDIT — generated by tools\/schema-gen\/main\.zig\n$/,
+		},
+	],
+	'types.ts': [
+		{
+			// types.ts: legacy ends with a trailing sentinel comment.
+			// Documented: tests/codegen/normalizations/schemas-tail-sentinel.md
+			id: 'schemas-tail-sentinel',
+			stripFromNew: null,
+			stripFromLegacy: /\n\/\/ DO NOT EDIT — generated by tools\/schema-gen\/main\.zig\n$/,
+		},
+	],
+};
+
+// Files present only in the new generator (no legacy equivalent).
+// Each must be registered and documented.
+const NEW_ONLY_FILES: Record<string, string> = {
+	// cbor.test.ts: test co-generation introduced in Story 1.3.
+	// Documented: tests/codegen/normalizations/cbor-test-new-only.md
+	'cbor.test.ts': 'cbor-test-new-only',
+	// memory-palace.schemas.ts / memory-palace.types.ts: per-archiform
+	// codegen added in Story 2.2. The legacy generator predates archiforms
+	// and cannot emit these. Their presence in the new generator is correct.
+	// Documented: tests/codegen/normalizations/memory-palace-archiform-new-only.md
+	'memory-palace.schemas.ts': 'memory-palace-archiform-new-only',
+	'memory-palace.types.ts': 'memory-palace-archiform-new-only',
+};
+
+// All registered normalization IDs (header strip + per-file + new-only).
+const ALL_NORMALIZATION_IDS = [
+	'provenance-header',
+	// 'cbor-comment-block' is covered by the universal stripFileHeader; doc kept for audit trail
+	'schemas-parse-helpers-removed',
+	'schemas-parse-result-comment',
+	'schemas-tail-sentinel',
+	'cbor-test-new-only',
+	'memory-palace-archiform-new-only',
+];
+
+// ---------------------------------------------------------------------------
+// Verify normalization doc files exist
+// ---------------------------------------------------------------------------
+
+function verifyNormalizationDocs(): string[] {
+	const missing: string[] = [];
+	for (const id of ALL_NORMALIZATION_IDS) {
+		const docPath = join(NORMALIZATIONS_DIR, `${id}.md`);
+		if (!existsSync(docPath)) {
+			missing.push(`  ${id} → ${docPath}`);
+		}
+	}
+	return missing;
+}
+
+// ---------------------------------------------------------------------------
+// Apply normalizations to a file's content
+// ---------------------------------------------------------------------------
+
+function normalizeContent(content: string, relFile: string, side: 'new' | 'legacy'): string {
+	// Step 1: strip file header (universal).
+	let result = stripFileHeader(content);
+
+	// Step 2: apply per-file norms.
+	const norms = PER_FILE_NORMS[relFile] ?? [];
+	for (const norm of norms) {
+		const pattern = side === 'new' ? norm.stripFromNew : norm.stripFromLegacy;
+		if (pattern) {
+			result = result.replace(pattern, '');
+		}
+	}
+
+	return result;
+}
+
+// ---------------------------------------------------------------------------
+// AC2 + AC3: byte-equivalence across the two trees
+// ---------------------------------------------------------------------------
+
+describe('byte-equivalence: src/lib/generated vs src/lib/generated.legacy (AC2 + AC3)', () => {
+	it('legacy directory exists (AC1 — shadow phase populated)', () => {
+		expect(
+			existsSync(LEGACY_DIR),
+			`Legacy directory ${LEGACY_DIR} does not exist. ` +
+				`Run \`bun run codegen\` to populate both trees.`,
+		).toBe(true);
+	});
+
+	it('new directory exists', () => {
+		expect(existsSync(NEW_DIR), `New directory ${NEW_DIR} does not exist.`).toBe(true);
+	});
+
+	it('all registered normalization docs exist (AC3 — no silent diff acceptance)', () => {
+		const missing = verifyNormalizationDocs();
+		expect(
+			missing,
+			`Normalization doc files missing. Each registered normalization MUST have a ` +
+				`doc file. Create these files:\n${missing.join('\n')}`,
+		).toEqual([]);
+	});
+
+	it('file sets match after excluding registered new-only files', () => {
+		if (!existsSync(LEGACY_DIR) || !existsSync(NEW_DIR)) return;
+
+		const newFiles = walkDir(NEW_DIR)
+			.map((f) => relPath(NEW_DIR, f))
+			.filter((f) => !(f in NEW_ONLY_FILES));
+		const legacyFiles = walkDir(LEGACY_DIR).map((f) => relPath(LEGACY_DIR, f));
+
+		const onlyInNew = newFiles.filter((f) => !legacyFiles.includes(f));
+		const onlyInLegacy = legacyFiles.filter((f) => !newFiles.includes(f));
+
+		expect(
+			onlyInNew,
+			`Files only in new generator (not registered as new-only): ${onlyInNew.join(', ')}\n` +
+				`Register them in NEW_ONLY_FILES in this test file, or fix the generator.`,
+		).toEqual([]);
+		expect(
+			onlyInLegacy,
+			`Files only in legacy generator (unexpected): ${onlyInLegacy.join(', ')}`,
+		).toEqual([]);
+	});
+
+	// Per-file content comparison after normalization.
+	const legacyExists = existsSync(LEGACY_DIR) && existsSync(NEW_DIR);
+	const legacyFiles = legacyExists
+		? walkDir(LEGACY_DIR).map((f) => relPath(LEGACY_DIR, f))
+		: [];
+
+	for (const relFile of legacyFiles) {
+		it(`content matches after normalization: ${relFile}`, () => {
+			const newPath = join(NEW_DIR, relFile);
+			const legacyPath = join(LEGACY_DIR, relFile);
+
+			expect(existsSync(newPath), `${relFile} missing from new generator output`).toBe(true);
+
+			const newRaw = readFileSync(newPath, 'utf8');
+			const legacyRaw = readFileSync(legacyPath, 'utf8');
+
+			const newNorm = normalizeContent(newRaw, relFile, 'new');
+			const legacyNorm = normalizeContent(legacyRaw, relFile, 'legacy');
+
+			if (newNorm !== legacyNorm) {
+				// Produce verbose diff guidance per AC3.
+				const newLines = newNorm.split('\n');
+				const legacyLines = legacyNorm.split('\n');
+				const diffLines: string[] = [];
+				const maxLen = Math.max(newLines.length, legacyLines.length);
+				for (let i = 0; i < maxLen; i++) {
+					const n = newLines[i] ?? '(missing)';
+					const l = legacyLines[i] ?? '(missing)';
+					if (n !== l) {
+						diffLines.push(`  line ${i + 1}:`);
+						diffLines.push(`    new:    ${n}`);
+						diffLines.push(`    legacy: ${l}`);
+					}
+				}
+				throw new Error(
+					`Byte-equivalence FAILED for ${relFile} after normalization.\n\n` +
+						`Diff (first 40 differing lines):\n${diffLines.slice(0, 120).join('\n')}\n\n` +
+						`If this diff is semantically equivalent, register a new normalization:\n` +
+						`  1. Add an entry to PER_FILE_NORMS in this file.\n` +
+						`  2. Create tests/codegen/normalizations/<id>.md documenting the diff.\n\n` +
+						`Per AC3: no silent diff acceptance.`,
+				);
+			}
+		});
+	}
+});
+
+// ---------------------------------------------------------------------------
+// AC4: sprint-001 fixture envelopes decode with the new codec
+// ---------------------------------------------------------------------------
+
+describe('sprint-001 instance compat (AC4 / IC4)', () => {
+	it('sprint-001-instances fixture directory exists', () => {
+		expect(
+			existsSync(SPRINT001_FIXTURES_DIR),
+			`Fixture directory ${SPRINT001_FIXTURES_DIR} does not exist. ` +
+				`Create it with representative .jelly envelopes from sprint-001.`,
+		).toBe(true);
+	});
+
+	it('fixture directory contains at least one .jelly file', () => {
+		if (!existsSync(SPRINT001_FIXTURES_DIR)) return;
+		const files = readdirSync(SPRINT001_FIXTURES_DIR).filter((f) => f.endsWith('.jelly'));
+		expect(
+			files.length,
+			`No .jelly fixtures found in ${SPRINT001_FIXTURES_DIR}. ` +
+				`Capture sprint-001 envelopes and place them there.`,
+		).toBeGreaterThan(0);
+	});
+
+	it('all sprint-001 fixtures parse without throwing (CBOR decode via new codec)', async () => {
+		if (!existsSync(SPRINT001_FIXTURES_DIR)) return;
+		const files = readdirSync(SPRINT001_FIXTURES_DIR).filter((f) => f.endsWith('.jelly'));
+		if (files.length === 0) return;
+
+		// Import the new generator's cbor codec.
+		const cborMod = await import('../../src/lib/generated/cbor.js') as {
+			decodeEnvelope: (b: Uint8Array) => unknown;
+		};
+		const { decodeEnvelope } = cborMod;
+
+		const errors: string[] = [];
+		for (const file of files) {
+			const bytes = readFileSync(join(SPRINT001_FIXTURES_DIR, file));
+			try {
+				const result = decodeEnvelope(new Uint8Array(bytes));
+				expect(result, `${file}: decodeEnvelope returned null/undefined`).toBeTruthy();
+			} catch (e) {
+				errors.push(`${file}: ${(e as Error).message}`);
+			}
+		}
+		expect(
+			errors,
+			`Sprint-001 fixtures failed to decode with new generator's codec:\n${errors.join('\n')}`,
+		).toEqual([]);
+	});
+});

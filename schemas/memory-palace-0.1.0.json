@@ -521,6 +521,361 @@
       ],
       "additionalProperties": false,
       "properties": {}
+    },
+
+    "ActionManifestAttributes": {
+      "$comment": "Story 3.1 / D-035: Closed attribute set for action manifest entries. additionalProperties:false enforces the 4-key contract. Unknown keys are rejected by the JSON Schema validator (AC2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["destructive", "requiresConfirmation", "confirmationMessage", "agentVisible"],
+      "properties": {
+        "destructive": {
+          "type": "boolean",
+          "$comment": "True if the action causes irreversible state change (e.g. delete, overwrite)."
+        },
+        "requiresConfirmation": {
+          "type": "boolean",
+          "$comment": "True if an agent should prompt for user confirmation before executing."
+        },
+        "confirmationMessage": {
+          "type": "string",
+          "$comment": "Human-readable message to surface when requiresConfirmation is true. Empty string when requiresConfirmation is false."
+        },
+        "agentVisible": {
+          "type": "boolean",
+          "$comment": "True if the action should be surfaced in agent tool listings (AC2 / D-035)."
+        }
+      }
+    },
+
+    "ActionManifestEffects": {
+      "$comment": "Story 3.1: Closed kind enum describing the primary side-effect class of an action. ActionEnvelope = writes a signed jelly.action to the ActionLog; Read = read-only graph query; Derived = recomputes derived state from existing ActionLog entries (idempotent replay).",
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["ActionEnvelope", "Read", "Derived"],
+          "$comment": "Closed enum — unknown values are rejected (AC3)."
+        }
+      }
+    },
+
+    "ActionManifestImplementation": {
+      "$comment": "Story 3.1: WASM module content address. The wasm field holds the blake3 hex fingerprint (64 lowercase hex chars) of the compiled WASM binary. Real fps land in Story 5.4; 64-zero placeholder is used until then.",
+      "type": "object",
+      "required": ["wasm"],
+      "additionalProperties": false,
+      "properties": {
+        "wasm": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "$comment": "blake3 hex fingerprint of the WASM module binary (AC6). Must be 64 lowercase hex chars. 64-zero placeholder used until Story 5.4 ships real fps."
+        }
+      }
+    },
+
+    "ActionManifestEntry": {
+      "$comment": "Story 3.1: Full manifest entry for one action verb in the x-actions map. Ties together inputs, outputs, effects, idempotency, streaming, attributes, and implementation into a single closed schema object.",
+      "type": "object",
+      "required": ["summary", "inputs", "outputs", "effects", "idempotency", "streaming", "attributes", "implementation"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "$comment": "One-line human-readable description of what the verb does."
+        },
+        "inputs": {
+          "type": "object",
+          "$comment": "JSON Schema sub-object describing the input parameters for this verb. Must be a valid JSON Schema object fragment (type: object with properties)."
+        },
+        "outputs": {
+          "type": "object",
+          "$comment": "JSON Schema sub-object describing the output shape returned by this verb."
+        },
+        "effects": {
+          "$ref": "#/$defs/ActionManifestEffects"
+        },
+        "idempotency": {
+          "type": "string",
+          "enum": ["creates", "updates", "idempotent"],
+          "$comment": "Closed enum: creates = produces a new entity each call; updates = mutates an existing entity; idempotent = same output for same input, no net state change on repeat (AC4)."
+        },
+        "streaming": {
+          "type": "boolean",
+          "$comment": "True if this verb may emit streaming output events before completing."
+        },
+        "attributes": {
+          "$ref": "#/$defs/ActionManifestAttributes"
+        },
+        "implementation": {
+          "$ref": "#/$defs/ActionManifestImplementation"
+        }
+      }
+    }
+  },
+
+  "properties": {
+    "actions": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/ActionManifestEntry" },
+      "$comment": "Story 3.1: Structural declaration for the actions map at the instance level (parallel to x-actions which carries the manifest). Generators may emit typed maps from this property."
+    }
+  },
+
+  "x-actions": {
+    "mint": {
+      "summary": "Mint a new Memory Palace DreamBall with genesis mythos, oracle Agent, seed archiform registry, and a rooted timeline.",
+      "inputs": {
+        "type": "object",
+        "required": ["out", "mythos"],
+        "additionalProperties": false,
+        "properties": {
+          "out": {
+            "type": "string",
+            "description": "Path prefix for output files."
+          },
+          "mythos": {
+            "type": "string",
+            "description": "Genesis mythos body text."
+          },
+          "mythosFile": {
+            "type": "string",
+            "description": "Path to a file containing the mythos body (alternative to mythos)."
+          }
+        }
+      },
+      "outputs": {
+        "type": "object",
+        "properties": {
+          "palaceFp": { "type": "string", "description": "blake3 fingerprint of the minted palace field envelope." },
+          "oracleFp": { "type": "string", "description": "blake3 fingerprint of the oracle Agent envelope." },
+          "actionFp": { "type": "string", "description": "blake3 fingerprint of the palace-minted action envelope." },
+          "bundlePath": { "type": "string", "description": "Path to the written .bundle file." },
+          "oracleKeyPath": { "type": "string", "description": "Path to the written .oracle.key file (mode 0600)." }
+        }
+      },
+      "effects": { "kind": "ActionEnvelope" },
+      "idempotency": "creates",
+      "streaming": false,
+      "attributes": {
+        "destructive": false,
+        "requiresConfirmation": false,
+        "confirmationMessage": "",
+        "agentVisible": true
+      },
+      "implementation": {
+        "wasm": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+
+    "inscribe": {
+      "summary": "Inscribe an artefact file into a Room inside an existing palace, producing a signed avatar-inscribed action.",
+      "inputs": {
+        "type": "object",
+        "required": ["palace", "room", "source"],
+        "additionalProperties": false,
+        "properties": {
+          "palace": {
+            "type": "string",
+            "description": "Path prefix to the palace bundle (expects <palace>.bundle + <palace>.key)."
+          },
+          "room": {
+            "type": "string",
+            "description": "Target room fingerprint (64 hex chars)."
+          },
+          "source": {
+            "type": "string",
+            "description": "Path to the artefact file to inscribe."
+          },
+          "mythos": {
+            "type": "string",
+            "description": "Optional per-inscription genesis mythos body."
+          },
+          "mythosFile": {
+            "type": "string",
+            "description": "Optional path to mythos body file."
+          },
+          "archiform": {
+            "type": "string",
+            "description": "Optional avatar archiform name (from 19-seed registry)."
+          },
+          "embedVia": {
+            "type": "string",
+            "description": "Optional embedding service URL. Absent = no embedding attempt (NFR13 opt-in)."
+          },
+          "surface": {
+            "type": "string",
+            "description": "Surface type (default: scroll)."
+          },
+          "placement": {
+            "type": "string",
+            "description": "Placement hint (default: auto)."
+          }
+        }
+      },
+      "outputs": {
+        "type": "object",
+        "properties": {
+          "inscriptionFp": { "type": "string", "description": "blake3 fingerprint of the inscription envelope." },
+          "sourceBlake3": { "type": "string", "description": "blake3 hex of the inscribed source file bytes." },
+          "actionFp": { "type": "string", "description": "blake3 fingerprint of the avatar-inscribed action envelope." }
+        }
+      },
+      "effects": { "kind": "ActionEnvelope" },
+      "idempotency": "creates",
+      "streaming": false,
+      "attributes": {
+        "destructive": false,
+        "requiresConfirmation": false,
+        "confirmationMessage": "",
+        "agentVisible": true
+      },
+      "implementation": {
+        "wasm": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+
+    "add-room": {
+      "summary": "Add a new Room to an existing palace, producing a signed room-added action.",
+      "inputs": {
+        "type": "object",
+        "required": ["palace", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "palace": {
+            "type": "string",
+            "description": "Path prefix to the palace bundle (expects <palace>.bundle + <palace>.key)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Room name (required)."
+          },
+          "mythos": {
+            "type": "string",
+            "description": "Optional genesis mythos body for this room."
+          },
+          "mythosFile": {
+            "type": "string",
+            "description": "Optional path to mythos body file."
+          },
+          "archiform": {
+            "type": "string",
+            "description": "Optional seed archiform name (e.g. library, forge, garden)."
+          }
+        }
+      },
+      "outputs": {
+        "type": "object",
+        "properties": {
+          "roomFp": { "type": "string", "description": "blake3 fingerprint of the new room field envelope." },
+          "actionFp": { "type": "string", "description": "blake3 fingerprint of the room-added action envelope." }
+        }
+      },
+      "effects": { "kind": "ActionEnvelope" },
+      "idempotency": "creates",
+      "streaming": false,
+      "attributes": {
+        "destructive": false,
+        "requiresConfirmation": false,
+        "confirmationMessage": "",
+        "agentVisible": true
+      },
+      "implementation": {
+        "wasm": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+
+    "rename-mythos": {
+      "summary": "Append a new canonical jelly.mythos to a palace's true-name chain, producing a signed true-naming action.",
+      "inputs": {
+        "type": "object",
+        "required": ["palace", "body"],
+        "additionalProperties": false,
+        "properties": {
+          "palace": {
+            "type": "string",
+            "description": "Path prefix to the palace bundle (expects <palace>.bundle + <palace>.key)."
+          },
+          "body": {
+            "type": "string",
+            "description": "New mythos body text (required)."
+          },
+          "bodyFile": {
+            "type": "string",
+            "description": "Path to file containing the mythos body (alternative to body)."
+          },
+          "trueName": {
+            "type": "string",
+            "description": "Optional condensed totem word."
+          },
+          "form": {
+            "type": "string",
+            "description": "Optional open-enum archiform form (not validated against registry — TC18)."
+          }
+        }
+      },
+      "outputs": {
+        "type": "object",
+        "properties": {
+          "newMythosFp": { "type": "string", "description": "blake3 fingerprint of the new mythos envelope." },
+          "actionFp": { "type": "string", "description": "blake3 fingerprint of the true-naming action envelope." }
+        }
+      },
+      "effects": { "kind": "ActionEnvelope" },
+      "idempotency": "updates",
+      "streaming": false,
+      "attributes": {
+        "destructive": false,
+        "requiresConfirmation": false,
+        "confirmationMessage": "",
+        "agentVisible": true
+      },
+      "implementation": {
+        "wasm": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+
+    "move": {
+      "summary": "Move an inscription from its current Room to a new destination Room, producing a signed move action.",
+      "inputs": {
+        "type": "object",
+        "required": ["palace", "avatar", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "palace": {
+            "type": "string",
+            "description": "Path prefix to the palace bundle (expects <palace>.bundle + <palace>.key)."
+          },
+          "avatar": {
+            "type": "string",
+            "description": "Inscription fingerprint to move (64 hex chars)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Destination room fingerprint (64 hex chars)."
+          }
+        }
+      },
+      "outputs": {
+        "type": "object",
+        "properties": {
+          "actionFp": { "type": "string", "description": "blake3 fingerprint of the move action envelope." }
+        }
+      },
+      "effects": { "kind": "ActionEnvelope" },
+      "idempotency": "updates",
+      "streaming": false,
+      "attributes": {
+        "destructive": false,
+        "requiresConfirmation": false,
+        "confirmationMessage": "",
+        "agentVisible": true
+      },
+      "implementation": {
+        "wasm": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
     }
   }
 }

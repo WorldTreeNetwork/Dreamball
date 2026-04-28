@@ -52,6 +52,11 @@ const SCHEMA_VERSION = "2.0.0";
 const TS_OUT_DIR = "src/lib/generated";
 const CYPHER_OUT_DIR = "src/memory-palace";
 
+// ── Per-archiform schema paths (Story 2.2) ────────────────────────────────────
+const ARCHIFORM_SCHEMA_PATH = "schemas/memory-palace-0.1.0.json";
+const ARCHIFORM_PIN_PATH = "schemas/.pins/memory-palace-0.1.0.fp";
+const ARCHIFORM_SCHEMA_VERSION = "0.1.0";
+
 /// Generator identity baked at compile time. Deterministic per-binary
 /// per NFR9 — only the GENERATOR_COMMIT varies in provenance text.
 pub const GENERATOR_ID = "tools/schema-gen@2026-04-28";
@@ -142,6 +147,14 @@ pub fn main() !void {
     try dispatch("gen_valibot", &ctx, gen_valibot.generate);
     try dispatch("gen_cbor", &ctx, gen_cbor.generate);
     try dispatch("gen_cypher", &ctx, gen_cypher.generate);
+
+    // ── Per-archiform pass (Story 2.2) ────────────────────────────────────────
+    // Walk non-root schemas (currently only memory-palace-0.1.0.json) and
+    // dispatch the per-archiform generators. The archiform pass overwrites
+    // `src/memory-palace/schema.cypher` with a provenance header naming the
+    // archiform schema/pin as source (see gen_cypher.zig for the normalization
+    // documented in tests/codegen/normalizations/cypher-header-source-schema.md).
+    try runArchiformPass(io, arena, &err_w);
 
     const t_end = std.Io.Clock.now(.real, io);
     const duration_ns: i96 = t_start.durationTo(t_end).nanoseconds;
@@ -250,6 +263,110 @@ fn buildHeader(allocator: std.mem.Allocator, comment_prefix: []const u8, schema_
             GENERATOR_COMMIT,
         },
     );
+}
+
+/// Public re-export of logKV for use by per-archiform generators (e.g. gen_cypher.zig).
+pub fn logKVPub(w: *std.Io.File.Writer, pairs: anytype) !void {
+    try logKV(w, pairs);
+}
+
+/// Per-archiform pass (Story 2.2).
+/// Reads `schemas/memory-palace-0.1.0.json`, verifies its pin, parses it,
+/// then dispatches per-archiform generators for TS, Valibot, Zig, and Cypher.
+fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Writer) !void {
+    try logKV(err_w, .{
+        .{ "phase", "archiform-pass-start" },
+        .{ "schema", ARCHIFORM_SCHEMA_PATH },
+    });
+
+    // 1) Read archiform schema.
+    const schema_bytes = std.Io.Dir.cwd().readFileAlloc(io, ARCHIFORM_SCHEMA_PATH, arena, .limited(1 << 22)) catch |e| {
+        try logErr(err_w, "archiform-schema-read-failed", ARCHIFORM_SCHEMA_PATH, @errorName(e));
+        return e;
+    };
+    var schema_fp_buf: [64]u8 = undefined;
+    const schema_fp = blake3Hex(schema_bytes, &schema_fp_buf);
+    try logKV(err_w, .{
+        .{ "phase", "archiform-schema-read" },
+        .{ "path", ARCHIFORM_SCHEMA_PATH },
+        .{ "fp", schema_fp },
+        .{ "bytes", schema_bytes.len },
+    });
+
+    // 2) Pin verify.
+    const pin_bytes = std.Io.Dir.cwd().readFileAlloc(io, ARCHIFORM_PIN_PATH, arena, .limited(128)) catch |e| {
+        try logErr(err_w, "archiform-pin-verify", ARCHIFORM_PIN_PATH, @errorName(e));
+        return e;
+    };
+    const pin_text = std.mem.trim(u8, pin_bytes, &std.ascii.whitespace);
+    if (!std.mem.eql(u8, pin_text, schema_fp)) {
+        try logKV(err_w, .{
+            .{ "phase", "archiform-pin-verify" },
+            .{ "status", "mismatch" },
+            .{ "expected", pin_text },
+            .{ "actual", schema_fp },
+            .{ "schema", ARCHIFORM_SCHEMA_PATH },
+        });
+        return error.ArchiformSchemaPinMismatch;
+    }
+    try logKV(err_w, .{
+        .{ "phase", "archiform-pin-verify" },
+        .{ "status", "match" },
+        .{ "fp", schema_fp },
+    });
+
+    // 3) Parse schema.
+    const schema_value = std.json.parseFromSliceLeaky(std.json.Value, arena, schema_bytes, .{}) catch |e| {
+        try logErr(err_w, "archiform-schema-parse-failed", ARCHIFORM_SCHEMA_PATH, @errorName(e));
+        return e;
+    };
+
+    // 4) Build ArchiformCtx and dispatch per-archiform generators.
+    const actx = gen_cypher.ArchiformCtx{
+        .io = io,
+        .arena = arena,
+        .schema_path = ARCHIFORM_SCHEMA_PATH,
+        .schema_fp = schema_fp,
+        .schema_version = ARCHIFORM_SCHEMA_VERSION,
+        .pin_path = ARCHIFORM_PIN_PATH,
+        .schema_value = schema_value,
+        .stderr = err_w,
+        .generator_id = GENERATOR_ID,
+        .generator_commit = GENERATOR_COMMIT,
+    };
+
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_cypher" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_cypher.generateArchiform(&actx);
+
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_ts" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_ts.generateArchiform(&actx);
+
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_valibot" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_valibot.generateArchiform(&actx);
+
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_zig" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_zig.generateArchiform(&actx);
+
+    try logKV(err_w, .{
+        .{ "phase", "archiform-pass-done" },
+        .{ "schema", ARCHIFORM_SCHEMA_PATH },
+    });
 }
 
 /// Emit one JSON line to stderr. Tuple of (key, value) pairs; values are
