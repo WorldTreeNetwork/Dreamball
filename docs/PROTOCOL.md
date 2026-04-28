@@ -4,6 +4,7 @@
 **File extension:** `.jelly`
 **Media type:** `application/jelly+cbor` (binary), `application/jelly+json` (export)
 **Sister project:** [recrypt](../../recrypt/) — shares cryptographic methodology (see `recrypt/docs/wire-protocol.md`)
+**Authoritative shape source:** [`schemas/root-2.0.0.json`](../schemas/root-2.0.0.json) — JSON Schema draft 2020-12; pinned at [`schemas/.pins/root-2.0.0.fp`](../schemas/.pins/root-2.0.0.fp) (FR2, sprint-002 D-018 + D-029). Full prose refresh lands in Epic 7 / Story 7.1.
 
 ---
 

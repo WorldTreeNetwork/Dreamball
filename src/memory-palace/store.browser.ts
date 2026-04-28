@@ -29,6 +29,7 @@ import {
   PolicyDeniedError,
 } from './store-types.js';
 import { mirrorAction, type MirrorAction } from './action-mirror.js';
+import { signActionEnvelope } from '../lib/wasm/loader.js';
 import {
   evaluateGuildPolicy,
   evaluateMythosPolicy,
@@ -812,7 +813,24 @@ export class BrowserStore implements StoreAPI {
 
     // Derived fp for the move action — palace-scoped (M6 review fix) so palaces
     // that share rooms don't collide on the same (fromFp, toFp, timestamp) triple.
+    // Story 6.2 / D-023: when keypairBytes is supplied, produce a real Ed25519
+    // signature via signActionEnvelope (jelly.wasm) and store its Blake3 hash
+    // as cborBytesBlake3. When absent, fall back to the derived action fp
+    // (legacy path for callers without keypair access at call time).
     const moveActionFp = await deriveTripleFp(fromFp, toFp, `move:${palaceFp}`, String(timestamp));
+
+    let cborBytesBlake3 = moveActionFp; // legacy sentinel default
+    if (params.keypairBytes !== undefined) {
+      // Canonical payload matches the verifier-reconstructable form.
+      // Copy path: keypairBytes → wasm alloc → signActionEnvelope → sig bytes.
+      const canonicalPayload = new TextEncoder().encode(
+        `move:${moveActionFp}:${actorFp}:${aqueductFp}:${timestamp}`
+      );
+      const sigBytes = await signActionEnvelope(params.keypairBytes, canonicalPayload);
+      // Store Blake3 of the signature bytes as the cborBytesBlake3 pointer (TC13).
+      cborBytesBlake3 = await hashBytesBlake3Hex(sigBytes);
+    }
+
     await this.recordAction({
       fp: moveActionFp,
       palaceFp,
@@ -821,7 +839,7 @@ export class BrowserStore implements StoreAPI {
       targetFp: aqueductFp,
       parentHashes: [],
       timestamp,
-      cborBytesBlake3: moveActionFp,
+      cborBytesBlake3,
     });
 
     const rows = await this._q<{

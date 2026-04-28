@@ -25,6 +25,15 @@ import {
   onFileDelete,
 } from './file-watcher.js';
 
+// Mock the WASM loader so file-watcher.test.ts does not attempt Vite ?url
+// imports in the Vitest server environment. oracleSignAction (Story 6.2)
+// calls signActionEnvelope; this mock returns a deterministic 64-byte sig.
+vi.mock('../lib/wasm/loader.js', () => ({
+  signActionEnvelope: vi.fn(async (_keypair: Uint8Array, _payload: Uint8Array) => {
+    return new Uint8Array(64).fill(0xcd);
+  }),
+}));
+
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
 function makeFp(seed: string): string {
@@ -139,7 +148,7 @@ function makeMockStore(opts: {
 
 /**
  * Set up a temp directory with a real .oracle.key file (mode 0600)
- * so oracleActionStub can read it.
+ * so oracleSignAction can read it.
  */
 function makeTempPalace(parent?: string): { palaceDir: string; palacePath: string; keyPath: string } {
   // SEC10 path-containment: file-watcher rejects source files whose resolved
@@ -158,16 +167,9 @@ function makeTempPalace(parent?: string): { palaceDir: string; palacePath: strin
   return { palaceDir, palacePath, keyPath };
 }
 
-// Oracle signer gate — file-watcher tests drive onFileChange/onFileDelete,
-// which route through oracleActionStub. That stub refuses to run unless
-// JELLY_ORACLE_ALLOW_UNSIGNED=1 is set. We opt in for the lifetime of this
-// test file and clean up afterwards (docs/known-gaps.md §8).
-beforeAll(() => {
-  process.env.JELLY_ORACLE_ALLOW_UNSIGNED = '1';
-});
-afterAll(() => {
-  delete process.env.JELLY_ORACLE_ALLOW_UNSIGNED;
-});
+// Story 6.2: oracleActionStub replaced by oracleSignAction (real Ed25519 signing).
+// The WASM loader is mocked above so signActionEnvelope returns a stub 64-byte sig.
+// JELLY_ORACLE_ALLOW_UNSIGNED is no longer needed (gate removed in Story 6.2).
 
 // ── AC1: happy path — file edit produces inscription-updated ─────────────────
 

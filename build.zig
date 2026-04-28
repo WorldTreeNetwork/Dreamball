@@ -338,4 +338,90 @@ pub fn build(b: *std.Build) void {
         "Run Story 5.1 wasm host spike: load hello.wasm, broker WASI, reject hello-bad.wasm",
     );
     wasm_spike_step.dependOn(&wasm_spike_run.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.2 production wasm host. Promotes the Story 5.1 spike to
+    // a host that exposes the 5 sprint-002-locked `dreamball.*`
+    // imports (D-033). See
+    // `docs/sprints/002-archiform-foundation/stories/5.2-dreamball-imports-implementation.md`.
+    //
+    // `zig build wasm-host` runs the production driver which:
+    //   - exercises the AC1 + AC4 happy-path (guest calls
+    //     dreamball.emit_action_envelope; host signs with Ed25519);
+    //   - emits the NFR11 / AC7 structured-log JSON event on stderr;
+    //   - measures AC6 / NFR3 latency (100 iterations, p95 ≤ 50 ms).
+    //
+    // `zig build wasm-host-test` runs the per-import unit tests.
+    // ----------------------------------------------------------------
+    const sign_action_mod = b.createModule(.{
+        .root_source_file = b.path("src/sign_action.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const wasm_host_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_exe = b.addExecutable(.{
+        .name = "wasm-host",
+        .root_module = wasm_host_mod,
+    });
+    b.installArtifact(wasm_host_exe);
+    const wasm_host_run = b.addRunArtifact(wasm_host_exe);
+    const wasm_host_step = b.step(
+        "wasm-host",
+        "Run Story 5.2 production wasm host: 5 dreamball.* imports + AC4 + AC6 perf",
+    );
+    wasm_host_step.dependOn(&wasm_host_run.step);
+
+    // Per-import tests live in `src/wasm-host/imports_test.zig`. We
+    // wire them as a dedicated test step so `zig build test` and
+    // `zig build wasm-host-test` both run them; AC2 requires fresh
+    // output for each gate.
+    const wasm_host_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/imports_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_test_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_tests = b.addTest(.{
+        .root_module = wasm_host_test_mod,
+    });
+    const run_wasm_host_tests = b.addRunArtifact(wasm_host_tests);
+    const wasm_host_test_step = b.step(
+        "wasm-host-test",
+        "Run Story 5.2 per-import tests (5 dreamball.* imports + AC8 grep audit assertion)",
+    );
+    wasm_host_test_step.dependOn(&run_wasm_host_tests.step);
+
+    // Aggregate tests step: zig build test runs sign_action's KAT and
+    // the wasm-host per-import suite alongside the existing module tests.
+    const sign_action_tests = b.addTest(.{
+        .root_module = sign_action_mod,
+    });
+    const run_sign_action_tests = b.addRunArtifact(sign_action_tests);
+    test_step.dependOn(&run_sign_action_tests.step);
+    test_step.dependOn(&run_wasm_host_tests.step);
+
+    // AC8 grep audit step. Fails if any name beyond the 5 locked
+    // imports surfaces in `src/wasm-host/`. The regex matches D-033's
+    // scope-lock; the grep's exit code is the gate (zero hits = exit 1
+    // for `grep -E`, which we invert into success).
+    const wasm_host_audit = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        // grep returns 1 when there are no matches — that's the success
+        // case for AC8. We swap with `! grep` so the build step
+        // succeeds iff no rogue dreamball.* names exist.
+        "! grep -E -rn '(^|[^a-zA-Z0-9_])dreamball\\.(?!fp\\b|encode_cbor\\b|read_node\\b|emit_action_envelope\\b|now_ms\\b)[a-zA-Z_][a-zA-Z0-9_]*' src/wasm-host/ --include='*.zig'",
+    });
+    const wasm_host_audit_step = b.step(
+        "wasm-host-audit",
+        "Story 5.2 AC8: grep audit — surface locked to exactly 5 dreamball.* imports",
+    );
+    wasm_host_audit_step.dependOn(&wasm_host_audit.step);
+    test_step.dependOn(&wasm_host_audit.step);
 }

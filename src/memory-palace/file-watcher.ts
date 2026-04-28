@@ -13,7 +13,7 @@
  * 4-step inline transaction (D-008):
  *   1. Content-hash check — skip if unchanged (AC2 no-op guard)
  *   2. computeEmbedding — throws EmbeddingServiceUnreachable on 503 (AC4)
- *   3. oracleActionStub — produces SignedAction with oracle fp as signer
+ *   3. oracleSignAction — produces SignedAction with real Ed25519 signature (Story 6.2)
  *   4. Sequential store writes: reembed → mirrorInscriptionToKnowledgeGraph →
  *      recordAction → updateInscription
  *      (SEC11: action recorded after effect within same write sequence)
@@ -33,7 +33,7 @@ import { watch, readFileSync, realpathSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import type { StoreAPI } from './store-types.js';
 import {
-  oracleActionStub,
+  oracleSignAction,
   mirrorInscriptionToKnowledgeGraph,
 } from './oracle.js';
 import {
@@ -240,7 +240,7 @@ export function openPalaceWatcher(
  * 4-step inline transaction (D-008):
  *   1. Read new bytes; compute content hash; skip if unchanged (AC2).
  *   2. computeEmbedding → throws EmbeddingServiceUnreachable on 503 (AC4).
- *   3. oracleActionStub → oracle-signed 'inscription-updated' action.
+ *   3. oracleSignAction → real Ed25519-signed 'inscription-updated' action (Story 6.2).
  *   4. Sequential store writes (SEC11 order):
  *      store.reembed → mirrorInscriptionToKnowledgeGraph → recordAction →
  *      updateInscription(source_blake3 + revision bump).
@@ -304,7 +304,7 @@ export async function onFileChange(
     // Step 3: oracle-sign the inscription-updated action (AC1 oracle fp as signer)
     // TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
     const parentHashes = await store.headHashes(palaceFp);
-    const signedAction = await oracleActionStub(
+    const signedAction = await oracleSignAction(
       palacePath,
       palaceFp,
       'inscription-updated',
@@ -402,7 +402,7 @@ export async function onFileDelete(
     // Oracle-sign orphaned action
     // TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
     const parentHashes = await store.headHashes(palaceFp);
-    const signedAction = await oracleActionStub(
+    const signedAction = await oracleSignAction(
       palacePath,
       palaceFp,
       'inscription-orphaned',

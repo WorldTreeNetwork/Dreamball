@@ -40,6 +40,12 @@ interface WasmExports {
 		pkLen: number
 	) => number;
 	hashBlake3: (inputPtr: number, inputLen: number, outPtr: number) => void;
+	signActionEnvelope: (
+		keypairPtr: number,
+		keypairLen: number,
+		payloadPtr: number,
+		payloadLen: number
+	) => bigint;
 	resultErrPtr: () => number;
 	resultErrLen: () => number;
 }
@@ -159,6 +165,46 @@ export function blake3HexSync(bytes: Uint8Array): string {
 	exp.hashBlake3(inPtr, bytes.length, outPtr);
 	const digest = new Uint8Array(exp.memory.buffer, outPtr, 32);
 	return Array.from(digest).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Sign an arbitrary payload with a 64-byte Ed25519 keypair (seed||pubkey).
+ *
+ * Calls the `signActionEnvelope` WASM export (Story 6.1) — the canonical
+ * seam through which all action-envelope signatures are produced (D-023).
+ * Ed25519 single signature only per SEC6 + project_dreamball_pq_deferred.
+ *
+ * Returns the 64-byte raw Ed25519 signature bytes.
+ *
+ * @param keypairBytes  64 bytes: [seed(32) || pubkey(32)] in Zig key format
+ * @param payload       Arbitrary bytes to sign (canonical action payload)
+ */
+export async function signActionEnvelope(
+	keypairBytes: Uint8Array,
+	payload: Uint8Array
+): Promise<Uint8Array> {
+	if (keypairBytes.length !== 64) {
+		throw new Error(`signActionEnvelope: keypairBytes must be 64 bytes, got ${keypairBytes.length}`);
+	}
+	const exp = await getInstance();
+	exp.reset();
+	const skPtr = exp.alloc(keypairBytes.length);
+	const plPtr = exp.alloc(payload.length);
+	if (skPtr === 0 || plPtr === 0) {
+		throw new Error('signActionEnvelope: alloc failed (input too large?)');
+	}
+	new Uint8Array(exp.memory.buffer, skPtr, keypairBytes.length).set(keypairBytes);
+	new Uint8Array(exp.memory.buffer, plPtr, payload.length).set(payload);
+	const packed = exp.signActionEnvelope(skPtr, keypairBytes.length, plPtr, payload.length);
+	if (packed === 0n) {
+		const ep = exp.resultErrPtr();
+		const el = exp.resultErrLen();
+		const msg = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
+		throw new Error(`signActionEnvelope: wasm returned 0: ${msg || '(no diagnostic)'}`);
+	}
+	const ptr = Number(packed >> 32n);
+	const len = Number(packed & 0xffffffffn);
+	return new Uint8Array(exp.memory.buffer, ptr, len).slice();
 }
 
 let modulePromise: Promise<WebAssembly.Module> | null = null;

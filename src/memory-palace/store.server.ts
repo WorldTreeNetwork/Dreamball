@@ -45,6 +45,7 @@ import {
   PolicyDeniedError,
 } from './store-types.js';
 import { mirrorAction, type MirrorAction } from './action-mirror.js';
+import { signActionEnvelope } from '../lib/wasm/loader.js';
 import {
   evaluateGuildPolicy,
   evaluateMythosPolicy,
@@ -859,9 +860,10 @@ export class ServerStore implements StoreAPI {
    *   3. Call updateAqueductStrength — Hebbian saturating bump, TC17 monotone.
    *   4. Call recordAction for a `move` ActionLog entry. ActionLog fp derived
    *      from (fromFp, toFp, timestamp, palaceFp) via deriveTripleFp so
-   *      replayable. cbor_bytes_blake3 pointer carries the derived fp as a
-   *      sentinel until the Zig-side WASM signer parameterisation lands
-   *      (known-gaps §6 — TODO-CRYPTO dual-sig Ed25519 + ML-DSA-87).
+   *      replayable. cbor_bytes_blake3 is set to Blake3(signature_bytes) when
+   *      params.keypairBytes is supplied (real Ed25519 sig via signActionEnvelope,
+   *      Story 6.2 / D-023); otherwise falls back to the derived action fp
+   *      (legacy path for callers without keypair access).
    *   5. Read-back the post-update aqueduct row so the renderer receives the
    *      post-commit strength/conductance/revision values — SEC11 ordering.
    */
@@ -898,11 +900,24 @@ export class ServerStore implements StoreAPI {
     // 4. Emit signed `move` ActionLog entry. Derived fp ensures replay-identity
     //    AND is palace-scoped so two palaces sharing rooms cannot collide on the
     //    same (fromFp, toFp, timestamp) triple (M6 review fix).
-    //    TODO-CRYPTO (known-gaps §6): the full Ed25519 + ML-DSA-87 dual sig is
-    //    authored by the Zig signer — this MVP path persists the derived fp as
-    //    the cbor_bytes_blake3 pointer so the row is well-formed and the Blake3
-    //    handle is stable for the renderer (SEC11 "paint after persist").
+    //    Story 6.2 / D-023: when keypairBytes is supplied, produce a real Ed25519
+    //    signature via signActionEnvelope (jelly.wasm) and store its Blake3 hash
+    //    as cborBytesBlake3. When absent, fall back to the derived action fp
+    //    (legacy path for callers without keypair access at call time).
     const moveActionFp = await deriveTripleFp(fromFp, toFp, `move:${palaceFp}`, String(timestamp));
+
+    let cborBytesBlake3 = moveActionFp; // legacy sentinel default
+    if (params.keypairBytes !== undefined) {
+      // Canonical payload matches the verifier-reconstructable form.
+      // Copy path: keypairBytes → wasm alloc → signActionEnvelope → sig bytes.
+      const canonicalPayload = new TextEncoder().encode(
+        `move:${moveActionFp}:${actorFp}:${aqueductFp}:${timestamp}`
+      );
+      const sigBytes = await signActionEnvelope(params.keypairBytes, canonicalPayload);
+      // Store Blake3 of the signature bytes as the cborBytesBlake3 pointer (TC13).
+      cborBytesBlake3 = await hashBytesBlake3Hex(sigBytes);
+    }
+
     await this.recordAction({
       fp: moveActionFp,
       palaceFp,
@@ -911,7 +926,7 @@ export class ServerStore implements StoreAPI {
       targetFp: aqueductFp,
       parentHashes: [],
       timestamp,
-      cborBytesBlake3: moveActionFp,
+      cborBytesBlake3,
     });
 
     // 5. Read-back post-update aqueduct values for the renderer tuple.

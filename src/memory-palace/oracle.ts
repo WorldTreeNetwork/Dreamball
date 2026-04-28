@@ -21,6 +21,10 @@ import { readFileSync, statSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { StoreAPI } from './store-types.js';
+// Static import so vi.mock('../lib/wasm/loader.js') in tests always intercepts
+// this reference — concurrent Promise.all calls can race past a dynamic import()
+// and hit the real module before the mock factory settles (D-023 / Story 6.2).
+import { signActionEnvelope } from '../lib/wasm/loader.js';
 
 // ── Compile-time–equivalent embed (AC7) ───────────────────────────────────────
 //
@@ -165,31 +169,11 @@ function parseKeyFile(raw: string, keyPath: string): HybridKeyPair {
   };
 }
 
-// ── oracleActionStub ──────────────────────────────────────────────────────────
+// ── oracleSignAction ──────────────────────────────────────────────────────────
 //
-// S4.4: Oracle-signed action for file-watcher events.
-//
-// Per the Technical Notes in the story spec:
-//   "oracle signing goes through Zig-compiled sign helper (existing signer.zig +
-//    ml_dsa.zig parameterised over keypair)"
-//
-// In the MVP the WASM module does not yet expose a parameterised
-// `jelly_sign_action_with_key(keyBytes, msg)` export. Rather than hand-rolling
-// CBOR encoding in TypeScript (cross-runtime invariant forbids it), we produce a
-// synthetic SignedAction object whose signature fields carry the oracle fp as
-// signer-fp. The actual cryptographic dual-signature (ed25519 + ML-DSA) over the
-// action envelope will be wired when the WASM signer export is parameterised
-// (tracked in docs/known-gaps.md as a post-MVP hardening step alongside the
-// oracle key plaintext issue).
-//
-// For the MVP this means:
-//   - `actionFp` is a deterministic fp derived from (kind + targetFp + timestamp)
-//     using SHA-256 (acceptable substitute until Zig Blake3 signing is wired)
-//   - `signerFp` is set to the oracleFp read from the oracle key file
-// TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
-//   - `parentHashes` carries the supplied DAG parent fps
-//   - The action IS recorded in ActionLog (audit trail is complete)
-//   - The signature bytes are absent (MVP gap; marker above)
+// S6.2 / Story 6.2: Real Ed25519 oracle-signed action for file-watcher events.
+// Migrated from oracleActionStub (sprint-001 sentinel) to real signActionEnvelope
+// call via jelly.wasm (D-023 / FR13 / SEC3). Ed25519-only per SEC6.
 
 export interface SignedAction {
   /** Blake3 fp of the signed action envelope (ActionLog PK) */
@@ -206,68 +190,71 @@ export interface SignedAction {
   parentHashes: string[];
   /** ms-epoch timestamp */
   timestamp: number;
+  /** 64-byte raw Ed25519 signature over the canonical action payload (Story 6.2 / D-023) */
+  signature: Uint8Array;
 }
 
 /**
- * Produce an oracle-signed action for file-watcher events.
+ * Produce a real oracle-signed action for file-watcher events.
  *
- * CRITICAL-PRE-SHIP GATE: this stub must NOT run in production. The
- * cryptographic dual-signature (ed25519 + ML-DSA) over the action envelope is
- * deferred until the WASM signer export is parameterised over arbitrary
- * keypairs (known-gaps §6). In the meantime this function produces an
- * UNSIGNED SignedAction — it is named `oracleActionStub` to make that clear
- * at every call site, and it refuses to run unless JELLY_ORACLE_ALLOW_UNSIGNED=1
- * is explicitly set, so production shells fail fast.
+ * Reads the oracle keypair from `<palacePath>.oracle.key`, assembles a
+ * canonical action payload, calls `signActionEnvelope(keypair, payload)` via
+ * the WASM loader (Story 6.1 export, D-023), and returns a `SignedAction`
+ * carrying the 64-byte Ed25519 signature. Ed25519-only per SEC6 +
+ * project_dreamball_pq_deferred. No sentinel/derived-fp/placeholder bytes
+ * remain in this function or its dependencies (AC1 / FR13 / SEC3).
  *
- * The Zig-side WASM signer export (signer.zig parameterised over the oracle
- * keypair read from `.oracle.key`) is the real target; once it lands, this
- * stub should be replaced by a thin wrapper that round-trips the action envelope
- * through the WASM module and returns the signed bytes.
+ * Canonical payload: UTF-8 encoding of
+ *   `${kind}:${targetFp}:${signerFp}:${timestamp}:${parentHashes.join(',')}`
+ * This is the fixed canonical payload form for oracle action envelopes; the
+ * same string is reconstructed by verifiers that check the signature field.
  *
  * TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
  *
- * @param palacePath    Path to the palace directory (`.oracle.key` is at `${palacePath}.oracle.key`)
+ * @param palacePath    Path to the palace directory (`.oracle.key` at `${palacePath}.oracle.key`)
  * @param palaceFp      Blake3 fp of the palace (for ActionLog)
  * @param kind          Action kind: 'inscription-updated' | 'inscription-orphaned'
  * @param targetFp      Blake3 fp of the inscription being updated/orphaned
  * @param parentHashes  DAG parent action fps
- * @returns             SignedAction ready to pass to store.recordAction
+ * @returns             SignedAction with real Ed25519 signature, ready to pass to store.recordAction
  */
-export async function oracleActionStub(
+export async function oracleSignAction(
   palacePath: string,
   palaceFp: string,
   kind: 'inscription-updated' | 'inscription-orphaned',
   targetFp: string,
   parentHashes: string[]
 ): Promise<SignedAction> {
-  if (process.env.JELLY_ORACLE_ALLOW_UNSIGNED !== '1') {
-    throw new Error(
-      'oracle.ts: oracleActionStub called without JELLY_ORACLE_ALLOW_UNSIGNED=1. ' +
-        'The Zig-side WASM signer is not yet wired (known-gaps §6); this stub produces ' +
-        'an unsigned action and must not ship in production.'
-    );
-  }
   // TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
   const keyPair = await readOraclePrivateKey(palacePath);
 
-  // Use ed25519Public as the oracle fp — this is the stable identity fp
-  // derived from the oracle keypair. Full Blake3-over-CBOR fp derivation
-  // is deferred until WASM signer parameterisation (known-gaps §6).
-  const signerFp = keyPair.ed25519Public;
+  // Assemble 64-byte keypair: [seed(32) || pubkey(32)] in Zig Ed25519 key format.
+  // parseKeyFile returns ed25519Private as hex of the first 32 bytes (seed) and
+  // ed25519Public as hex of the next 32 bytes (public key). Concatenating gives
+  // the 64-byte keypair that signActionEnvelope expects.
+  // Copy path documented inline per Technical Notes in Story 6.2.
+  const keypairHex = keyPair.ed25519Private + keyPair.ed25519Public;
+  const keypairBytes = new Uint8Array(Buffer.from(keypairHex, 'hex'));
 
+  // signerFp is the oracle's Ed25519 public key hex — stable identity per D-011.
+  const signerFp = keyPair.ed25519Public;
   const timestamp = Date.now();
 
-  // Derive a deterministic action fp from (kind + targetFp + timestamp + signerFp)
-  // using SHA-256. In production this will be Blake3 of the signed CBOR envelope
-  // (computed by the Zig signer); SHA-256 is the Bun-side fallback for MVP.
-  const { createHash } = await import('node:crypto');
-  const fp = createHash('sha256')
-    .update(kind)
-    .update(targetFp)
-    .update(signerFp)
-    .update(String(timestamp))
-    .update(parentHashes.join(','))
-    .digest('hex');
+  // Canonical payload: fixed string form over which the signature is computed.
+  // Reconstructable by any verifier given the SignedAction fields.
+  const canonicalPayload = new TextEncoder().encode(
+    `${kind}:${targetFp}:${signerFp}:${timestamp}:${parentHashes.join(',')}`
+  );
+
+  // Sign via WASM — the single seam for signature production (D-023 / SEC3).
+  // signActionEnvelope is a static import (see top of file) so vi.mock always
+  // intercepts it — no concurrent-import race with Promise.all.
+  const signature = await signActionEnvelope(keypairBytes, canonicalPayload);
+
+  // Derive the action fp as Blake3 of the canonical payload bytes (consistent
+  // with the cross-runtime Blake3 discipline; SHA-256 sentinel removed).
+  const { hashBytesBlake3Hex } = await import('./cypher-utils.js');
+  const fp = await hashBytesBlake3Hex(canonicalPayload);
 
   return {
     fp,
@@ -277,6 +264,7 @@ export async function oracleActionStub(
     targetFp,
     parentHashes,
     timestamp,
+    signature,
   };
 }
 

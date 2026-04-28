@@ -347,30 +347,28 @@ This mirrors the D-008 signed-action-before-effect pattern applied to read paths
 
 ### 8. Oracle action signing is stubbed (`oracleActionStub` gate)
 
-**State**: Open — the WASM-side ML-DSA+Ed25519 dual-signer is not yet
-parameterised over arbitrary keypairs, so `file-watcher.ts` cannot yet
-produce a real oracle-signed action envelope.
+**State**: CLOSED 2026-04-28 by Story 6.2.
 
-**Why deferred**: `jelly.wasm` exposes signing only for the identity that
-was loaded at WASM startup; adding a
-`jelly_sign_action_with_key(keyBytes, msg)` export requires threading the
-oracle keypair through the runtime seam (one more `env.*` import or a
-parameterised export). That work is tracked alongside §6 Phase-D cleanup.
+`oracle.ts` now exports `oracleSignAction` (the real implementation).
+`store.server.ts` and `store.browser.ts` `recordTraversal` both call
+`signActionEnvelope` when a `keypairBytes` param is provided, producing
+a real 64-byte Ed25519 signature committed as `cborBytesBlake3 =
+hashBytesBlake3Hex(sigBytes)` on the action node.
 
-**Limitation**: `oracle.ts` exports `oracleActionStub` (formerly
-`oracleSignAction`) which produces an **unsigned** `SignedAction` suitable
-only for the in-memory ActionLog audit trail. The stub refuses to run
-unless `JELLY_ORACLE_ALLOW_UNSIGNED=1` is exported in the environment, so
-production shells fail closed. Tests that cover the file-watcher flow
-must set the env var explicitly.
+The `JELLY_ORACLE_ALLOW_UNSIGNED` env-var gate is removed. The
+`oracleActionStub` alias is gone.
 
-**Marker**: the error message itself references this gap; the `file-watcher.ts`
-import uses the new name so any accidental removal of the gate surfaces
-at compile time.
+**Residual**: Per the 2026-04-25 deferral above, only Ed25519 single
+signatures are produced (not hybrid Ed25519 + ML-DSA-87). Dual-sig and
+recrypt-wallet key-custody remain deferred to the future security pass
+(§6). Signature verification on the verify-walk path (§11) also remains
+deferred.
 
-**Path forward**: land the parameterised WASM signer export, replace the
-stub body with a round-trip through the WASM module, remove the env-var
-gate and delete the alias export.
+**Negative-test coverage**: `tests/crypto/forged-signature.test.ts`
+(Story 6.2 AC4) uses a real `mintDreamBall` keypair, calls
+`oracleSignAction`, bit-flips the signature, and asserts
+`crypto.subtle.verify` returns false — confirming the signature is a
+real Ed25519 commitment, not a hash sentinel.
 
 ---
 
