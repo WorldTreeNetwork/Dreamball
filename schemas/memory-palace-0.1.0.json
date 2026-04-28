@@ -827,9 +827,9 @@
       "idempotency": "updates",
       "streaming": false,
       "attributes": {
-        "destructive": false,
-        "requiresConfirmation": false,
-        "confirmationMessage": "",
+        "destructive": true,
+        "requiresConfirmation": true,
+        "confirmationMessage": "Rename the palace mythos? This appends a new canonical name to the chain and is observable to all current viewers.",
         "agentVisible": true
       },
       "implementation": {

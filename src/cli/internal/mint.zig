@@ -24,9 +24,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const dreamball = @import("dreamball");
-const io = @import("../io.zig");
-const args_mod = @import("args.zig");
-const helpers = @import("helpers.zig");
+const io = @import("../../io.zig");
+const args_mod = @import("../args.zig");
+const helpers = @import("../helpers.zig");
 
 const Fingerprint = dreamball.fingerprint.Fingerprint;
 const protocol = dreamball.protocol;
@@ -40,14 +40,14 @@ const key_file = dreamball.key_file;
 // @embedFile resolves relative to *this* source file. The registry JSON lives
 // at src/memory-palace/seed/archiform-registry.json.
 const REGISTRY_BYTES: []const u8 =
-    @embedFile("../memory-palace/seed/archiform-registry.json");
+    @embedFile("../../memory-palace/seed/archiform-registry.json");
 
 // ── Oracle personality seed bytes (AC7 / S4.1) ────────────────────────────────
 // Embedded at compile time so the seed is available in any runtime environment
 // (CLI, jelly-server, browser) without a disk read at runtime.
 // The content is placed into the oracle envelope's personality_master_prompt slot.
 const ORACLE_PROMPT_BYTES: []const u8 =
-    @embedFile("../memory-palace/seed/oracle-prompt.md");
+    @embedFile("../../memory-palace/seed/oracle-prompt.md");
 
 // ── CLI spec ─────────────────────────────────────────────────────────────────
 

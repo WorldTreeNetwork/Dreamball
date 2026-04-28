@@ -17,7 +17,7 @@ const dreamball = @import("dreamball");
 const io = @import("../io.zig");
 const args_mod = @import("args.zig");
 const helpers = @import("helpers.zig");
-const palace_verify = @import("palace_verify.zig");
+const palace_verify = @import("internal/verify.zig");
 
 const SPECS = [_]args_mod.Spec{
     .{ .long = "help", .takes_value = false },

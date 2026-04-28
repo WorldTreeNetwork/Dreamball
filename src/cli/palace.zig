@@ -24,9 +24,9 @@ const palace_mint = @import("generated/palace_mint.zig");
 const palace_add_room = @import("generated/palace_add_room.zig");
 const palace_inscribe = @import("generated/palace_inscribe.zig");
 const palace_move = @import("generated/palace_move.zig");
-const palace_open = @import("palace_open.zig");
+const palace_open = @import("internal/open.zig");
 const palace_rename_mythos = @import("generated/palace_rename_mythos.zig");
-const palace_show = @import("palace_show.zig");
+const palace_show = @import("internal/show.zig");
 
 pub const SubCommand = struct {
     name: []const u8,

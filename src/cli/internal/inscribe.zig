@@ -28,10 +28,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const dreamball = @import("dreamball");
-const io = @import("../io.zig");
-const args_mod = @import("args.zig");
-const helpers = @import("helpers.zig");
-const palace_mint = @import("palace_mint.zig");
+const io = @import("../../io.zig");
+const args_mod = @import("../args.zig");
+const helpers = @import("../helpers.zig");
+const palace_mint = @import("mint.zig");
 
 const Fingerprint = dreamball.fingerprint.Fingerprint;
 const protocol = dreamball.protocol;

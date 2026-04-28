@@ -138,7 +138,7 @@ test -s pmint.bundle
 test -s pmint.oracle.key
 
 echo "==> palace mint: AC6 — TODO-CRYPTO marker present in source"
-grep -q "TODO-CRYPTO: oracle key is plaintext" "$REPO_DIR/src/cli/palace_mint.zig"
+grep -q "TODO-CRYPTO: oracle key is plaintext" "$REPO_DIR/src/cli/internal/mint.zig"
 
 echo "==> palace mint: AC3 — oracle key has mode 0600"
 KEY_MODE=$(stat -f "%Lp" pmint.oracle.key 2>/dev/null || stat -c "%a" pmint.oracle.key 2>/dev/null)
@@ -269,6 +269,7 @@ PALACE_BUN="$(command -v bun)" \
   --body "the library remembers" \
   --true-name "rememberer" \
   --form "library" \
+  --yes \
   > rename-mythos.out
 grep -q "renamed mythos" rename-mythos.out
 grep -q "new mythos fp:" rename-mythos.out
@@ -280,6 +281,7 @@ PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
 "$JELLY" palace rename-mythos pmint \
   --body "the library deepens" \
+  --yes \
   > rename-mythos-2.out
 grep -q "renamed mythos" rename-mythos-2.out
 

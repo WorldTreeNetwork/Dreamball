@@ -11,7 +11,7 @@ const args_mod = @import("args.zig");
 const helpers = @import("helpers.zig");
 const identity_envelope = dreamball.identity_envelope;
 const base58 = dreamball.base58;
-const palace_show = @import("palace_show.zig");
+const palace_show = @import("internal/show.zig");
 
 const SPECS = [_]args_mod.Spec{
     .{ .long = "format" },         // 0

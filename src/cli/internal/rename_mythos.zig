@@ -30,10 +30,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const dreamball = @import("dreamball");
-const io = @import("../io.zig");
-const args_mod = @import("args.zig");
-const helpers = @import("helpers.zig");
-const palace_mint = @import("palace_mint.zig");
+const io = @import("../../io.zig");
+const args_mod = @import("../args.zig");
+const helpers = @import("../helpers.zig");
+const palace_mint = @import("mint.zig");
 
 const Fingerprint = dreamball.fingerprint.Fingerprint;
 const protocol = dreamball.protocol;
@@ -50,6 +50,10 @@ const SPECS = [_]args_mod.Spec{
     .{ .long = "true-name" },     // 2 — optional totem word
     .{ .long = "form" },          // 3 — optional open-enum form (TC18: NOT validated)
     .{ .long = "help", .takes_value = false }, // 4
+    // Story 3.5: generated dispatcher passes --yes/--no-confirm when caller supplies them;
+    // accept and ignore them here so args_mod.parse does not reject them as UnknownFlag.
+    .{ .long = "yes", .takes_value = false },        // 5
+    .{ .long = "no-confirm", .takes_value = false }, // 6
 };
 
 pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
@@ -492,13 +496,15 @@ fn invokeBridge(allocator: Allocator, staging_path: []const u8, bundle_path: []c
 // ============================================================================
 
 test "SPECS table is consistent with CLI spec" {
-    try std.testing.expectEqual(@as(usize, 5), SPECS.len);
+    try std.testing.expectEqual(@as(usize, 7), SPECS.len);
     try std.testing.expectEqualStrings("body", SPECS[0].long);
     try std.testing.expectEqualStrings("body-file", SPECS[1].long);
     try std.testing.expectEqualStrings("true-name", SPECS[2].long);
     try std.testing.expectEqualStrings("form", SPECS[3].long);
     try std.testing.expectEqualStrings("help", SPECS[4].long);
     try std.testing.expect(!SPECS[4].takes_value);
+    try std.testing.expectEqualStrings("yes", SPECS[5].long);
+    try std.testing.expectEqualStrings("no-confirm", SPECS[6].long);
 }
 
 test "assertNotSecondGenesis: allows genesis with no predecessor" {

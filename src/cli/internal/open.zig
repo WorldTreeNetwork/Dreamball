@@ -22,9 +22,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const io = @import("../io.zig");
-const args_mod = @import("args.zig");
-const helpers = @import("helpers.zig");
+const io = @import("../../io.zig");
+const args_mod = @import("../args.zig");
+const helpers = @import("../helpers.zig");
 
 // ── CLI spec ──────────────────────────────────────────────────────────────────
 

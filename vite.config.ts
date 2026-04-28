@@ -43,7 +43,8 @@ export default defineConfig({
 						'src/**/*.{test,spec}.{js,ts}',
 						'jelly-server/src/**/*.{test,spec}.{js,ts}',
 						'tests/codegen/**/*.{test,spec}.{js,ts}',
-						'tests/wasm/host/**/*.{test,spec}.{js,ts}'
+						'tests/wasm/host/**/*.{test,spec}.{js,ts}',
+						'tests/mcp/**/*.{test,spec}.{js,ts}'
 					],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}'],
 					// S6.1: jelly-server tests must not attempt to start the server

@@ -209,17 +209,16 @@ fn projectVerbToDirImpl(
     try body.appendSlice(arena,
         \\`.
         \\//!
-        \\//! Composes the bridge pattern (D-022) by delegating to the legacy
-        \\//! verb's `pub fn run` after flag parsing. The legacy file remains in
-        \\//! place for parity verification; Story 3.5 removes it once all five
-        \\//! verbs project cleanly.
+        \\//! Composes the bridge pattern (D-022) by delegating to the internal
+        \\//! verb primitive after flag parsing. Story 3.5 moved the primitives
+        \\//! from `src/cli/palace_<verb>.zig` to `src/cli/internal/<verb>.zig`.
         \\
         \\const std = @import("std");
         \\const Allocator = std.mem.Allocator;
         \\
         \\const io = @import("../../io.zig");
         \\const args_mod = @import("../args.zig");
-        \\const legacy = @import("../palace_
+        \\const legacy = @import("../internal/
     );
     try body.appendSlice(arena, snake);
     try body.appendSlice(arena, ".zig\");\n\n");

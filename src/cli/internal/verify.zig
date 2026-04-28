@@ -43,9 +43,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const dreamball = @import("dreamball");
-const io = @import("../io.zig");
-const helpers = @import("helpers.zig");
-const palace_mint = @import("palace_mint.zig");
+const io = @import("../../io.zig");
+const helpers = @import("../helpers.zig");
+const palace_mint = @import("mint.zig");
 // AC8: walkToGenesis imported directly from dreamball.mythos_chain (no copy; S3.4 AC6 contract).
 const mythos_chain = dreamball.mythos_chain;
 

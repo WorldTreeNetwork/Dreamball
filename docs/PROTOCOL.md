@@ -4,7 +4,7 @@
 **File extension:** `.jelly`
 **Media type:** `application/jelly+cbor` (binary), `application/jelly+json` (export)
 **Sister project:** [recrypt](../../recrypt/) — shares cryptographic methodology (see `recrypt/docs/wire-protocol.md`)
-**Authoritative shape source:** [`schemas/root-2.0.0.json`](../schemas/root-2.0.0.json) — JSON Schema draft 2020-12; pinned at [`schemas/.pins/root-2.0.0.fp`](../schemas/.pins/root-2.0.0.fp) (FR2, sprint-002 D-018 + D-029). Full prose refresh lands in Epic 7 / Story 7.1.
+**Authoritative shape sources:** [`schemas/root-2.0.0.json`](../schemas/root-2.0.0.json) (root wire types) and [`schemas/memory-palace-0.1.0.json`](../schemas/memory-palace-0.1.0.json) (Memory Palace archiform) — both JSON Schema draft 2020-12; pinned at [`schemas/.pins/root-2.0.0.fp`](../schemas/.pins/root-2.0.0.fp) and [`schemas/.pins/memory-palace-0.1.0.fp`](../schemas/.pins/memory-palace-0.1.0.fp) respectively (D-018 + D-029). No hand-written schemas exist anywhere; JSON Schema is vendored locally and all generators consume it. See §14 (Schema vendoring and pin format) and §15 (Wasm module signing and trust model) for the full vendoring and trust contract.
 
 ---
 
@@ -490,6 +490,7 @@ All six share the v1 core fields (`format-version`, `stage`, `identity`, `genesi
 Populated attribute surface: `look`, `feel` (optional), `name`, `note`, optional `wearer` (a fingerprint indicating the current wearer — informational; not a security claim).
 
 Example:
+
 ```
 200(
   201({ "type": "jelly.dreamball.avatar", "format-version": 2,
@@ -507,6 +508,7 @@ Example:
 #### 12.1.2 `jelly.dreamball.agent`
 
 Full act surface plus the four new v2 agent attributes:
+
 - `act` — v1-compatible skill + tool + model + prompt slot
 - `memory` — `jelly.memory` envelope (§12.3)
 - `knowledge-graph` — `jelly.knowledge-graph` envelope (§12.4)
@@ -844,6 +846,23 @@ same `#7.25` half-float / `#7.26` single-float rule already carved
 out for `jelly.omnispherical-grid` in §12.2. No other fields use
 floats.
 
+**Coordinate-frame composition (D-027).** Two coordinate regimes coexist:
+
+- **Polar** at the omnispherical-grid (field) layer — matches the
+  semantic intent of the dreamsphere (latitude, longitude, radius).
+- **Cartesian** (right-handed, Y-up, meters, glTF-2.0 quaternion
+  order) for placements local to a parent DreamBall.
+
+Nested reference frames compose via cached world matrices
+(`resolveWorldMatrices`); the GPU consumes
+`worldMatrix × localPosition` — no polar arithmetic in shaders.
+
+Sprint-001 shipped a simplified path (single reference frame, no
+`polarShellToCartesian`). Full multi-frame resolution and the
+`polarShellToCartesian` conversion are Growth-tier work. See
+[`docs/decisions/2026-04-24-coord-frames.md`](decisions/2026-04-24-coord-frames.md)
+(D-027) for the full rationale and alternatives considered.
+
 ### 13.3 `jelly.timeline` + `jelly.action`
 
 A signed, hash-linked DAG of actions taken inside the palace.
@@ -884,6 +903,7 @@ single `head-hash` are accepted on read and rewritten as a
 1-element `head-hashes` set on the next append.
 
 `jelly.action` core:
+
 ```
 {
   "type":           "jelly.action",
@@ -893,6 +913,7 @@ single `head-hash` are accepted on read and rewritten as a
   "actor":          h'…32…'                    ; fingerprint of the signer
 }
 ```
+
 Attributes: `timestamp` (CBOR tag 1), `target-fp` (what the action
 was performed on, if any), free-form per-kind payload, dual
 signatures, and two optional DAG-relation attributes below.
@@ -932,6 +953,7 @@ that reference existing actions; they do not require the
 referenced action to be reachable from any current head.
 
 **Chain rules.**
+
 - Every signed action's `parent-hashes` MUST resolve to previously
   signed actions in the same palace's timeline.
 - Verification walks back from *every* entry in `head-hashes` to
@@ -1040,6 +1062,7 @@ policy, typically weighted by social-graph distance.
 ```
 
 **Rules.**
+
 - Observations are never transmitted implicitly. Transport is always
   an explicit `jelly transmit`, scoped to a Guild.
 - Axis values use the §12.2 float exception.
@@ -1058,6 +1081,7 @@ falls back to the `flat` lens with the markdown body.
 ) [
   "source":    <jelly.asset envelope>,              ; media-type: text/markdown, text/plain, text/asciidoc, …
   "surface":   "scroll"|"tablet"|"book-spread"|"etched-wall"|"floating-glyph"|<open-enum>,
+  "fallback":  ["tablet", "scroll"],                ; optional ordered fallback chain; see surface registry below
   "placement": "auto"|"curator",                    ; auto = renderer chooses; curator = parent room's jelly.layout
   [salted] 'note': "lives on the east wall"
 ]
@@ -1067,6 +1091,29 @@ Because `source` is content-addressed (Blake3 of file bytes), a
 markdown file on disk and its inscription in a palace share an
 identity. File-watcher logic on the oracle side can keep them
 synchronised (PRD FR72, Growth).
+
+**Surface registry (D-026).** The `surface` value is an **open string**
+on the wire — new surfaces can be registered without a protocol version
+bump. Each lens implementation publishes its own registry of natively-
+rendered surfaces.
+
+Rules:
+
+- `"scroll"` is the **mandatory baseline** — every lens MUST be able to
+  render it. An inscription with no recognised surface always falls back
+  here.
+- Authors MAY attach an optional `fallback` attribute — an ordered array
+  of surface names to try before reaching `"scroll"`. The renderer walks
+  `surface → fallback[0] → fallback[1] → … → "scroll"`, stopping at the
+  first surface its lens registry knows how to render.
+- **Cycle detection.** If the fallback chain contains a cycle (e.g.,
+  `surface: "A"`, `fallback: ["B", "A"]`), the renderer emits a
+  `surface-fallback-cycle` event and breaks immediately to `"scroll"`.
+- Per-lens registries are the extension point: Unreal, Blender, and
+  MR/VR lenses may support surfaces (`"holographic-slab"`,
+  `"depth-texture"`) that the reference Svelte lens does not; the
+  fallback chain lets authors declare graceful degradation paths across
+  lens implementations.
 
 ### 13.8 `jelly.mythos`
 
@@ -1120,6 +1167,7 @@ protocol error and rejected at verify time.
 | `predecessor` | 32 bytes | Blake3 of the prior `jelly.mythos` envelope bytes *in the same chain*. MUST be absent iff `is-genesis` is `true`; MUST be present otherwise. |
 
 **Chain rules.**
+
 - Each chain is append-only within itself. Publishing a link whose
   `predecessor` doesn't resolve to a verifiable prior link in the
   same chain is rejected.
@@ -1249,3 +1297,227 @@ Summary of protocol-shape-affecting ones:
    semantics, read `docs.nextgraph.org/en/specs/` (convergence noted
    in PRD §6.2.2) to avoid reinventing their solutions in an
    incompatible shape.
+
+---
+
+## 14. Schema vendoring and pin format
+
+*Implements D-029 (aspects.sh vendor-first contract + pin file format).*
+
+### 14.1 Location convention
+
+Archiform JSON Schema documents live at:
+
+```
+schemas/<archiform>-<version>.json
+```
+
+Examples:
+
+- `schemas/root-2.0.0.json` — root DreamBall wire types
+- `schemas/memory-palace-0.1.0.json` — Memory Palace archiform
+
+These files are **vendored locally** — no network access at build
+time. Schema updates are explicit: fetch the new version, update the
+pin (see §14.2), regenerate, commit.
+
+### 14.2 Pin file format
+
+Every vendored schema has a corresponding pin file at:
+
+```
+schemas/.pins/<archiform>-<version>.fp
+```
+
+The pin file is plain text: a single line containing the hex-encoded
+`blake3` digest of the canonical schema file bytes. No trailing
+newline. No other content.
+
+Example:
+
+```
+a3f2c1d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2
+```
+
+The build-time verification step (`bun run codegen`, which calls
+`bun run schemas:verify`) recomputes the blake3 of each vendored
+schema and fails if any digest does not match its pin file. This is
+the only place pin verification runs — there is no network round-trip.
+
+### 14.3 Tooling
+
+| Script | Purpose |
+|---|---|
+| `bun run schemas:pin <path>` | Compute and write the `.fp` pin for a single schema file |
+| `bun run schemas:verify` | Verify all vendored schemas against their pin files; called automatically by `bun run codegen` |
+| `bun run schemas:refresh` | (Sprint-003 candidate) Fetch the latest schema version from aspects.sh, verify the digest matches the declared pin, and swap in if matched |
+
+`schemas:refresh` is **not** a CI gate. It is an optional maintenance
+path for updating vendored schemas. The CI gate is `schemas:verify`
+only, which runs entirely against local files.
+
+### 14.4 Update lifecycle
+
+1. Download the new schema version from aspects.sh (or author it locally).
+2. Run `bun run schemas:pin schemas/<archiform>-<version>.json` to
+   write the new `.fp` file.
+3. Run `bun run codegen` (which runs `schemas:verify` then
+   `zig build schemagen`) to regenerate all derived outputs.
+4. Commit the schema, the pin file, and the regenerated outputs together.
+
+Updating a schema without updating its pin causes `bun run codegen` to
+fail with a digest-mismatch error — this is the intended guard.
+
+---
+
+## 15. Wasm module signing and trust model
+
+*Implements D-031 (signed schema body + content-addressed wasm).*
+
+### 15.1 Trust chain
+
+The trust model is **transitive authentication via signed schema body**:
+
+1. The schema-aspect body (the JSON Schema document) is signed by its
+   publisher via aspects.sh's existing aspect-signing mechanism.
+2. The schema body contains the action manifest, which includes
+   `implementation.wasm` fingerprints for each action.
+3. Wasm modules are content-addressed by `blake3(wasm_bytes)`.
+4. Before instantiation, the host verifies that
+   `blake3(fetched_wasm_bytes)` matches the fp declared in the action
+   manifest (SEC4 — verify-before-instantiate).
+
+Trust chain in full: **publisher signs schema body → schema body
+declares wasm fps → host verifies wasm bytes against fps before
+instantiation.** No wasm module runs unless its bytes match the fp
+the schema author declared.
+
+### 15.2 blake3 verify-before-instantiate (SEC4)
+
+Every wasm action module is verified by blake3 content hash before
+the host instantiates it. Verification failure is a hard error — the
+action is refused, the error is logged, and no fallback execution
+occurs.
+
+This is the only verification step needed at the module level for
+sprint-002: because the schema is signed, trusting the schema means
+trusting the fp list, which means trusting any wasm bytes that match.
+
+### 15.3 Wasm-and-schema lifecycle coupling
+
+Any change to a wasm action module's bytes — including bug fixes —
+changes its `blake3` hash, which means the old fp in the schema no
+longer matches. **Every wasm bug fix requires a schema reissue:**
+
+1. Fix the wasm source.
+2. Rebuild the wasm module.
+3. Compute the new blake3 fp.
+4. Update the action manifest entry in the schema with the new fp.
+5. Reissue the schema (new version, new publisher signature).
+6. Update the vendored copy and pin in the Dreamball repo.
+
+This coupling is **intentional**: it forces archiform authors to treat
+"schema + actions" as one versioned unit. The schema is the unit of
+trust; the wasm is its implementation. They evolve together.
+
+### 15.4 Per-module signature (deferred)
+
+Giving each wasm module its own detached signature (in addition to the
+fp-inside-schema trust chain) is deferred to sprint-003+. The
+additional ceremony does not improve security meaningfully when the
+schema is already signed — a per-module signature would only say
+"the same publisher who signed the schema also signed this wasm," which
+the fp chain already guarantees. The per-module option remains open for
+cases where wasm modules need to carry independent provenance (e.g.,
+third-party contributed modules not authored by the schema publisher).
+
+---
+
+## 16. Action manifest
+
+*Implements D-019 (Action Manifest as universal action contract) and
+D-035 (closed `attributes` + `effects.kind` enumeration).*
+
+An archiform declares its operations in the JSON Schema under an
+`"actions"` key. The action manifest is the universal contract; CLI,
+REST, MCP, in-renderer, and programmatic clients are mechanical
+projections of it. See
+[`docs/decisions/2026-04-25-action-manifest.md`](decisions/2026-04-25-action-manifest.md)
+for the full rationale.
+
+### 16.1 Action declaration shape
+
+```json
+"actions": {
+  "mint": {
+    "summary":     "Create a new memory palace",
+    "inputs":      { "type": "object", "properties": { "name": {}, "mythosTemplate": {} } },
+    "outputs":     { "type": "object", "properties": { "palaceFp": {} } },
+    "effects":     [{ "kind": "ActionEnvelope", "actionKind": "palace.mint" }],
+    "idempotency": "creates",
+    "streaming":   false,
+    "attributes": {
+      "destructive":           false,
+      "requiresConfirmation":  false,
+      "confirmationMessage":   "",
+      "agentVisible":          true
+    },
+    "implementation": { "wasm": "actions/mint.wasm", "export": "mint" }
+  }
+}
+```
+
+### 16.2 Closed `attributes` set (D-035)
+
+The `attributes` object for sprint-002 accepts exactly **four keys**:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `destructive` | bool | Action cannot be undone; projections warn the caller |
+| `requiresConfirmation` | bool | Projection layer MUST obtain explicit confirmation before calling |
+| `confirmationMessage` | string | Human-readable text shown in the confirmation dialog |
+| `agentVisible` | bool | Whether agent projections (MCP) expose this action |
+
+The validator **rejects** any key not in this list. The `x-` prefix
+convention is **reserved** for sprint-003+ experimental attributes; the
+sprint-002 validator also rejects `x-*` keys to prevent accidental drift.
+
+### 16.3 Closed `effects.kind` enum (D-035)
+
+Each entry in the `effects` array carries a `kind` field. Exactly
+**three values** are valid for sprint-002:
+
+| Value | Meaning |
+|---|---|
+| `ActionEnvelope` | The action emits a signed `jelly.action` envelope appended to the palace timeline |
+| `Read` | The action is read-only; it queries but does not mutate state |
+| `Derived` | The action computes a derived value (e.g., aggregation, phase calculation) without emitting an envelope |
+
+The validator rejects any other value.
+
+### 16.4 Closed `idempotency` enum (D-035)
+
+Three values inherited from sprint-001:
+
+| Value | Meaning |
+|---|---|
+| `creates` | Each invocation produces a new resource; retrying produces a duplicate unless the caller checks |
+| `updates` | Modifies existing state; not safe to retry without checking current state |
+| `idempotent` | Safe to retry; the same inputs always produce the same observable outcome |
+
+The validator rejects any other value.
+
+### 16.5 Pure-transaction discipline
+
+**Actions are pure transactions; never interactive.** No TTY prompts
+inside an action body. If confirmation is needed, declare it via
+`requiresConfirmation: true` and `confirmationMessage` — the
+projection layer renders the confirmation in its idiom (TTY prompt,
+dialog box, MCP elicitation). This makes actions fully agent-callable.
+
+### 16.6 Sprint-003+ extension path
+
+- Opening `x-*` attribute keys is a new ADR.
+- Adding new `attributes` keys or `effects.kind` values is a new ADR.
+- Per D-025 (forward-declare consumer seam contracts), no extension
+  to this closed set occurs without an architecture decision.

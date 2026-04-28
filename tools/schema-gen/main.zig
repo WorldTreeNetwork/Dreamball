@@ -46,6 +46,7 @@ const gen_cbor = @import("gen_cbor.zig");
 const gen_cypher = @import("gen_cypher.zig");
 const gen_cli = @import("gen_cli.zig");
 const gen_ts_client = @import("gen_ts_client.zig");
+const gen_mcp_tools = @import("gen_mcp_tools.zig");
 
 const SCHEMA_PATH = "schemas/root-2.0.0.json";
 const PIN_PATH = "schemas/.pins/root-2.0.0.fp";
@@ -388,6 +389,20 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
         .{ "schema_fp", schema_fp },
     });
     try gen_ts_client.generateArchiform(&actx);
+
+    // Story 4.2 — gen_mcp_tools per-archiform pass (MCP tool spec projection).
+    // Reads `x-actions` from the archiform schema and emits one MCP tool spec
+    // per verb to `src/lib/generated/palace-mcp-tools.ts`. Per AC6 the file
+    // imports ONLY from `./palace-client.js` (Story 4.1) — never from the
+    // store directly. Per AC4 actions whose `attributes.requiresConfirmation`
+    // is true surface MCP elicitation (`server.elicitInput` form-mode) rather
+    // than executing on first call.
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_mcp_tools" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_mcp_tools.generateArchiform(&actx);
 
     try logKV(err_w, .{
         .{ "phase", "archiform-pass-done" },
