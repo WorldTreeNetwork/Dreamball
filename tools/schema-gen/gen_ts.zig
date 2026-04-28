@@ -376,6 +376,11 @@ const BODY =
     \\  'omnispherical-grid'?: OmnisphericalGrid;
     \\  'ambient-palette'?: string[];
     \\  'dream-field-id'?: string;
+    \\  // FR5 / Story 2.3 — genesis archiform binding (D-017). Optional 32-byte
+    \\  // blake3 of the archiform schema body, immutable for the ball's lifetime.
+    \\  // Sprint-001 envelopes lacking this field decode by implicitly binding to
+    \\  // dreamball/memory-palace@0.1.0 (see src/lib/parse.ts).
+    \\  'archiform-fp'?: Bytes32;
     \\  // Agent-type specific
     \\  'personality-master-prompt'?: string;
     \\  secret?: SecretRef[];

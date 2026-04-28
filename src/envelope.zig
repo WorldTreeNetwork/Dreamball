@@ -242,6 +242,7 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     }
 
     if (db.field_kind) |fk| try asserts.addText("field-kind", fk);
+    if (db.archiform_fp) |afp| try asserts.addBytes("archiform-fp", &afp);
     for (db.guilds) |fp| try asserts.addBytes("guild", &fp.bytes);
     for (db.contains) |fp| try asserts.addBytes("contains", &fp.bytes);
     for (db.derived_from) |fp| try asserts.addBytes("derived-from", &fp.bytes);
@@ -915,6 +916,15 @@ pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamB
             const sub = env_bytes[cursor .. cursor + len];
             cursor += len;
             out.act = try decodeActFromEnvelope(arena, sub);
+        } else if (std.mem.eql(u8, pred, "archiform-fp")) {
+            // FR5 / Story 2.3 — round-trip the genesis envelope's
+            // archiform_fp attribute. 32-byte blake3 of the archiform
+            // schema body; immutable for the ball's lifetime per D-017.
+            const b = try readBytes(env_bytes, &cursor);
+            if (b.len != 32) return error.BadArchiformFp;
+            var afp: [32]u8 = undefined;
+            @memcpy(&afp, b);
+            out.archiform_fp = afp;
         } else {
             // Skip unknown assertions by walking past the object — keeps us
             // forward-compatible with v2.x envelopes that add new slots.
@@ -1195,4 +1205,153 @@ test "populated round-trip — envelope with all slots + signatures" {
     const bare = try encodeDreamBall(allocator, db_bare);
     defer allocator.free(bare);
     try std.testing.expect(bytes.len > bare.len);
+}
+
+// ============================================================================
+// Story 2.3 — archiform_fp round-trip + implicit-binding back-compat (FR5).
+// ============================================================================
+
+const archiform_mod = @import("archiform.zig");
+
+test "Story 2.3 AC1: archiform_fp round-trip — encoded envelope decodes byte-equal" {
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const fp_input: [32]u8 = archiform_mod.MEMORY_PALACE_IMPLICIT_FP;
+
+    const db = protocol.DreamBall{
+        .stage = .seed,
+        .dreamball_type = .field,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 0,
+        .field_kind = "palace",
+        .archiform_fp = fp_input,
+    };
+
+    const bytes = try encodeDreamBall(gpa, db);
+    defer gpa.free(bytes);
+
+    const decoded = try decodeDreamBall(arena, bytes);
+    try std.testing.expect(decoded.archiform_fp != null);
+    try std.testing.expectEqualSlices(u8, &fp_input, &decoded.archiform_fp.?);
+}
+
+test "Story 2.3 AC2: implicit-binding back-compat — envelope without archiform_fp decodes" {
+    // Sprint-001 envelopes lack archiform_fp on the wire. The decoder
+    // returns null; consumers MUST substitute MEMORY_PALACE_IMPLICIT_FP
+    // when binding. This test exercises both halves of that contract.
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const db_no_afp = protocol.DreamBall{
+        .stage = .seed,
+        .dreamball_type = .field,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 0,
+        .field_kind = "palace",
+        // archiform_fp omitted on purpose — sprint-001 wire shape.
+    };
+
+    const bytes = try encodeDreamBall(gpa, db_no_afp);
+    defer gpa.free(bytes);
+
+    // (a) Decode succeeds — IC1/IC4 forward-compat.
+    const decoded = try decodeDreamBall(arena, bytes);
+    // (b) The on-wire field is absent.
+    try std.testing.expect(decoded.archiform_fp == null);
+
+    // (c) Implicit-binding substitution per AC2: callers resolve to the
+    //     Memory Palace fp baked at compile-time.
+    const resolved: [32]u8 = decoded.archiform_fp orelse archiform_mod.MEMORY_PALACE_IMPLICIT_FP;
+    try std.testing.expectEqualSlices(u8, &archiform_mod.MEMORY_PALACE_IMPLICIT_FP, &resolved);
+}
+
+test "Story 2.3 AC3: archiform_fp survives revision bump immutability" {
+    // D-017: archiform_fp is immutable for the ball's lifetime. A
+    // simulated revision bump (re-encode with same archiform_fp + bumped
+    // revision) MUST preserve the genesis fp byte-for-byte.
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const fp_input: [32]u8 = archiform_mod.MEMORY_PALACE_IMPLICIT_FP;
+
+    var db = protocol.DreamBall{
+        .stage = .seed,
+        .dreamball_type = .field,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 0,
+        .field_kind = "palace",
+        .archiform_fp = fp_input,
+    };
+
+    const genesis_bytes = try encodeDreamBall(gpa, db);
+    defer gpa.free(genesis_bytes);
+    const genesis_decoded = try decodeDreamBall(arena, genesis_bytes);
+
+    // Simulate three subsequent revisions — the archiform_fp MUST NOT
+    // mutate. (Drift would constitute the failure AC4 detects.)
+    var revision: u32 = 1;
+    while (revision <= 3) : (revision += 1) {
+        db.revision = revision;
+        const bytes = try encodeDreamBall(gpa, db);
+        defer gpa.free(bytes);
+
+        const dec = try decodeDreamBall(arena, bytes);
+        try std.testing.expect(dec.archiform_fp != null);
+        try std.testing.expectEqualSlices(u8, &genesis_decoded.archiform_fp.?, &dec.archiform_fp.?);
+    }
+}
+
+test "Story 2.3 AC4: drift detection — mismatched archiform_fp values are distinguishable" {
+    // A consistency-check helper sees two envelopes for the same ball
+    // declaring different archiform_fp values; it MUST report drift.
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const fp_genesis: [32]u8 = archiform_mod.MEMORY_PALACE_IMPLICIT_FP;
+    var fp_drift: [32]u8 = fp_genesis;
+    fp_drift[0] ^= 0xFF;
+    try std.testing.expect(!std.mem.eql(u8, &fp_genesis, &fp_drift));
+
+    const db_a = protocol.DreamBall{
+        .stage = .seed,
+        .dreamball_type = .field,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 0,
+        .field_kind = "palace",
+        .archiform_fp = fp_genesis,
+    };
+    const db_b = protocol.DreamBall{
+        .stage = .seed,
+        .dreamball_type = .field,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 1,
+        .field_kind = "palace",
+        .archiform_fp = fp_drift,
+    };
+
+    const bytes_a = try encodeDreamBall(gpa, db_a);
+    defer gpa.free(bytes_a);
+    const bytes_b = try encodeDreamBall(gpa, db_b);
+    defer gpa.free(bytes_b);
+
+    const dec_a = try decodeDreamBall(arena, bytes_a);
+    const dec_b = try decodeDreamBall(arena, bytes_b);
+
+    try std.testing.expect(dec_a.archiform_fp != null);
+    try std.testing.expect(dec_b.archiform_fp != null);
+    try std.testing.expect(!std.mem.eql(u8, &dec_a.archiform_fp.?, &dec_b.archiform_fp.?));
 }

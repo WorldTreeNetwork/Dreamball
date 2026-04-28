@@ -363,7 +363,12 @@ const BODY =
     \\  contains: v.optional(v.array(Base58Schema)),
     \\  'derived-from': v.optional(v.array(Base58Schema)),
     \\  guild: v.optional(v.array(Base58Schema)),
-    \\  signatures: v.optional(v.array(SignatureSchema))
+    \\  signatures: v.optional(v.array(SignatureSchema)),
+    \\  // FR5 / Story 2.3 — optional genesis archiform binding (D-017).
+    \\  // Sprint-001 envelopes lack the field; the publish-boundary parse
+    \\  // helper in src/lib/parse.ts substitutes the implicit Memory Palace
+    \\  // fp before validation when absent.
+    \\  'archiform-fp': v.optional(Base58Schema)
     \\};
     \\
     \\/** v1 legacy shape — `jelly.dreamball` with no subtype suffix. */

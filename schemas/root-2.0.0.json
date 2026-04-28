@@ -1314,6 +1314,15 @@
           "x-cbor-section": "attribute",
           "x-optional": true
         },
+        "archiform-fp": {
+          "$comment": "FR5 / D-017 — archiform_fp on the genesis envelope. Optional 32-byte blake3 of the archiform schema body. Immutable for the ball's lifetime per D-017. Sprint-002 additive back-compat (IC1): missing-on-decode binds implicitly to dreamball/memory-palace@0.1.0. Wire-name is kebab-case (`archiform-fp`); Zig field is snake_case (`archiform_fp`).",
+          "type": ["string", "null"],
+          "x-cbor": "byte-string-32",
+          "x-zig": "?[32]u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Bytes32"
+        },
         "sealed-payload-hash": {
           "$comment": "Relic-variant only. Carried inline on jelly.dreamball.relic envelopes.",
           "type": ["string", "null"],

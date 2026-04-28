@@ -193,6 +193,12 @@ pub const DreamBall = struct {
     /// §13.1 optional field-kind attribute on jelly.dreamball.field envelopes.
     /// Values: "palace" | "room" | "ambient" | <open-enum>.  Null = not a field.
     field_kind: ?[]const u8 = null,
+    /// FR5 / D-017 — optional archiform_fp on the genesis envelope.
+    /// 32-byte blake3 of the archiform schema body. Immutable for the
+    /// ball's lifetime. Sprint-002 additive back-compat (IC1): missing
+    /// on decode → caller substitutes the implicit Memory Palace fp.
+    /// Wire-name `archiform-fp`; emitted as a CBOR byte-string-32 attribute.
+    archiform_fp: ?[32]u8 = null,
 
     pub fn fingerprint(self: DreamBall) Fingerprint {
         return Fingerprint.fromEd25519(self.identity);

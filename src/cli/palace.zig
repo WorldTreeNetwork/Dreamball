@@ -8,7 +8,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const io = @import("../io.zig");
-const palace_mint = @import("palace_mint.zig");
+// Story 3.2 — `mint` is now dispatched through the generated CLI projection
+// at src/cli/generated/palace_mint.zig (D-019/D-022/D-024). The legacy
+// hand-written verb `palace_mint.zig` remains in place for parity
+// verification; the generated dispatcher delegates to its `run` after
+// flag parsing + help + confirmation. Story 3.5 removes the legacy file
+// once all five verbs project cleanly.
+const palace_mint = @import("generated/palace_mint.zig");
 const palace_add_room = @import("palace_add_room.zig");
 const palace_inscribe = @import("palace_inscribe.zig");
 const palace_move = @import("palace_move.zig");

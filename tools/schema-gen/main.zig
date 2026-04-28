@@ -44,6 +44,7 @@ const gen_ts = @import("gen_ts.zig");
 const gen_valibot = @import("gen_valibot.zig");
 const gen_cbor = @import("gen_cbor.zig");
 const gen_cypher = @import("gen_cypher.zig");
+const gen_cli = @import("gen_cli.zig");
 
 const SCHEMA_PATH = "schemas/root-2.0.0.json";
 const PIN_PATH = "schemas/.pins/root-2.0.0.fp";
@@ -361,6 +362,17 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
         .{ "schema_fp", schema_fp },
     });
     try gen_zig.generateArchiform(&actx);
+
+    // Story 3.2 — gen_cli per-archiform pass (CLI projection spike).
+    // Reads `x-actions` from the archiform schema and emits per-verb
+    // dispatchers under `src/cli/generated/`. Currently scoped to the
+    // `mint` verb (D-024 spike); Stories 3.3–3.4 expand the whitelist.
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_cli" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_cli.generateArchiform(&actx);
 
     try logKV(err_w, .{
         .{ "phase", "archiform-pass-done" },

@@ -284,6 +284,11 @@ fn runMint(gpa: Allocator, out_path: []const u8, mythos_body: []const u8) !u8 {
         .field_kind = "palace",
         .created = now_ms,
         .contains = &contains_fps,
+        // FR5 / Story 2.3 — sprint-002 genesis envelopes declare their
+        // archiform on the wire. Memory Palace is the canonical archiform
+        // for `field-kind: "palace"`; the implicit fp matches what
+        // pre-sprint-002 instances bind to via the decoder default.
+        .archiform_fp = dreamball.archiform.MEMORY_PALACE_IMPLICIT_FP,
     };
 
     const palace_unsigned = try envelope.encodeDreamBall(gpa, palace_db);

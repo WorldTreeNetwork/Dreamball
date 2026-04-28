@@ -788,6 +788,38 @@ field. A Field with an unrecognised `field-kind` value MUST be
 treated as if the attribute were absent; no other envelope types
 are affected.
 
+### 13.1.1 The `archiform-fp` attribute (genesis archiform binding)
+
+`jelly.dreamball.field` carries an optional **`archiform-fp`**
+attribute on its genesis envelope:
+
+```
+"archiform-fp": h'…32 bytes…'    ; blake3 of the archiform schema body
+```
+
+The fingerprint is the canonical content-address of the archiform
+schema this ball was minted against — for sprint-002 instances of
+`field-kind: "palace"`, that is `blake3(<schemas/memory-palace-0.1.0.json>)`.
+Future archiforms (forge, throne-room, library) reuse the same
+mechanism with their own schema bodies.
+
+**Immutable for the ball's lifetime.** Once the genesis envelope
+declares an `archiform-fp`, every subsequent envelope, mutation, or
+revision MUST preserve the value byte-for-byte. The archiform is
+the ball's *species*, not its state — see
+[`docs/sprints/002-archiform-foundation/architecture-decisions.md`](sprints/002-archiform-foundation/architecture-decisions.md)
+D-017. Drift between two envelopes for the same ball is a verifier
+error.
+
+**Additive back-compat (sprint-001 instances).** Pre-sprint-002
+genesis envelopes pre-date this attribute. Decoders MUST tolerate
+its absence and substitute the implicit binding to
+`dreamball/memory-palace@0.1.0` — the canonical schema fp recorded
+at `schemas/.pins/memory-palace-0.1.0.fp`. Sprint-002 producers
+emit the attribute on every new genesis; sprint-001 consumers
+ignore the unknown attribute (CBOR open-extension semantics) and
+continue to verify.
+
 ### 13.2 `jelly.layout`
 
 A Room or Palace Field carries a `layout` attribute that records

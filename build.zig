@@ -135,6 +135,25 @@ pub fn build(b: *std.Build) void {
     const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts + src/memory-palace/schema.cypher");
     schemagen_step.dependOn(&schemagen_run.step);
 
+    // Story 3.2 — gen_cli unit tests (AC4 confirmation-fixture coverage).
+    // Tests live inline in tools/schema-gen/gen_cli.zig under the
+    // `test "AC4: …"` blocks. Wired here so `zig build test` exercises them.
+    const gen_cli_test_mod = b.createModule(.{
+        .root_source_file = b.path("tools/schema-gen/gen_cli.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const gen_cli_tests = b.addTest(.{
+        .root_module = gen_cli_test_mod,
+    });
+    const run_gen_cli_tests = b.addRunArtifact(gen_cli_tests);
+    const gen_cli_test_step = b.step(
+        "gen-cli-test",
+        "Run the Story 3.2 gen_cli AC4 confirmation-fixture tests",
+    );
+    gen_cli_test_step.dependOn(&run_gen_cli_tests.step);
+    test_step.dependOn(&run_gen_cli_tests.step);
+
     // schemagen-spike — Story 1.1 codegen-inversion spike.
     // Reads tools/schema-gen/spike/schemas/*.json and emits byte-equivalent
     // fixtures under tools/schema-gen/spike/out/. The byte-equivalence diff
