@@ -45,6 +45,7 @@ const gen_valibot = @import("gen_valibot.zig");
 const gen_cbor = @import("gen_cbor.zig");
 const gen_cypher = @import("gen_cypher.zig");
 const gen_cli = @import("gen_cli.zig");
+const gen_ts_client = @import("gen_ts_client.zig");
 
 const SCHEMA_PATH = "schemas/root-2.0.0.json";
 const PIN_PATH = "schemas/.pins/root-2.0.0.fp";
@@ -373,6 +374,20 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
         .{ "schema_fp", schema_fp },
     });
     try gen_cli.generateArchiform(&actx);
+
+    // Story 4.1 — gen_ts_client per-archiform pass (TS client projection).
+    // Reads `x-actions` from the archiform schema and emits a typed async
+    // function per verb to `src/lib/generated/palace-client.ts`. Per D-034
+    // the client wraps the D-007 store wrapper at one remove (via the
+    // manifest-derived CLI + existing bridge subprocesses). Client never
+    // imports @ladybugdb or kuzu directly (AC5) and never calls __rawQuery
+    // (AC4 — D-007 audit invariant unchanged).
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_ts_client" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_ts_client.generateArchiform(&actx);
 
     try logKV(err_w, .{
         .{ "phase", "archiform-pass-done" },

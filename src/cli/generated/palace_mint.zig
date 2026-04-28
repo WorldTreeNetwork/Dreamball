@@ -54,11 +54,11 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     }
 
     if (parsed.get(0) == null) {
-        try io.writeAllStderr("error: out required\n");
+        try io.writeAllStderr("error: --out required\n");
         return 2;
     }
     if (parsed.get(1) == null) {
-        try io.writeAllStderr("error: mythos required\n");
+        try io.writeAllStderr("error: --mythos required\n");
         return 2;
     }
 

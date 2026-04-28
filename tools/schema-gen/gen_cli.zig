@@ -46,8 +46,8 @@ const gen_cypher = @import("gen_cypher.zig");
 const OUT_DIR = "src/cli/generated";
 
 /// Story 3.2 spike projected `mint`; Story 3.3 adds `inscribe` and `add-room`.
-/// Stories 3.4 will add the remaining verbs. Story 3.5 removes the legacy files.
-const WHITELIST = [_][]const u8{ "mint", "inscribe", "add-room" };
+/// Story 3.4 adds `rename-mythos` and `move`. Story 3.5 removes the legacy files.
+const WHITELIST = [_][]const u8{ "mint", "inscribe", "add-room", "rename-mythos", "move" };
 
 /// Properties in this set are treated as positional CLI arguments by all
 /// legacy verb implementations (they are never `--flag value` pairs). The
@@ -351,12 +351,15 @@ fn projectVerbToDirImpl(
                 }
             }
             if (found_idx) |idx| {
-                // Legacy-compatible message shape: "error: <flag> required" — preserves
-                // the substring grep used by scripts/cli-smoke.sh (Story 3.2 AC5).
+                // Legacy-compatible message shape: "error: --<flag> required" — preserves
+                // the substring grep used by scripts/cli-smoke.sh (Story 3.2 AC5 / Story 3.4 AC2).
+                // Use prop_flags[idx] (kebab-case) with -- prefix so smoke-test greps like
+                // `grep -q "\-\-body"` match the emitted error message.
+                const pflag_for_err = prop_flags.items[idx];
                 const tmp = try std.fmt.allocPrint(
                     arena,
-                    "    if (parsed.get({d}) == null) {{\n        try io.writeAllStderr(\"error: {s} required\\n\");\n        return 2;\n    }}\n",
-                    .{ idx, req_name },
+                    "    if (parsed.get({d}) == null) {{\n        try io.writeAllStderr(\"error: --{s} required\\n\");\n        return 2;\n    }}\n",
+                    .{ idx, pflag_for_err },
                 );
                 try body.appendSlice(arena, tmp);
             }
@@ -722,6 +725,6 @@ test "AC2: help text derived from manifest summary + properties" {
     try std.testing.expect(std.mem.indexOf(u8, source, "Fixture verb for AC4") != null);
     // Each input property must appear as a flag in the help text.
     try std.testing.expect(std.mem.indexOf(u8, source, "--name <string>") != null);
-    // Required-flag enforcement code is emitted for `name`.
-    try std.testing.expect(std.mem.indexOf(u8, source, "name required") != null);
+    // Required-flag enforcement code is emitted for `name` (with -- prefix per Story 3.4).
+    try std.testing.expect(std.mem.indexOf(u8, source, "--name required") != null);
 }

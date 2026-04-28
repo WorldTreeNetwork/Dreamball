@@ -25,7 +25,8 @@
     "server-smoke": "scripts/server-smoke.sh",
     "test:e2e": "playwright test",
     "bootstrap": "bun run scripts/bootstrap-kuzu-wasm.ts",
-    "postinstall": "bun run bootstrap"
+    "postinstall": "bun run bootstrap",
+    "lint:md": "bunx markdownlint-cli 'docs/dreamball-imports.md'"
   },
   "files": [
     "dist",

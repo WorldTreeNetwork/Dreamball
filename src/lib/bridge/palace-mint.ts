@@ -31,6 +31,14 @@ import { join } from 'node:path';
 import { ServerStore } from '../../memory-palace/store.server.js';
 import { mirrorAction, type MirrorAction } from '../../memory-palace/action-mirror.js';
 import { sanitizeFp, cypherString } from '../../memory-palace/cypher-utils.js';
+// Story 4.1 / AC3: bridge migration site. The mirrored action's identifying
+// fps (palace, oracle, action) match the manifest-derived `MintOutputs` shape;
+// importing from `@dreamball/palace-client` makes the bridge's output contract
+// driven by the action manifest (D-019). When a manifest output property is
+// removed via codegen, this import becomes a TypeScript error at the use site
+// below (AC6 drift detection). The bridge's runtime behaviour is unchanged —
+// it still composes the bridge pattern (D-022) via the D-007 store wrapper.
+import type { MintOutputs } from '@dreamball/palace-client';
 
 // ── Debug log (gated on JELLY_BRIDGE_DEBUG=1) ─────────────────────────────────
 
@@ -170,7 +178,18 @@ async function main(): Promise<void> {
     const exec = (cypher: string) => store.__rawQuery(cypher);
     await mirrorAction(exec, action);
 
-    console.log(`palace-mint bridge: mirrored palace ${palaceFp} → ${dbPath}`);
+    // Story 4.1 / AC3: build a manifest-derived `MintOutputs`-shaped record
+    // from the fps already known to the bridge. This binds the bridge's
+    // output contract to the generated `@dreamball/palace-client` module so
+    // any drift in the manifest's `mint.outputs.properties` becomes a TS
+    // compile-error at this site (AC6). The fields reference is sufficient
+    // to hold the contract — no behavioural change.
+    const summary: Pick<MintOutputs, 'palaceFp' | 'oracleFp' | 'actionFp'> = {
+      palaceFp,
+      oracleFp,
+      actionFp,
+    };
+    console.log(`palace-mint bridge: mirrored palace ${summary.palaceFp} → ${dbPath}`);
     console.log(`palace-mint bridge: oracle slots seeded (AC1/AC5 S4.1)`);
   } finally {
     await store.close();

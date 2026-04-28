@@ -10,7 +10,7 @@
 // See docs/sprints/002-archiform-foundation/architecture-decisions.md
 // (D-019 action manifest, D-022 bridge pattern, D-024 spike-before-promote).
 
-//! Generated CLI dispatcher for `jelly palace inscribe`.
+//! Generated CLI dispatcher for `jelly palace rename-mythos`.
 //!
 //! Composes the bridge pattern (D-022) by delegating to the legacy
 //! verb's `pub fn run` after flag parsing. The legacy file remains in
@@ -22,51 +22,45 @@ const Allocator = std.mem.Allocator;
 
 const io = @import("../../io.zig");
 const args_mod = @import("../args.zig");
-const legacy = @import("../palace_inscribe.zig");
+const legacy = @import("../palace_rename_mythos.zig");
 
-pub const SUMMARY: []const u8 = "Inscribe an artefact file into a Room inside an existing palace, producing a signed avatar-inscribed action.";
+pub const SUMMARY: []const u8 = "Append a new canonical jelly.mythos to a palace's true-name chain, producing a signed true-naming action.";
 
 const SPECS = [_]args_mod.Spec{
-    .{ .long = "room" },
-    .{ .long = "mythos" },
-    .{ .long = "mythos-file" },
-    .{ .long = "archiform" },
-    .{ .long = "embed-via" },
-    .{ .long = "surface" },
-    .{ .long = "placement" },
+    .{ .long = "body" },
+    .{ .long = "body-file" },
+    .{ .long = "true-name" },
+    .{ .long = "form" },
     .{ .long = "yes", .takes_value = false },
     .{ .long = "no-confirm", .takes_value = false },
     .{ .long = "help", .takes_value = false },
 };
 
 pub const HELP_TEXT: []const u8 =
-    "jelly palace inscribe — " ++
+    "jelly palace rename-mythos — " ++
     SUMMARY ++ "\n\n" ++
     "Flags:\n" ++
-    "  --room <string>  Target room fingerprint (64 hex chars).\n" ++
-    "  --mythos <string>  Optional per-inscription genesis mythos body.\n" ++
-    "  --mythos-file <string>  Optional path to mythos body file.\n" ++
-    "  --archiform <string>  Optional avatar archiform name (from 19-seed registry).\n" ++
-    "  --embed-via <string>  Optional embedding service URL. Absent = no embedding attempt (NFR13 opt-in).\n" ++
-    "  --surface <string>  Surface type (default: scroll).\n" ++
-    "  --placement <string>  Placement hint (default: auto).\n" ++
+    "  --body <string>  New mythos body text (required).\n" ++
+    "  --body-file <string>  Path to file containing the mythos body (alternative to body).\n" ++
+    "  --true-name <string>  Optional condensed totem word.\n" ++
+    "  --form <string>  Optional open-enum archiform form (not validated against registry — TC18).\n" ++
     "  --help                  Show this help and exit.\n";
 
 pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     var parsed = try args_mod.parse(gpa, argv, &SPECS);
     defer parsed.deinit();
-    if (parsed.flag(9)) {
+    if (parsed.flag(6)) {
         try io.writeAllStdout(HELP_TEXT);
         return 0;
     }
 
     if (parsed.get(0) == null) {
-        try io.writeAllStderr("error: --room required\n");
+        try io.writeAllStderr("error: --body required\n");
         return 2;
     }
 
-    _ = parsed.flag(7);
-    _ = parsed.flag(8);
+    _ = parsed.flag(4);
+    _ = parsed.flag(5);
 
     return legacy.run(gpa, argv);
 }

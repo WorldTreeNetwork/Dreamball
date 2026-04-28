@@ -13,6 +13,9 @@ const io = @import("../io.zig");
 // Story 3.3 — `inscribe` and `add-room` are also projected via generated
 // dispatchers at src/cli/generated/palace_inscribe.zig and
 // src/cli/generated/palace_add_room.zig.
+// Story 3.4 — `rename-mythos` and `move` are projected via generated
+// dispatchers at src/cli/generated/palace_rename_mythos.zig and
+// src/cli/generated/palace_move.zig.
 // The legacy hand-written verbs remain in place for parity verification;
 // each generated dispatcher delegates to its legacy `run` after flag
 // parsing + help + confirmation. Story 3.5 removes the legacy files
@@ -20,9 +23,9 @@ const io = @import("../io.zig");
 const palace_mint = @import("generated/palace_mint.zig");
 const palace_add_room = @import("generated/palace_add_room.zig");
 const palace_inscribe = @import("generated/palace_inscribe.zig");
-const palace_move = @import("palace_move.zig");
+const palace_move = @import("generated/palace_move.zig");
 const palace_open = @import("palace_open.zig");
-const palace_rename_mythos = @import("palace_rename_mythos.zig");
+const palace_rename_mythos = @import("generated/palace_rename_mythos.zig");
 const palace_show = @import("palace_show.zig");
 
 pub const SubCommand = struct {

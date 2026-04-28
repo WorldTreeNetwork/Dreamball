@@ -55,7 +55,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     }
 
     if (parsed.get(0) == null) {
-        try io.writeAllStderr("error: name required\n");
+        try io.writeAllStderr("error: --name required\n");
         return 2;
     }
 
