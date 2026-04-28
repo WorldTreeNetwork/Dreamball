@@ -507,4 +507,104 @@ pub fn build(b: *std.Build) void {
         "Story 5.3 AC8: run failure-path test binary (fp-mismatch + import-violation + oom)",
     );
     wasm_host_failure_step.dependOn(&wasm_host_failure_run.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.4 — production `mint.wasm` action module.
+    //
+    // Compiles `actions/mint/main.zig` to `actions/mint/mint.wasm`
+    // (wasm32-freestanding, ReleaseSmall). The blake3 of the produced
+    // module is recorded in `schemas/memory-palace-0.1.0.json`
+    // `x-actions.mint.implementation.wasm` and pinned via
+    // `bun run schemas:pin`. Per D-024 spike-before-promote: this is
+    // the FIRST production wasm action; its end-to-end execution against
+    // the wasm host (`zig build mint-wasm-host`) is the integration
+    // acceptance for Cluster E.
+    //
+    // Import surface (AC7): only `dreamball.*`. No `env.*`, no
+    // `wasi_snapshot_preview1.*`. The import-violation check in
+    // `src/wasm-host/failure_paths.zig` enforces this at host-load time.
+    //
+    // Story 5.5 ships an analogous mint-malicious.wasm (AC8); see
+    // `tests/wasm/mint-malicious/`.
+    // ----------------------------------------------------------------
+    const mint_wasm_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .freestanding,
+    });
+    const mint_wasm_mod = b.createModule(.{
+        .root_source_file = b.path("actions/mint/main.zig"),
+        .target = mint_wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    const mint_wasm_exe = b.addExecutable(.{
+        .name = "mint",
+        .root_module = mint_wasm_mod,
+    });
+    mint_wasm_exe.entry = .disabled;
+    mint_wasm_exe.rdynamic = true;
+    // Install the produced mint.wasm next to its source so the schema's
+    // `implementation.wasm` fp pin and CLI loader can find it at a fixed
+    // path under repo root.
+    const mint_wasm_install = b.addInstallArtifact(mint_wasm_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../actions/mint" } },
+    });
+    const mint_wasm_step = b.step(
+        "mint-wasm",
+        "Story 5.4 — build actions/mint/mint.wasm (production wasm action module)",
+    );
+    mint_wasm_step.dependOn(&mint_wasm_install.step);
+
+    // Companion: mint-malicious.wasm — AC8 negative fixture proving
+    // SEC2 (the guest cannot forge signatures). The malicious guest
+    // attempts to compose its own signature bytes; the host-produced
+    // envelope (after the host signs) STILL verifies against the
+    // host's pubkey, but if we feed the guest-composed bytes into
+    // `verifyEd25519`, it does not verify. The Zig fixture test in
+    // `src/wasm-host/failure_paths_test.zig` (or a sibling) exercises
+    // this. We build it here so the wasm artefact is present.
+    const mint_mal_mod = b.createModule(.{
+        .root_source_file = b.path("tests/wasm/mint-malicious/main.zig"),
+        .target = mint_wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    const mint_mal_exe = b.addExecutable(.{
+        .name = "mint-malicious",
+        .root_module = mint_mal_mod,
+    });
+    mint_mal_exe.entry = .disabled;
+    mint_mal_exe.rdynamic = true;
+    const mint_mal_install = b.addInstallArtifact(mint_mal_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../tests/wasm/mint-malicious" } },
+    });
+    const mint_mal_step = b.step(
+        "mint-malicious-wasm",
+        "Story 5.4 AC8 — build tests/wasm/mint-malicious/mint-malicious.wasm",
+    );
+    mint_mal_step.dependOn(&mint_mal_install.step);
+
+    // mint-wasm-host driver (AC2 + AC3 + AC6) — load actions/mint/mint.wasm
+    // via the production wasm host, run end-to-end, emit the structured
+    // verify-before-instantiate event {phase: "verify", status: "match",
+    // module_fp} BEFORE instantiation, and print `{ "palaceFp": "..." }`
+    // JSON to stdout on success. This is what `jelly palace mint --use-wasm`
+    // (and the AC6 smoke gate) shells out to.
+    const mint_host_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/mint_host_main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    mint_host_mod.addImport("sign_action", sign_action_mod);
+    const mint_host_exe = b.addExecutable(.{
+        .name = "mint-wasm-host",
+        .root_module = mint_host_mod,
+    });
+    b.installArtifact(mint_host_exe);
+    const mint_host_run = b.addRunArtifact(mint_host_exe);
+    // mint-wasm-host depends on the wasm artefact existing.
+    mint_host_run.step.dependOn(&mint_wasm_install.step);
+    const mint_host_step = b.step(
+        "mint-wasm-host",
+        "Story 5.4 AC2/AC3/AC6 — run actions/mint/mint.wasm through the wasm host end-to-end",
+    );
+    mint_host_step.dependOn(&mint_host_run.step);
 }

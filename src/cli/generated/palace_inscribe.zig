@@ -10,7 +10,7 @@
 // See docs/sprints/002-archiform-foundation/architecture-decisions.md
 // (D-019 action manifest, D-022 bridge pattern, D-024 spike-before-promote).
 
-//! Generated CLI dispatcher for `jelly palace mint`.
+//! Generated CLI dispatcher for `jelly palace inscribe`.
 //!
 //! Composes the bridge pattern (D-022) by delegating to the legacy
 //! verb's `pub fn run` after flag parsing. The legacy file remains in
@@ -22,65 +22,51 @@ const Allocator = std.mem.Allocator;
 
 const io = @import("../../io.zig");
 const args_mod = @import("../args.zig");
-const legacy = @import("../palace_mint.zig");
+const legacy = @import("../palace_inscribe.zig");
 
-pub const SUMMARY: []const u8 = "Mint a new Memory Palace DreamBall with genesis mythos, oracle Agent, seed archiform registry, and a rooted timeline.";
+pub const SUMMARY: []const u8 = "Inscribe an artefact file into a Room inside an existing palace, producing a signed avatar-inscribed action.";
 
 const SPECS = [_]args_mod.Spec{
-    .{ .long = "out" },
+    .{ .long = "room" },
     .{ .long = "mythos" },
     .{ .long = "mythos-file" },
+    .{ .long = "archiform" },
+    .{ .long = "embed-via" },
+    .{ .long = "surface" },
+    .{ .long = "placement" },
     .{ .long = "yes", .takes_value = false },
     .{ .long = "no-confirm", .takes_value = false },
-    .{ .long = "use-wasm", .takes_value = false },
     .{ .long = "help", .takes_value = false },
 };
 
 pub const HELP_TEXT: []const u8 =
-    "jelly palace mint — " ++
+    "jelly palace inscribe — " ++
     SUMMARY ++ "\n\n" ++
     "Flags:\n" ++
-    "  --out <string>  Path prefix for output files.\n" ++
-    "  --mythos <string>  Genesis mythos body text.\n" ++
-    "  --mythos-file <string>  Path to a file containing the mythos body (alternative to mythos).\n" ++
+    "  --room <string>  Target room fingerprint (64 hex chars).\n" ++
+    "  --mythos <string>  Optional per-inscription genesis mythos body.\n" ++
+    "  --mythos-file <string>  Optional path to mythos body file.\n" ++
+    "  --archiform <string>  Optional avatar archiform name (from 19-seed registry).\n" ++
+    "  --embed-via <string>  Optional embedding service URL. Absent = no embedding attempt (NFR13 opt-in).\n" ++
+    "  --surface <string>  Surface type (default: scroll).\n" ++
+    "  --placement <string>  Placement hint (default: auto).\n" ++
     "  --help                  Show this help and exit.\n";
 
 pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     var parsed = try args_mod.parse(gpa, argv, &SPECS);
     defer parsed.deinit();
-    if (parsed.flag(6)) {
+    if (parsed.flag(9)) {
         try io.writeAllStdout(HELP_TEXT);
         return 0;
     }
 
     if (parsed.get(0) == null) {
-        try io.writeAllStderr("error: out required\n");
-        return 2;
-    }
-    if (parsed.get(1) == null) {
-        try io.writeAllStderr("error: mythos required\n");
+        try io.writeAllStderr("error: room required\n");
         return 2;
     }
 
-    _ = parsed.flag(3);
-    _ = parsed.flag(4);
-
-    // Story 5.4 wasm-route: --use-wasm delegates to the wasm host driver.
-    if (parsed.flag(5)) {
-        const wasm_path = "actions/mint/mint.wasm";
-        const expected_fp = "24e1967fa1c2d0713da9310890fcc91f5d2db4e4d0c114d8bafb5416eb2533ff";
-        const wasm_io = std.Io.Threaded.global_single_threaded.io();
-        var child = try std.process.spawn(wasm_io, .{
-            .argv = &.{ "zig-out/bin/mint-wasm-host", wasm_path, expected_fp },
-            .stdout = .inherit,
-            .stderr = .inherit,
-        });
-        const term = try child.wait(wasm_io);
-        return switch (term) {
-            .exited => |code| code,
-            else => 1,
-        };
-    }
+    _ = parsed.flag(7);
+    _ = parsed.flag(8);
 
     return legacy.run(gpa, argv);
 }

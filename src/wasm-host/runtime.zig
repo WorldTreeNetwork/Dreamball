@@ -145,48 +145,55 @@ const Reader = struct {
 
     fn readU32Leb(self: *Reader) Error!u32 {
         var result: u32 = 0;
-        var shift: u5 = 0;
+        var shift: u6 = 0; // u6 to hold up to 35 without overflow during iteration
         while (true) {
             const b = try self.readByte();
             const v: u32 = b & 0x7f;
-            result |= std.math.shl(u32, v, shift);
+            if (shift < 32) result |= std.math.shl(u32, v, @as(u5, @truncate(shift)));
             if ((b & 0x80) == 0) return result;
-            shift = std.math.add(u5, shift, 7) catch return Error.InvalidLeb;
+            shift += 7;
+            // wasm u32 LEB128 is at most 5 bytes (35 bits); the 5th byte must
+            // be the final byte (continuation bit must be clear). If we have
+            // consumed 5 bytes and the continuation bit is still set the
+            // encoding is malformed.
+            if (shift >= 35) return Error.InvalidLeb;
         }
     }
 
     fn readI32Leb(self: *Reader) Error!i32 {
         var result: i32 = 0;
-        var shift: u5 = 0;
+        var shift: u6 = 0; // u6 to avoid overflow when checking 5-byte LEB128
         var byte: u8 = 0;
         while (true) {
             byte = try self.readByte();
             const v: i32 = @as(i32, byte & 0x7f);
-            result |= std.math.shl(i32, v, shift);
-            shift = std.math.add(u5, shift, 7) catch return Error.InvalidLeb;
+            if (shift < 32) result |= std.math.shl(i32, v, @as(u5, @truncate(shift)));
+            shift += 7;
             if ((byte & 0x80) == 0) break;
+            if (shift >= 35) return Error.InvalidLeb;
         }
         if (shift < 32 and (byte & 0x40) != 0) {
             const ones: i32 = @bitCast(@as(u32, 0xffff_ffff));
-            result |= std.math.shl(i32, ones, shift);
+            result |= std.math.shl(i32, ones, @as(u5, @truncate(shift)));
         }
         return result;
     }
 
     fn readI64Leb(self: *Reader) Error!i64 {
         var result: i64 = 0;
-        var shift: u6 = 0;
+        var shift: u7 = 0; // u7 to avoid overflow when checking 10-byte LEB128
         var byte: u8 = 0;
         while (true) {
             byte = try self.readByte();
             const v: i64 = @as(i64, byte & 0x7f);
-            result |= std.math.shl(i64, v, shift);
-            shift = std.math.add(u6, shift, 7) catch return Error.InvalidLeb;
+            if (shift < 64) result |= std.math.shl(i64, v, @as(u6, @truncate(shift)));
+            shift += 7;
             if ((byte & 0x80) == 0) break;
+            if (shift >= 70) return Error.InvalidLeb;
         }
         if (shift < 64 and (byte & 0x40) != 0) {
             const ones: i64 = @bitCast(@as(u64, 0xffff_ffff_ffff_ffff));
-            result |= std.math.shl(i64, ones, shift);
+            result |= std.math.shl(i64, ones, @as(u6, @truncate(shift)));
         }
         return result;
     }

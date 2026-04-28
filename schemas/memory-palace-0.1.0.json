@@ -666,7 +666,7 @@
         "agentVisible": true
       },
       "implementation": {
-        "wasm": "0000000000000000000000000000000000000000000000000000000000000000"
+        "wasm": "24e1967fa1c2d0713da9310890fcc91f5d2db4e4d0c114d8bafb5416eb2533ff"
       }
     },
 

@@ -45,10 +45,20 @@ const gen_cypher = @import("gen_cypher.zig");
 
 const OUT_DIR = "src/cli/generated";
 
-/// Spike-scope whitelist. Story 3.2 projects only `mint`. Stories 3.3–3.4
-/// expand this list as each verb's runtime body is exposed `pub` from the
-/// legacy file.
-const WHITELIST = [_][]const u8{"mint"};
+/// Story 3.2 spike projected `mint`; Story 3.3 adds `inscribe` and `add-room`.
+/// Stories 3.4 will add the remaining verbs. Story 3.5 removes the legacy files.
+const WHITELIST = [_][]const u8{ "mint", "inscribe", "add-room" };
+
+/// Properties in this set are treated as positional CLI arguments by all
+/// legacy verb implementations (they are never `--flag value` pairs). The
+/// generator excludes them from the emitted SPECS table and from required-flag
+/// enforcement so the generated dispatcher does not incorrectly reject
+/// positional invocations like `jelly palace inscribe <palace> --room <fp> <source>`.
+///
+/// Convention: `palace` is always the first positional arg in every verb.
+/// `source` is the second positional in `inscribe`. This is a CLI-layer
+/// convention, not in the JSON Schema itself.
+const POSITIONAL_SKIP = [_][]const u8{ "palace", "source" };
 
 pub fn generateArchiform(actx: *const gen_cypher.ArchiformCtx) !void {
     const x_actions = extractXActions(actx) catch |e| {
@@ -134,6 +144,11 @@ fn isWhitelisted(name: []const u8) bool {
     return false;
 }
 
+fn isPositionalSkip(name: []const u8) bool {
+    for (POSITIONAL_SKIP) |p| if (std.mem.eql(u8, p, name)) return true;
+    return false;
+}
+
 fn projectVerb(
     actx: *const gen_cypher.ArchiformCtx,
     verb_name: []const u8,
@@ -168,6 +183,19 @@ fn projectVerbToDirImpl(
     const requires_confirmation = getBool(attributes, "requiresConfirmation") orelse false;
     const confirmation_message = getString(attributes, "confirmationMessage") orelse "";
     const needs_confirm_gate = destructive and requires_confirmation;
+
+    // Story 5.4 / D-024 spike-before-promote: wasm-route gating.
+    // When implementation.wasm is a non-zero 64-char hex fp, the generator
+    // bakes a wasm-route delegation into the emitted dispatcher. The route:
+    //   1. Adds a --use-wasm flag to SPECS (off by default).
+    //   2. When --use-wasm is passed, shells out to `<verb>-wasm-host
+    //      actions/<verb>/<verb>.wasm <fp>` and pipes its JSON stdout.
+    //   3. Falls through to the legacy delegate when --use-wasm is absent.
+    // This logic is codegen-resident so it survives `bun run codegen` without
+    // hand-edits to the generated file.
+    const impl_obj = getObject(manifest, "implementation");
+    const wasm_fp_str = if (impl_obj) |o| getString(o, "wasm") orelse "" else "";
+    const has_wasm_route = isNonZeroFp(wasm_fp_str);
 
     // Build the provenance header.
     const header = try buildHeader(arena, actx);
@@ -204,8 +232,15 @@ fn projectVerbToDirImpl(
     // Emit per-property metadata: order matches manifest iteration order
     // (deterministic JSON object iteration order from std.json).
     // Also emit a synthetic --help spec at the end.
+    //
+    // prop_names: manifest key (used for required-flag error messages).
+    // prop_flags: kebab-case CLI flag name for SPECS (camelCase converted).
+    //   e.g. manifest key "embedVia" → SPECS flag "embed-via" to match
+    //   the legacy verb's arg parsing convention and the smoke-test invocations.
     var prop_names: std.ArrayList([]const u8) = .empty;
     defer prop_names.deinit(arena);
+    var prop_flags: std.ArrayList([]const u8) = .empty;
+    defer prop_flags.deinit(arena);
     var prop_types: std.ArrayList([]const u8) = .empty;
     defer prop_types.deinit(arena);
     var prop_descs: std.ArrayList([]const u8) = .empty;
@@ -214,23 +249,28 @@ fn projectVerbToDirImpl(
     var pit = props.iterator();
     while (pit.next()) |pent| {
         const pname = pent.key_ptr.*;
+        // Skip properties that are positional CLI arguments (not --flags).
+        // See POSITIONAL_SKIP declaration for rationale.
+        if (isPositionalSkip(pname)) continue;
         const pobj = switch (pent.value_ptr.*) {
             .object => |o| o,
             else => continue,
         };
         const ptype = getString(pobj, "type") orelse "string";
         const pdesc = getString(pobj, "description") orelse "";
+        const pflag = try camelToKebab(arena, pname);
         try prop_names.append(arena, pname);
+        try prop_flags.append(arena, pflag);
         try prop_types.append(arena, ptype);
         try prop_descs.append(arena, pdesc);
     }
 
-    // SPECS table.
+    // SPECS table — uses kebab-case flag names to match legacy verb conventions.
     try body.appendSlice(arena, "const SPECS = [_]args_mod.Spec{\n");
-    for (prop_names.items, prop_types.items) |pname, ptype| {
+    for (prop_flags.items, prop_types.items) |pflag, ptype| {
         const takes_value = !std.mem.eql(u8, ptype, "boolean");
         try body.appendSlice(arena, "    .{ .long = \"");
-        try body.appendSlice(arena, pname);
+        try body.appendSlice(arena, pflag);
         try body.appendSlice(arena, "\"");
         if (!takes_value) {
             try body.appendSlice(arena, ", .takes_value = false");
@@ -239,6 +279,10 @@ fn projectVerbToDirImpl(
     }
     try body.appendSlice(arena, "    .{ .long = \"yes\", .takes_value = false },\n");
     try body.appendSlice(arena, "    .{ .long = \"no-confirm\", .takes_value = false },\n");
+    // Story 5.4: wasm-route flag — emitted only when implementation.wasm is non-zero.
+    if (has_wasm_route) {
+        try body.appendSlice(arena, "    .{ .long = \"use-wasm\", .takes_value = false },\n");
+    }
     try body.appendSlice(arena, "    .{ .long = \"help\", .takes_value = false },\n");
     try body.appendSlice(arena, "};\n\n");
 
@@ -249,9 +293,9 @@ fn projectVerbToDirImpl(
     try body.appendSlice(arena, " — \" ++\n");
     try body.appendSlice(arena, "    SUMMARY ++ \"\\n\\n\" ++\n");
     try body.appendSlice(arena, "    \"Flags:\\n\"");
-    for (prop_names.items, prop_types.items, prop_descs.items) |pname, ptype, pdesc| {
+    for (prop_flags.items, prop_types.items, prop_descs.items) |pflag, ptype, pdesc| {
         try body.appendSlice(arena, " ++\n    \"  --");
-        try body.appendSlice(arena, pname);
+        try body.appendSlice(arena, pflag);
         try body.appendSlice(arena, " <");
         try body.appendSlice(arena, ptype);
         try body.appendSlice(arena, ">  ");
@@ -273,9 +317,11 @@ fn projectVerbToDirImpl(
         \\
     );
     // Emit help-flag check. The synthetic --help is the last spec.
-    const help_idx = prop_names.items.len + 2; // +yes, +no-confirm, then --help
+    // Index layout: [prop_flags..., yes, no-confirm, (use-wasm?), help]
     const yes_idx = prop_names.items.len;
     const no_confirm_idx = prop_names.items.len + 1;
+    const use_wasm_idx = if (has_wasm_route) prop_names.items.len + 2 else null;
+    const help_idx = prop_names.items.len + 2 + @as(usize, if (has_wasm_route) 1 else 0);
     {
         const tmp = try std.fmt.allocPrint(
             arena,
@@ -286,12 +332,16 @@ fn projectVerbToDirImpl(
     }
 
     // Required-flag enforcement (AC1 — flag mapping respects inputs.required).
+    // Positional-skip properties (see POSITIONAL_SKIP) are excluded: they are
+    // validated by the legacy verb's own positional-arg checks, not by flag lookup.
     if (required_arr) |req| {
         for (req.items) |req_v| {
             const req_name = switch (req_v) {
                 .string => |s| s,
                 else => continue,
             };
+            // Skip positional args — they are never in SPECS.
+            if (isPositionalSkip(req_name)) continue;
             // Find index in prop_names.
             var found_idx: ?usize = null;
             for (prop_names.items, 0..) |pn, idx| {
@@ -340,6 +390,43 @@ fn projectVerbToDirImpl(
             .{ yes_idx, no_confirm_idx },
         );
         try body.appendSlice(arena, tmp);
+    }
+
+    // Story 5.4 / D-024 spike-before-promote: wasm-route delegation.
+    // When the manifest's implementation.wasm is non-zero AND --use-wasm is
+    // passed, shell out to `<verb>-wasm-host actions/<verb>/<verb>.wasm <fp>`.
+    // The host driver verifies the fp (Story 5.3), instantiates the wasm
+    // module, and prints `{"palaceFp":"..."}` JSON to stdout (AC2).
+    // The verify-before-instantiate event `{phase:"verify",status:"match",...}`
+    // is emitted to stderr (AC3). On fp mismatch the driver exits non-zero with
+    // a structured fp_mismatch event (AC4). Falls through to legacy when absent.
+    if (has_wasm_route) {
+        if (use_wasm_idx) |wi| {
+            const wasm_route_code = try std.fmt.allocPrint(
+                arena,
+                \\    // Story 5.4 wasm-route: --use-wasm delegates to the wasm host driver.
+                \\    if (parsed.flag({d})) {{
+                \\        const wasm_path = "actions/{s}/{s}.wasm";
+                \\        const expected_fp = "{s}";
+                \\        const wasm_io = std.Io.Threaded.global_single_threaded.io();
+                \\        var child = try std.process.spawn(wasm_io, .{{
+                \\            .argv = &.{{ "zig-out/bin/{s}-wasm-host", wasm_path, expected_fp }},
+                \\            .stdout = .inherit,
+                \\            .stderr = .inherit,
+                \\        }});
+                \\        const term = try child.wait(wasm_io);
+                \\        return switch (term) {{
+                \\            .exited => |code| code,
+                \\            else => 1,
+                \\        }};
+                \\    }}
+                \\
+                \\
+                ,
+                .{ wi, snake, snake, wasm_fp_str, snake },
+            );
+            try body.appendSlice(arena, wasm_route_code);
+        }
     }
 
     // Delegate to legacy verb's pub fn run() — composes the bridge pattern.
@@ -406,6 +493,38 @@ fn kebabToSnake(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     const out = try allocator.alloc(u8, s.len);
     for (s, 0..) |c, i| out[i] = if (c == '-') '_' else c;
     return out;
+}
+
+/// Convert a camelCase property name to a kebab-case CLI flag name.
+/// E.g. "embedVia" → "embed-via", "mythosFile" → "mythos-file".
+/// Names already in kebab or lowercase pass through unchanged.
+/// This is the canonical CLI flag form; legacy verbs use kebab-case flags.
+fn camelToKebab(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+    // Count uppercase letters to determine output length.
+    var extra: usize = 0;
+    for (s) |c| if (c >= 'A' and c <= 'Z') { extra += 1; };
+    const out = try allocator.alloc(u8, s.len + extra);
+    var j: usize = 0;
+    for (s) |c| {
+        if (c >= 'A' and c <= 'Z') {
+            out[j] = '-';
+            j += 1;
+            out[j] = c + 32; // toLower
+            j += 1;
+        } else {
+            out[j] = c;
+            j += 1;
+        }
+    }
+    return out[0..j];
+}
+
+/// Returns true if `fp` is a 64-char hex string that is NOT all-zero.
+/// Used to gate wasm-route emission: zero fp = placeholder, non-zero = real module.
+fn isNonZeroFp(fp: []const u8) bool {
+    if (fp.len != 64) return false;
+    for (fp) |c| if (c != '0') return true;
+    return false;
 }
 
 fn getString(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
