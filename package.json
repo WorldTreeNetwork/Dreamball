@@ -20,13 +20,14 @@
     "codegen": "bun run scripts/schemas-verify.ts && zig build schemagen",
     "schemas:pin": "bun run scripts/schemas-pin.ts",
     "schemas:verify": "bun run scripts/schemas-verify.ts",
+    "mcp": "bun src/mcp/main.ts",
     "dev:server": "bun run --watch jelly-server/src/index.ts",
     "demo": "bun run --watch jelly-server/src/index.ts & vite dev",
     "server-smoke": "scripts/server-smoke.sh",
     "test:e2e": "playwright test",
     "bootstrap": "bun run scripts/bootstrap-kuzu-wasm.ts",
     "postinstall": "bun run bootstrap",
-    "lint:md": "bunx markdownlint-cli 'docs/dreamball-imports.md' 'docs/PROTOCOL.md'"
+    "lint:md": "bunx markdownlint-cli 'docs/dreamball-imports.md' 'docs/PROTOCOL.md' 'docs/ARCHITECTURE.md'"
   },
   "files": [
     "dist",

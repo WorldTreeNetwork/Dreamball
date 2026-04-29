@@ -53,23 +53,54 @@
 
 ---
 
-## 2. The invariant that governs everything
+## 2. The cross-runtime invariant
 
-**The Zig protocol core is the only place the wire format exists.** Every
-other surface — CLI, WASM, Svelte library, jelly-server, MCP docs
-endpoint — derives from the Zig code. The rules:
+The wire format factors into two parts, each with one canonical location
+(D-018, D-029, D-032):
+
+### Part 1 — Encoding algorithm in Zig + golden vectors (D-018)
+
+The CBOR encoding algorithm is canonical in `src/*.zig`. Map key
+ordering, integer-width rules, bytes-vs-text discipline, and golden
+test vectors are all Zig-only. Every runtime must reproduce these bytes
+for the same logical value. There is no second implementation of CBOR
+semantics.
+
+### Part 2 — Field shapes in JSON Schema, vendored + fp-pinned (D-018, D-029)
+
+Root types (`schemas/root-2.0.0.json`) and archiform extensions
+(`schemas/<archiform>-<version>.json`) are the canonical source for
+all field shapes. The files are vendored locally; each has a
+corresponding blake3 pin at `schemas/.pins/<archiform>-<version>.fp`
+(D-029). Zig types, TypeScript interfaces, Valibot schemas, CBOR
+codecs, and `src/memory-palace/schema.cypher` are all **generated** from
+the JSON Schema source. No hand-maintained schemas exist anywhere;
+regenerate via `bun run codegen`.
+
+### Single shared host code (D-032)
+
+The wasm host that brokers the `dreamball.*` import surface is one Zig
+codebase compiled to two targets: `jelly` CLI (Zig + WASI) and
+`jelly.wasm` (browser, sprint-003+). Host behavior is identical across
+targets; only the platform-shim layer (file I/O, network) differs.
+
+The concrete rules that fall out of this invariant:
 
 1. No TypeScript code encodes or decodes CBOR by hand. It goes through
    the WASM module.
 2. No hand-maintained schemas exist anywhere. TypeScript interfaces +
-   Valibot schemas come from `tools/schema-gen/main.zig`, regenerated
-   via `bun run codegen`.
+   Valibot schemas are generated from JSON Schema source via
+   `bun run codegen`.
 3. The browser and server load **the same `jelly.wasm` binary**. No
    platform-specific build, no conditional code paths. A bug in the
    wire format is fixed in one place.
+4. Host-supplied randomness flows through one `env.getRandomBytes`
+   import. All other crypto is pure functions in the Zig core.
 
-This is why [`ADR-1`](#adr-1-wasm-as-the-cross-runtime-crypto-core) below
-chose WASM over FFI and over subprocess.
+This invariant is reproduced verbatim in `CLAUDE.md §"The cross-runtime
+invariant"` — the two documents must remain consistent. This is why
+[`ADR-1`](#adr-1-wasm-as-the-cross-runtime-crypto-core) below chose
+WASM over FFI and over subprocess.
 
 ---
 
@@ -277,6 +308,12 @@ Dreamball/
 │   ├── main.zig                 # `jelly` CLI entry
 │   ├── wasm_main.zig            # `jelly.wasm` entry
 │   ├── cli/                     # CLI commands (mint/grow/seal/...)
+│   ├── wasm-host/               # Wasm action host (D-020, D-032)
+│   │   ├── main.zig             # CLI target driver (platform shims here)
+│   │   ├── runtime.zig          # Platform-pure host runtime
+│   │   ├── imports.zig          # dreamball.* import implementations
+│   │   ├── failure_paths.zig    # SEC1/SEC4/NFR7 failure handling
+│   │   └── build_guest.zig      # Guest wasm build helper
 │   ├── lib/                     # Svelte 5 renderer library
 │   │   ├── index.ts
 │   │   ├── generated/           # AUTO — types.ts, schemas.ts, cbor.ts
@@ -288,8 +325,18 @@ Dreamball/
 │   │   └── wasm/                # jelly.wasm + loader.ts
 │   ├── routes/                  # SvelteKit showcase app
 │   └── stories/                 # Storybook stories
+├── schemas/                     # Vendored JSON Schema sources (D-018, D-029)
+│   ├── root-2.0.0.json          # Root DreamBall wire types
+│   ├── memory-palace-0.1.0.json # Memory Palace archiform
+│   └── .pins/                   # blake3 fp pins (one per schema)
 ├── tools/
-│   ├── schema-gen/              # Zig → types.ts + schemas.ts + cbor.ts
+│   ├── schema-gen/              # JSON Schema → generated outputs (D-030)
+│   │   ├── main.zig             # Orchestrator: reads schema, verifies pin, dispatches
+│   │   ├── gen_zig.zig          # → src/protocol_v2.zig extensions
+│   │   ├── gen_ts.zig           # → src/lib/generated/types.ts
+│   │   ├── gen_valibot.zig      # → src/lib/generated/schemas.ts
+│   │   ├── gen_cbor.zig         # → src/lib/generated/cbor.ts
+│   │   └── gen_cypher.zig       # → src/memory-palace/schema.cypher
 │   └── mcp-server/              # stdio MCP server wrapping the CLI
 ├── jelly-server/                # Bun + Elysia HTTP server
 │   └── src/                     # WASM loader, routes, store, MCP docs
@@ -387,9 +434,216 @@ interactive), Ladle (scaffold is already Storybook).
 **Consequences.** Stories become a maintenance surface — each new lens
 or type adds stories. Acceptable given the 8-lens × 7-type ceiling.
 
+### ADR-5: Sprint-002 promoted decisions (D-021 through D-025, D-028)
+
+These decisions were promoted from sprint-001 retrospective emergents and
+drafted ADRs to the numbered sequence in sprint-002. Each carries an
+ADR-lite entry in
+[`docs/sprints/002-archiform-foundation/architecture-decisions.md`](sprints/002-archiform-foundation/architecture-decisions.md).
+What changed in each:
+
+**D-021 — LadybugDB transactional model (logical commit + replay-from-CAS)**
+Formalises the "stage-then-promote" mutation primitive that was rediscovered
+across 5 sprint-001 stories. Every mutation: (1) stages writes to a
+content-addressed bundle, (2) appends a single ActionLog row as the logical
+commit, (3) replays from the ActionLog on recovery. Idempotency keys
+(`blake3(agent_fp || subject || predicate || object)`) make replay no-op for
+already-applied state. Closes the relitigation pattern — all sprint-002
+mutation stories inherit this protocol.
+
+**D-022 — Bridge pattern (Zig staging → Bun bridge → promote-on-success)**
+Formalises the canonical mutation primitive as: Bun caller invokes Zig CLI
+with `--staging-dir=<tmp>`; Zig writes envelopes to staging; on success, Bun
+atomically renames staging into live CAS path; ActionLog append happens after
+promote. Wasm actions compose the same primitive: `dreamball.emit_action_envelope`
+writes to a per-invocation staging area; the host promotes after the action
+returns. New mutations follow this template — it is the only sanctioned
+write path.
+
+**D-023 — Dual-sig via `jelly.wasm` `signActionEnvelope` export**
+Closes the sprint-001 silent-substitution debt (S4.4 / S5.5) where derived-fp
+sentinels were substituted for real signatures. `jelly.wasm` now exports
+`signActionEnvelope(keypair_bytes, payload_bytes) → ed25519_sig_bytes` — the
+single seam through which all signatures are produced (Ed25519 for sprint-002;
+PQ dual-sig deferred to the security pass per SEC6). The wasm action host's
+`dreamball.emit_action_envelope` calls this export internally; guest code
+cannot forge signatures because it has no access to private key material.
+
+**D-024 — Spike-before-promote default for new shaders / materials / wasm actions**
+Any new shader, material, lens, or wasm action that introduces an unfamiliar
+host or API surface ships a spike story first (proof-of-concept on one minimal
+end-to-end case). The spike's deliverable is the architectural commitment that
+follow-up stories inherit; follow-ups do not dispatch until the spike lands
+green. Applied in sprint-002 to: the first wasm action (Cluster E), the root
+JSON Schema codegen (Cluster A), and CBOR golden vector authoring (FR3).
+
+**D-025 — Forward-declare consumer seam contracts in `architecture-decisions.md`**
+Cross-epic contracts (shapes consumed by ≥2 epics or clusters) MUST be
+authored in `architecture-decisions.md` before the producing story dispatches.
+Adding a new entry to such a contract during story execution is an
+architecture-decision event, not a story-execution decision. Sprint-002
+subjects: `dreamball.*` import surface (D-033), action manifest shape
+(D-019/D-035), generated TS client API surface (D-031), bridge pattern
+signature (D-022), pin file format (D-029), wasm host import contract (D-032).
+
+**D-028 — Triple-native KG storage (revises D-016)**
+Pre-sprint-002 the oracle Agent's KG lived in `Agent.knowledge_graph STRING`
+(JSON array of triples). Replaced with native graph storage: `Triple` node
+table with `fp = blake3(agent_fp || subject || predicate || object)` as MERGE
+key, `HAS_KNOWLEDGE` rel from `Agent` to `Triple`, and `Agent.knowledge_graph`
+field removed. CBOR remains the wire format on ActionLog envelopes; Triple rows
+are derived state replayable from ActionLog. The generated `schema.cypher` must
+match the post-sprint-002 hardened shape.
+
 ---
 
-## 9. The three canonical files
+## 9. Wasm action host (D-020, D-032)
+
+*See also `docs/dreamball-imports.md` for the full import contract (D-033).*
+
+The wasm action host is the runtime that loads and executes archiform action
+modules. It is implemented as a single Zig codebase under `src/wasm-host/`
+that compiles to two targets:
+
+- **CLI target** — `jelly` binary (Zig + WASI). Ships in sprint-002.
+- **Browser target** — `jelly.wasm` host (WebAssembly without WASI).
+  Sprint-003+ deliverable; the source is shared today, no new host code
+  will be required when the browser target ships.
+
+### 9.1 Verify-before-instantiate (SEC4, D-031)
+
+Every wasm action module is verified by `blake3(wasm_bytes)` before the
+host instantiates it. The blake3 fingerprint must match the fp declared in the
+action manifest (which lives inside the schema body, itself signed by the
+archiform publisher via aspects.sh). This is the complete trust chain (D-031):
+
+```
+publisher signs schema body (aspects.sh)
+       ↓
+schema body declares wasm fps in action manifest
+       ↓
+host: blake3(fetched_wasm_bytes) == declared_fp   ← SEC4 gate
+       ↓
+host instantiates module
+```
+
+Verification failure is a hard error. No fallback execution occurs. The
+structured log emits `outcome: "fp_mismatch"`.
+
+### 9.2 Memory budget (NFR7)
+
+| Limit | Value |
+|---|---|
+| Initial per-instance | 16 MiB |
+| Hard ceiling | 64 MiB |
+
+Exceeding the hard ceiling causes an OOM trap. The structured log emits
+`outcome: "trap"` with the memory fault detail.
+
+### 9.3 Import surface (D-033)
+
+Guests declare imports under the `dreamball` namespace exclusively:
+`extern "dreamball" fn <name>(...)`. The host validates the import table
+against the allowlist before any guest code runs (SEC1). Exactly **5 imports**
+are available for sprint-002:
+
+| Import | Purpose |
+|---|---|
+| `dreamball.fp` | blake3 fingerprint of a guest memory slice |
+| `dreamball.encode_cbor` | canonical dCBOR byte-string encoding |
+| `dreamball.read_node` | read a DreamBall node from the host node store |
+| `dreamball.emit_action_envelope` | sign + promote an action result envelope |
+| `dreamball.now_ms` | monotonic millisecond timestamp |
+
+Any import outside this allowlist produces `outcome: "import_violation"` and
+the module is refused. Adding a 6th import requires an ADR amendment (D-025,
+D-033) — not a story-execution event.
+
+For the full per-import arity, error semantics, calling convention, and
+host-trust notes see [`docs/dreamball-imports.md`](dreamball-imports.md).
+
+### 9.4 Structured invocation events (NFR11)
+
+Every invocation emits a structured-log JSON line to stderr (parseable by CI
+and smoke gates). The `outcome` field is a closed enum:
+
+| Value | Meaning |
+|---|---|
+| `"ok"` | Invocation completed successfully |
+| `"trap"` | Guest trapped (bad memory access, OOM, sign failure) |
+| `"import_violation"` | Guest declared an import outside the allowlist |
+| `"fp_mismatch"` | `blake3(wasm_bytes)` ≠ manifest-declared fp |
+
+---
+
+## 10. Codegen flow (D-018, D-029, D-030)
+
+The codegen pipeline inverts the old "Zig-canonical → emit TS" direction.
+JSON Schema is now canonical for all field shapes; Zig types, TS types,
+Valibot schemas, CBOR codecs, and the Cypher DDL are all generated outputs.
+
+```
+schemas/<archiform>-<version>.json        ← canonical field shapes
+          │
+          ▼  (blake3 verify at codegen entry)
+schemas/.pins/<archiform>-<version>.fp    ← vendor-integrity pin (D-029)
+          │
+          ▼
+tools/schema-gen/main.zig                 ← orchestrator (D-030)
+  reads JSON Schema, verifies pin,
+  dispatches generators in order,
+  emits structured-log per phase (NFR10)
+          │
+    ┌─────┼──────────────────────────────────────────┐
+    ▼     ▼          ▼             ▼          ▼
+gen_zig gen_ts  gen_valibot    gen_cbor   gen_cypher
+    │     │          │             │          │
+    ▼     ▼          ▼             ▼          ▼
+src/lib/generated/                     src/memory-palace/
+  ├── types.ts        ← gen_ts         │   schema.cypher  ← gen_cypher
+  ├── schemas.ts      ← gen_valibot    │
+  └── cbor.ts         ← gen_cbor       │
+  (Zig types folded                    │
+   into protocol_v2.zig ← gen_zig)     │
+                                       └── (also emits gen_cli, gen_ts_client,
+                                            gen_mcp_tools — action projections)
+```
+
+**Pin verification** runs twice: (1) `bun run schemas:verify` (called by
+`bun run codegen` before dispatch) and (2) inside `main.zig` itself
+(structured-log phase `pin-verify`). Both must pass; `codegen` fails hard
+on mismatch.
+
+**Per-target provenance headers** (NFR9): every generated file carries a
+`// AUTO-GENERATED by tools/schema-gen@<date>` header. Do not edit by hand;
+regenerate via `bun run codegen`.
+
+**CBOR semantics stay in Zig** (D-018): `gen_cbor.zig` emits TS shims that
+delegate to the Zig CBOR primitives exposed via `jelly.wasm`. It does not
+re-implement CBOR semantics in TypeScript.
+
+---
+
+## 11. Sentinel debt closure and PQ forward-declaration (D-023, FR13, SEC3, SEC6)
+
+Sprint-002 (Stories 6.1 + 6.2) closed the silent-substitution debt from
+sprint-001 where derived-fp sentinel values were substituted for real Ed25519
+signatures at two call sites (`oracle.ts oracleSignAction` and
+`store.recordTraversal`). Both sites now call `jelly.wasm`'s
+`signActionEnvelope` export (D-023), the single seam through which all
+action-envelope signatures are produced. FR13 and SEC3 are satisfied.
+
+**PQ dual-sig (ML-DSA-87) is explicitly deferred to the security pass.**
+Sprint-002 ships Ed25519-only single signatures per the 2026-04-25 steering
+decision. The `signActionEnvelope` export is parameterised to accept a second
+signer when the security pass adds ML-DSA-87 support (SEC6). No code path
+in sprint-002 produces or validates ML-DSA-87 signatures through the action
+signing seam; that work is tracked in `docs/known-gaps.md` under the
+security-pass section.
+
+---
+
+## 12. The three canonical files
 
 Any contributor (human or AI) who reads these three files and this
 `ARCHITECTURE.md` has enough context to make meaningful changes to the
@@ -403,21 +657,29 @@ This document ties them together.
 
 ---
 
-## 10. Where to add a new envelope type (runbook)
+## 13. Where to add a new envelope type (runbook)
 
-1. Add the Zig types in `src/protocol.zig` or `src/protocol_v2.zig`.
-2. Add the encoder in `src/envelope.zig` or `src/envelope_v2.zig`.
-3. Add the decoder in `src/envelope.zig` (extend `decodeDreamBall`).
-4. Update `docs/PROTOCOL.md §12` with the wire-format description.
-5. Update `tools/schema-gen/main.zig`'s `TYPES_SRC` and `SCHEMAS_SRC`
-   with the new TypeScript interface + Valibot schema.
-6. Run `bun run codegen` and `zig build wasm`.
-7. Update `docs/VISION.md §10` if the type changes the taxonomy story.
-8. Add a Storybook story under `src/stories/types/`.
-9. Run `zig build test`, `bun run test:unit -- --run`,
-   `bun run test-storybook`, `scripts/cli-smoke.sh`,
-   `scripts/server-smoke.sh` — all must pass.
-10. Update `docs/ARCHITECTURE.md §7` (this file, directory guide) if
+1. Add the field shape to the appropriate JSON Schema source under
+   `schemas/` (root or archiform). Run `bun run schemas:pin schemas/<file>.json`
+   to update the pin. Do **not** hand-edit generated files — JSON Schema
+   is the canonical source per D-018.
+2. Run `bun run codegen` (calls `schemas:verify` then `zig build schemagen`).
+   This regenerates `src/lib/generated/types.ts`, `schemas.ts`, `cbor.ts`,
+   and `src/memory-palace/schema.cypher`.
+3. Add the Zig types in `src/protocol.zig` or `src/protocol_v2.zig` (the
+   codegen step above may have already emitted extensions to `protocol_v2.zig`
+   via `gen_zig`; align with those).
+4. Add the encoder in `src/envelope.zig` or `src/envelope_v2.zig`.
+5. Add the decoder in `src/envelope.zig` (extend `decodeDreamBall`).
+6. Update `docs/PROTOCOL.md §12` with the wire-format description.
+7. Run `zig build wasm`.
+8. Update `docs/VISION.md §10` if the type changes the taxonomy story.
+9. Add a Storybook story under `src/stories/types/`.
+10. Run all 7 gates: `zig build test`, `zig build smoke`,
+    `bun run check`, `bun run test:unit -- --run`,
+    `scripts/cli-smoke.sh`, `scripts/server-smoke.sh`,
+    `tests/e2e-cryptography.sh` — all must pass.
+11. Update `docs/ARCHITECTURE.md §7` (this file, directory guide) if
     you added new top-level directories.
 
-If all 10 steps pass in one commit, you haven't drifted.
+If all 11 steps pass in one commit, you haven't drifted.
