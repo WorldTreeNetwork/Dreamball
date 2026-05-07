@@ -22,6 +22,7 @@
 	<section class="demos">
 		<h2>Demo D</h2>
 		<ul>
+			<li><a href="/tree" class="tree-link">▲ THE WISHING TREE · Phase 0 — where DreamBalls are born</a></li>
 			<li><a href="/demo/transmission">Scenario 1 — Transmission</a></li>
 			<li><a href="/demo/unlock">Scenario 2 — Unlock a Relic</a></li>
 			<li><a href="/demo/wearer">Scenario 3 — Wearer + Observer</a></li>
@@ -73,6 +74,12 @@
 	}
 	.demos a:hover {
 		background: #1a2240;
+	}
+	.tree-link {
+		color: #ffe066 !important;
+		border: 1px solid #ffe066;
+		letter-spacing: 0.1em;
+		font-family: ui-monospace, Menlo, Consolas, monospace;
 	}
 	.gallery {
 		margin-top: 3rem;

@@ -1,0 +1,58 @@
+/**
+ * CRT filter overlay. Opt-in. Killed by prefers-reduced-motion.
+ * Attach .wt-crt to the root element to engage.
+ */
+
+.wt-crt {
+	position: relative;
+	isolation: isolate;
+}
+
+.wt-crt::after,
+.wt-crt::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 999;
+}
+
+/* Scanlines */
+.wt-crt::before {
+	background: repeating-linear-gradient(
+		to bottom,
+		rgba(0, 0, 0, 0) 0px,
+		rgba(0, 0, 0, 0) 2px,
+		rgba(0, 0, 0, 0.18) 2px,
+		rgba(0, 0, 0, 0.18) 3px
+	);
+	mix-blend-mode: multiply;
+	animation: wt-scan 8s linear infinite;
+}
+
+/* Vignette + faint chromatic glow */
+.wt-crt::after {
+	background:
+		radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.55) 100%),
+		radial-gradient(ellipse at center, rgba(107, 245, 255, 0.03) 0%, rgba(0, 0, 0, 0) 60%);
+}
+
+@keyframes wt-scan {
+	from {
+		transform: translateY(0);
+	}
+	to {
+		transform: translateY(3px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wt-crt::before {
+		animation: none;
+	}
+}
+
+.wt-crt[data-off='true']::before,
+.wt-crt[data-off='true']::after {
+	display: none;
+}
