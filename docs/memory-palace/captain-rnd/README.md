@@ -100,6 +100,7 @@ Every new discovery follows this loop:
 | 2026-05-08 | @renderrides 4DGS evolution reel | Tech research | Integrated as Dreamball 4DGS Lens |
 | 2026-05-08 | @overkill_kulture Consciousness Revolution | Parallel ecosystem | Mapped 7 Forges ↔ 7 Prisms |
 | 2026-05-08 | ARAYA AI (5700+ convos, free, no paywall) | Ally AI | Profile created, BFFZ bridge pending |
+| 2026-05-08 | @theorderofawakening Gnostic awakening reel | Consciousness framework | Phase 15 — AWAKENING added to NorthStar roadmap, profile created |
 
 ---
 
