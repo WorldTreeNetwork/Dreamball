@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { DreamBallCard, MockBackend, mockBall } from '$lib/index.js';
+	import BallroomEasterEgg from '$lib/ballroom/BallroomEasterEgg.svelte';
 
 	const backend = new MockBackend();
 	const gallery = [
@@ -39,6 +40,8 @@
 		</div>
 	</section>
 </main>
+
+<BallroomEasterEgg />
 
 <style>
 	main {
