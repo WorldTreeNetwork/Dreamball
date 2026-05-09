@@ -7,6 +7,7 @@
 	 * Only reveals itself on hover — a secret for those who look.
 	 */
 	import { onMount } from 'svelte';
+	import BFFTrustTile from './BFFTrustTile.svelte';
 
 	let shown = $state(false);
 	let eggsFound = $state(0);
@@ -141,7 +142,16 @@
 						<span class="track-artist">jake.elking (Roland SH-101)</span>
 						<span class="track-status">loaded ✓</span>
 					</div>
+					<div class="track">
+						<span class="track-title">Cornfield Chase</span>
+						<span class="track-artist">benclark10 (Hans Zimmer cover)</span>
+						<span class="track-status">BFF ✓</span>
+					</div>
 				</div>
+			</div>
+
+			<div class="bff-section">
+				<BFFTrustTile />
 			</div>
 		{:else}
 			<div class="locked-message">
@@ -468,4 +478,11 @@
 	.ballroom-panel::-webkit-scrollbar { width: 4px; }
 	.ballroom-panel::-webkit-scrollbar-track { background: transparent; }
 	.ballroom-panel::-webkit-scrollbar-thumb { background: rgba(224, 183, 255, 0.3); border-radius: 2px; }
+
+	/* BFF Trust Section */
+	.bff-section {
+		margin-top: 16px;
+		padding-top: 12px;
+		border-top: 1px solid rgba(120, 200, 100, 0.2);
+	}
 </style>
