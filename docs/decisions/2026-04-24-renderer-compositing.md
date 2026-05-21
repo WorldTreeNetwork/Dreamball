@@ -1,7 +1,7 @@
 # 2026-04-24 — Web rendering-engine compositing strategy
 
 Sprint: sprint-001 · Epic: 5 · Significance: MEDIUM · Related:
-[PRD §4.1](../prd-rendering-engines.md) · web3d-space research
+[PRD §5.1](../prd-rendering-engines.md) · web3d-space research
 (`docs/research/gaussian-splat-web-tools/synthesis.md`)
 
 ## Context
@@ -10,7 +10,7 @@ Epic 5 ships four Threlte GLSL shader materials on a single canvas.
 Sprint-001 does not render splats. **But** the protocol reserves
 `application/splat+sog`/`+spz` media types and a `splat-scene` surface
 (see [ADR 2026-04-24-surface-registry.md](2026-04-24-surface-registry.md)
-and [PRD §4.1](../prd-rendering-engines.md)), and the web3d-space
+and [PRD §5.1](../prd-rendering-engines.md)), and the web3d-space
 gaussian-splat research documents an **architectural wall**: no
 WebGL/WebGPU splat library today accepts an externally-supplied
 `GPUDevice`. Adding splats later without an intentional compositing

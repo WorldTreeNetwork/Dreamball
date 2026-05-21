@@ -1,7 +1,7 @@
 # 2026-04-24 — Surface registry & fallback chain
 
 Sprint: sprint-001 · Epic: 5 · Significance: MEDIUM · Related:
-[PRD §6](../prd-rendering-engines.md) · PROTOCOL.md §13.7
+[PRD §7](../prd-rendering-engines.md) · PROTOCOL.md §13.7
 
 ## Context
 

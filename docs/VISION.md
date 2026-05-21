@@ -186,6 +186,76 @@ Wire representation: `jelly.omnispherical-grid` (see `docs/PROTOCOL.md
 to v1's no-floats dCBOR rule — because spatial coordinates without floats
 would be absurd. The exception is confined to this envelope type.
 
+### 4.4.6 Splats as cached radiance — the renderer's universal scene query
+
+> Added 2026-05-02. Emerges from noticing that the bloom post-effect
+> we dial up on the splat lens is a coarse approximation of something
+> the splat already knows — and that "what the splat already knows"
+> turns out to be the answer to most of the questions the renderer
+> keeps asking.
+
+A gaussian splat is not a textured point. It is, mathematically, a
+tiny cached tensor: *for every viewing direction within its angular
+footprint, here is the colour and radiance you would see.* The
+spherical-harmonic coefficients (or SOG-encoded equivalents) are a
+compressed description of that direction-dependent emission. Every
+splat is already a fragment of a baked light field — a frozen slice
+of the ray-traced scene that produced it. A splat *scene* is
+therefore the union of those slices: a queryable function `(position,
+direction) → radiance`, plus a companion `position → density`,
+blanketing the captured volume.
+
+Today's pipeline throws most of that information away. We rasterise
+each splat to a single colour, write it into the framebuffer, and
+*then* run a chain of post-processes — bloom, tonemap, colour grade,
+exposure, ambient occlusion, sometimes screen-space reflections —
+each trying to *fake* a property the splat already encoded. Bloom is
+the most obvious example: a screen-space gaussian blur over bright
+pixels that has no idea which splats contributed which photons, no
+access to the off-axis radiance the splat actually encoded, and no
+link between a glow's spatial extent and the splats underneath it.
+The same critique generalises: every classical post-pass is a
+re-derivation of something already in the cached field.
+
+Inverting this gives the **renderer's universal scene query**: treat
+`sampleRadiance(p, ω)` and `sampleDensity(p)` as the renderer's two
+fundamental primitives, and make every downstream stage — image-based
+lighting on inserted meshes, soft shadows, ambient occlusion, camera
+collision, reflections, fog, inscription contrast, even the
+bloom-replacement that started this thread — a thin consumer of those
+two functions. New radiance representations (NeRFs, neural fields,
+authored environment SH as fallback) slot in without rewriting
+consumers. Avatars walking into a captured palace pre-bake a small SH
+probe at their bounding sphere and read it as IBL; the captured
+environment lights the imported mesh automatically, no HDRI bake.
+Camera collision becomes a density threshold; AO becomes a density
+ray-march; reflections become a radiance lookup at the hit direction.
+One representation; many consumers.
+
+Post-effects then collapse into something almost embarrassingly
+small. Because radiance is stored as SH coefficients (linear basis
+functions), exposure, white balance, tonemap, colour grade,
+time-of-day, and feel-aspect modulation are all **matrix transforms
+applied to the SH vector before evaluation** — five framebuffer
+passes collapse into one matmul at sample time. The matrices are
+small, differentiable, and naturally trainable: ML techniques absorb
+into the rendering layer without any of it leaking to the wire. Vril
+flowing into a room becomes a learned operator on that room's cached
+radiance field, not a bespoke shader; the *feel* axis acquires a
+physical interpretation in the renderer.
+
+This is the strongest expression so far of §4.4.5's claim that splats
+are the most honest expression of the omnispherical idea: we treat
+them not as a clever rendering hack but as the canonical storage
+format for *what light arrives at this point of space, from every
+direction* — and the renderer's job is to integrate them through a
+small operator algebra, not to retouch their output afterwards.
+
+The architectural pattern, the two-primitive interface, the consumer
+table (including the bloom-replacement codenamed *sploom*), the
+operator algebra, and the engineering tradeoffs are specified in
+[`docs/prd-rendering-engines.md §4`](prd-rendering-engines.md).
+
 ### 4.5 The "jelly bean" — form as optional inner slot
 
 The user's sketch: **the DreamBall is the container, the DragonBall is the

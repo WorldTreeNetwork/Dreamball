@@ -1,7 +1,7 @@
 # 2026-04-24 — Coordinate frames: polar field, cartesian placements, nested reference frames
 
 Sprint: sprint-001 · Epic: 5 · Significance: MEDIUM · Related:
-[PRD §5](../prd-rendering-engines.md) · PROTOCOL.md §12.2 (omnispherical-grid),
+[PRD §6](../prd-rendering-engines.md) · PROTOCOL.md §12.2 (omnispherical-grid),
 §13.2 (layout)
 
 ## Context
@@ -43,7 +43,7 @@ second float carve-out or lossy conversions at the wire.
 3. **Canonical cartesian convention:** right-handed, Y-up, meters,
    quaternions in `[qx, qy, qz, qw]` order (glTF 2.0). Each rendering
    engine converts to its native convention at the lens boundary (see
-   [PRD §5](../prd-rendering-engines.md) table).
+   [PRD §6](../prd-rendering-engines.md) table).
 
 4. **Nested reference frames compose as cached transforms.**
    - Load time: walk the envelope tree (field → rooms → inscriptions
@@ -161,7 +161,7 @@ per-engine transform in §5 at the lens boundary, not inside
 - Engine adapters (Three.js / Threlte / Unreal / Blender) convert
   the canonical Y-up-right-handed to their native convention at the
   lens boundary. Per-engine conversion matrices listed in
-  [PRD §5](../prd-rendering-engines.md).
+  [PRD §6](../prd-rendering-engines.md).
 - Renderer-side math for freshness, conductance, particle flow
   operates in the lens's native convention (Y-up in Web) — the
   canonical-to-native convert happens once per object on load.
