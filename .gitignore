@@ -20,6 +20,7 @@ zig-pkg/
 
 # Claude Code local harness state
 .claude/
+.metacoding/
 
 # jelly-server runtime data (generated; contains secret keys — never commit)
 jelly-server/data/
