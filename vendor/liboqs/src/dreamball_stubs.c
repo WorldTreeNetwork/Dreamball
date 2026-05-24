@@ -20,11 +20,19 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* posix_memalign requires _POSIX_C_SOURCE >= 200112L to be declared in <stdlib.h>.
- * Zig 0.16 promotes implicit-function-declaration from a warning to a hard error,
- * so the macro must be set before any libc header is included. */
+/* Feature-test macros, set before any libc header so declarations are exposed:
+ *   - _POSIX_C_SOURCE >= 200112L  → posix_memalign in <stdlib.h>  (both libcs)
+ *   - _DEFAULT_SOURCE             → getentropy in <unistd.h>      (musl)
+ *
+ * Zig 0.16 promotes implicit-function-declaration from a warning to a hard
+ * error, so both must be in scope or the build fails depending on which libc
+ * is in use. _DEFAULT_SOURCE is also valid on glibc (it's the modern alias
+ * for _BSD_SOURCE | _SVID_SOURCE), so this works for both targets. */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200112L
+#endif
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE 1
 #endif
 
 #include <stddef.h>
