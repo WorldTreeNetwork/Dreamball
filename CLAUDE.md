@@ -101,6 +101,14 @@ Zig 0.16.0 + Bun. See `README.md` for the full command list.
 - `zig build wasm` — produce `src/lib/wasm/jelly.wasm` (≤ 200 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify)
 - `zig build schemagen` — regenerate `src/lib/generated/*.ts`
 
+On Linux, all of the above default to `-Dtarget=x86_64-linux-musl`
+(Zig's bundled musl libc), producing statically-linked binaries with
+no system libc/crt dependency. macOS keeps the native default. Pass
+`-Dtarget=native` to opt into glibc-dynamic linkage. See
+[`docs/decisions/2026-05-24-hermetic-musl-default-linux.md`](docs/decisions/2026-05-24-hermetic-musl-default-linux.md)
+for the rationale (sidesteps the Zig-0.16-LLD-vs-GCC-16-`.sframe`
+toolchain skew permanently).
+
 **Bun side:**
 - `bun install` — install JS/TS deps
 - `bun run check` — svelte-check (must be 0 errors)
