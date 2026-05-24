@@ -58,7 +58,7 @@ const c = @cImport({
 var g_child_pid: c_int = 0;
 var g_sigterm_received: c_int = 0;
 
-fn sigterm_handler(sig: c_int) callconv(.c) void {
+fn sigterm_handler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
     g_sigterm_received = 1;
     if (g_child_pid > 0) {
@@ -151,11 +151,12 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     try io.writeAllStdout(url);
 
     // ── Install SIGTERM handler before spawning child ──────────────────────────
-    var sa: c.struct_sigaction = std.mem.zeroes(c.struct_sigaction);
-    sa.__sigaction_u.__sa_handler = sigterm_handler;
-    _ = c.sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    _ = c.sigaction(c.SIGTERM, &sa, null);
+    const sa = std.posix.Sigaction{
+        .handler = .{ .handler = sigterm_handler },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(.TERM, &sa, null);
 
     // ── Find bun executable ────────────────────────────────────────────────────
     const bun_path_c: [*:0]const u8 = blk: {
