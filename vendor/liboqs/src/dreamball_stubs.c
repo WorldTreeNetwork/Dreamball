@@ -20,6 +20,13 @@
  * SPDX-License-Identifier: MIT
  */
 
+/* posix_memalign requires _POSIX_C_SOURCE >= 200112L to be declared in <stdlib.h>.
+ * Zig 0.16 promotes implicit-function-declaration from a warning to a hard error,
+ * so the macro must be set before any libc header is included. */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
