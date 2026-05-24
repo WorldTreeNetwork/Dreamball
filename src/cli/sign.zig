@@ -21,6 +21,15 @@ pub fn signEnvelope(
 ) ![]u8 {
     const keys = try dreamball.key_file.readFromPath(gpa, key_path);
 
+    // Strip any prior signatures the caller's `db` carried in. The full
+    // decoder (used by `grow`) populates `db.signatures` from the on-disk
+    // envelope; if those bytes stayed in `db` here, the unsigned encoding
+    // would include them and the new Ed25519/ML-DSA outputs would no longer
+    // match what `stripSignatures` reconstructs on the verify side. The
+    // verify-side byte-level strip is the canonical contract — mirror it
+    // here for the in-memory path.
+    db.signatures = &.{};
+
     db.identity_pq = keys.mldsa_public;
     const unsigned = try dreamball.envelope.encodeDreamBall(gpa, db.*);
     defer gpa.free(unsigned);

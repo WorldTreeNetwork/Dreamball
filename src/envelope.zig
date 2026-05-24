@@ -1125,6 +1125,52 @@ test "decodeDreamBall full round-trip — populated envelope" {
     try std.testing.expectEqualStrings("ed25519", decoded.signatures[0].alg);
 }
 
+test "second-pass round-trip preserves attributes (grow path)" {
+    // Models what `jelly grow` does on a previously-grown envelope: read the
+    // bytes back through the full decoder, mutate one field, re-encode. The
+    // bug this guards against was the show/export/grow sites using the
+    // subject-only decoder, which dropped name/feel/act on the floor before
+    // they could be re-emitted.
+    const gpa = std.testing.allocator;
+    var arena1 = std.heap.ArenaAllocator.init(gpa);
+    defer arena1.deinit();
+    var arena2 = std.heap.ArenaAllocator.init(gpa);
+    defer arena2.deinit();
+
+    const feel = protocol.Feel{ .personality = "playful" };
+    const act = protocol.Act{ .system_prompt = "payload-marker-abc" };
+    const db1 = protocol.DreamBall{
+        .stage = .dreamball,
+        .dreamball_type = .tool,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 1,
+        .name = "real-name",
+        .feel = feel,
+        .act = act,
+    };
+
+    const bytes1 = try encodeDreamBall(gpa, db1);
+    defer gpa.free(bytes1);
+
+    const db2 = try decodeDreamBall(arena1.allocator(), bytes1);
+    try std.testing.expectEqualStrings("real-name", db2.name.?);
+    try std.testing.expectEqualStrings("playful", db2.feel.?.personality.?);
+    try std.testing.expectEqualStrings("payload-marker-abc", db2.act.?.system_prompt.?);
+
+    // Second pass: re-encode from the decoded struct, decode again, assert
+    // every field still present. Byte-equality of the two encodings is the
+    // strongest possible round-trip guarantee.
+    const bytes2 = try encodeDreamBall(gpa, db2);
+    defer gpa.free(bytes2);
+    try std.testing.expectEqualSlices(u8, bytes1, bytes2);
+
+    const db3 = try decodeDreamBall(arena2.allocator(), bytes2);
+    try std.testing.expectEqualStrings("real-name", db3.name.?);
+    try std.testing.expectEqualStrings("playful", db3.feel.?.personality.?);
+    try std.testing.expectEqualStrings("payload-marker-abc", db3.act.?.system_prompt.?);
+}
+
 test "populated round-trip — envelope with all slots + signatures" {
     const allocator = std.testing.allocator;
 

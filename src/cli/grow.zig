@@ -51,10 +51,13 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     const in_bytes = try helpers.readFile(gpa, in_path);
     defer gpa.free(in_bytes);
 
-    var db = try dreamball.envelope.decodeDreamBallSubject(in_bytes);
-    // grow currently supports only core + basic string attributes. Nested
-    // slot updates are restricted to personality/voice/model/system-prompt —
-    // we don't parse the prior attribute tree out of the input node yet.
+    // Decode subject + every prior assertion into an arena. Prior attributes
+    // (name, feel, act, …) survive into the re-encoded envelope unless this
+    // grow explicitly overwrites them; signEnvelope re-encodes from `db`
+    // before the arena is freed.
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    var db = try dreamball.envelope.decodeDreamBall(arena.allocator(), in_bytes);
 
     if (parsed.get(2)) |stage_str| {
         db.stage = dreamball.Stage.fromString(stage_str) orelse {
