@@ -1,11 +1,12 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    // Default to Zig's bundled musl libc on Linux; macOS stays native.
-    // Override with `-Dtarget=native`. Rationale + toolchain history in
-    // docs/decisions/2026-05-24-hermetic-musl-default-linux.md.
-    const default_target: std.Target.Query = if (@import("builtin").os.tag == .linux)
-        .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl }
+    // Default to Zig's bundled musl libc on Linux (native arch); macOS
+    // stays native. Override with `-Dtarget=native`. Rationale + toolchain
+    // history in docs/decisions/2026-05-24-hermetic-musl-default-linux.md.
+    const builtin = @import("builtin");
+    const default_target: std.Target.Query = if (builtin.os.tag == .linux)
+        .{ .cpu_arch = builtin.target.cpu.arch, .os_tag = .linux, .abi = .musl }
     else
         .{};
     const target = b.standardTargetOptions(.{ .default_target = default_target });

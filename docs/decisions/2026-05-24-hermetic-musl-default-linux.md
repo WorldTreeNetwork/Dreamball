@@ -38,11 +38,15 @@ gradient: builds work today and break tomorrow with no source change.
 
 **Make Zig's bundled musl libc the default build target on Linux.**
 
-`build.zig` synthesises a `default_target` based on the host OS:
+`build.zig` synthesises a `default_target` based on the host OS, with
+`cpu_arch` taken from the host's `builtin.target` so aarch64 Linux
+contributors get a native-arch musl binary rather than an x86_64
+cross-compile:
 
 ```zig
-const default_target: std.Target.Query = if (@import("builtin").os.tag == .linux)
-    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl }
+const builtin = @import("builtin");
+const default_target: std.Target.Query = if (builtin.os.tag == .linux)
+    .{ .cpu_arch = builtin.target.cpu.arch, .os_tag = .linux, .abi = .musl }
 else
     .{};
 const target = b.standardTargetOptions(.{ .default_target = default_target });
