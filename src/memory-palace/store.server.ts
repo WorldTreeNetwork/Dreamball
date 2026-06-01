@@ -485,6 +485,14 @@ export class ServerStore implements StoreAPI {
           : new Date(tsIn).getTime();
     const tsInt = sanitizeInt(ts, 'timestamp');
     const cbor = sanitizeOptionalFp(params.cborBytesBlake3 ?? '', 'cborBytesBlake3');
+    // D-021: ActionLog append is idempotent on fp (the action's idempotency key),
+    // so replay-from-CAS re-applies an already-recorded action as a no-op rather
+    // than violating the primary-key uniqueness constraint. Matches the
+    // check-then-create pattern in ensurePalace/addRoom.
+    const existingAction = await this._q<{ fp: string }>(
+      `MATCH (a:ActionLog {fp: '${fp}'}) RETURN a.fp AS fp`
+    );
+    if (existingAction.length > 0) return;
     await this._q(
       `CREATE (:ActionLog {
         fp: '${fp}',
@@ -1217,7 +1225,7 @@ export class ServerStore implements StoreAPI {
   async getPalace(palaceFp: string): Promise<PalaceData | null> {
     const fp = sanitizeFp(palaceFp);
     const rows = await this._q<{ fp: string }>(
-      `MATCH (p:Palace {fp: ${fp}}) RETURN p.fp AS fp`
+      `MATCH (p:Palace {fp: '${fp}'}) RETURN p.fp AS fp`
     );
     if (rows.length === 0) return null;
     return { fp: rows[0].fp, name: undefined, omnisphericalGrid: null };
@@ -1226,7 +1234,7 @@ export class ServerStore implements StoreAPI {
   async roomsFor(palaceFp: string): Promise<RoomData[]> {
     const fp = sanitizeFp(palaceFp);
     const rows = await this._q<{ fp: string }>(
-      `MATCH (p:Palace {fp: ${fp}})-[:CONTAINS]->(r:Room) RETURN r.fp AS fp ORDER BY r.fp ASC`
+      `MATCH (p:Palace {fp: '${fp}'})-[:CONTAINS]->(r:Room) RETURN r.fp AS fp ORDER BY r.fp ASC`
     );
     return rows.map((r) => ({ fp: String(r.fp), layout: null }));
   }
@@ -1234,7 +1242,7 @@ export class ServerStore implements StoreAPI {
   async roomContents(roomFp: string): Promise<import('./store-types.js').RoomContentsItem[]> {
     const fp = sanitizeFp(roomFp);
     const rows = await this._q<{ fp: string; surface: string | null }>(
-      `MATCH (r:Room {fp: ${fp}})-[:CONTAINS]->(i:Inscription)
+      `MATCH (r:Room {fp: '${fp}'})-[:CONTAINS]->(i:Inscription)
        RETURN i.fp AS fp, i.surface AS surface
        ORDER BY i.fp ASC`
     );

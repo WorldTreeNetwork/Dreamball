@@ -22,6 +22,9 @@
  * providers (see docs/decisions/2026-05-31-browser-graph-store-opfs.md).
  */
 
+// Node summaries. `fp` + structure are the graph-store's responsibility; `name`
+// is best-effort only — names live in the signed envelope/CAS, so a real engine
+// (ServerStore) returns it undefined. Conformance never asserts `name`.
 export interface PalaceData {
   readonly fp: string;
   readonly name?: string;
@@ -65,7 +68,8 @@ export interface GraphStore {
   /** Close the store. */
   close(): Promise<void>;
 
-  /** Ensure a Palace node exists (MERGE semantics; first-write-wins on name). */
+  /** Ensure a Palace node exists (idempotent/MERGE). `name` is best-effort (see
+   *  the node-summaries note above) — not a contract guarantee. */
   ensurePalace(fp: string, opts?: { name?: string }): Promise<void>;
   /** Add a Room inside a Palace (Room node + containment). */
   addRoom(palaceFp: string, roomFp: string, opts?: { name?: string }): Promise<void>;

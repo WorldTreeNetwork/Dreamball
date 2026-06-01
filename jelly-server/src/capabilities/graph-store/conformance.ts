@@ -43,11 +43,15 @@ export async function runGraphStoreConformance(
     // ── Containment ───────────────────────────────────────────────────────────
     await store.ensurePalace(P, { name: 'Test Palace' });
     const pd = await store.getPalace(P);
-    check('ensurePalace + getPalace round-trips', pd?.fp === P && pd?.name === 'Test Palace', JSON.stringify(pd));
+    // NB: graph-store/1 guarantees fp existence + structure + replay, NOT names.
+    // Names live in the signed envelope/CAS, not the graph node — the real
+    // ServerStore returns name: undefined. Conformance asserts only what every
+    // engine guarantees, so it stays engine-neutral.
+    check('ensurePalace + getPalace resolves the palace by fp', pd?.fp === P, JSON.stringify(pd));
     check('getPalace returns null for unknown fp', (await store.getPalace(fp('00'))) === null);
 
-    await store.ensurePalace(P, { name: 'ignored-second-write' });
-    check('ensurePalace is idempotent (first-write-wins)', (await store.getPalace(P))?.name === 'Test Palace');
+    await store.ensurePalace(P, { name: 'second-call' });
+    check('ensurePalace is idempotent (palace still resolves by fp, no error)', (await store.getPalace(P))?.fp === P);
 
     const R1 = fp('bb');
     const R2 = fp('11');
