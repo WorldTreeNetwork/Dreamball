@@ -1,18 +1,21 @@
 # 2026-05-31 — Capabilities and providers: dynamic linking for DreamBalls
 
-Sprint: sprint-003 (candidate) · Significance: HIGH ·
-**Status: direction accepted 2026-05-31; versioning spec proposed (§10.1);
-WIT-adoption + browser-CSP pending research (§10.7)** ·
+Sprint: sprint-003 · Significance: HIGH ·
+**Status: ADOPTED — landed incrementally on `main` (capabilities vocabulary +
+validator + projector + manifest-driven resolver + graph-store/1 extraction,
+incl. the §2 `gen_cypher` decoupling — Dreamball-9dq). WIT declined for now
+(§12). Open in beads: browser-CSP spike (§10.7), Dreamball-ccb (OPFS provider),
+Dreamball-dky (runtime wiring).** ·
 Sibling decisions:
 [action-manifest](./2026-04-25-action-manifest.md) ·
 [json-schema-canonical](./2026-04-25-json-schema-canonical.md) ·
 [archiform-registry](./2026-04-25-archiform-registry.md) ·
 [wasm-runtime](./2026-04-25-wasm-runtime.md)
 
-> This note captures the *why* before any code, per CLAUDE.md. It is a
-> design proposal. Nothing here is implemented; the phased path in §9 is
-> deliberately additive so it can be adopted incrementally or declined
-> without wire-format cost.
+> This note captured the *why* before the code. It is now **largely landed** —
+> §9 carries per-step status notes (✓ landed / tracked in beads). It remains the
+> canonical rationale; the phased path was additive, so each increment shipped
+> independently. Update §9 + the status line as the remaining increments land.
 
 ## 1. Context — the question
 
@@ -53,6 +56,14 @@ cosmetic:
 | "Per-archiform" generators **hardwired to one archiform** | `gen_cli` / `gen_ts_client` / `gen_mcp_tools` headers say "per-archiform" but hardcode `schemas/memory-palace-0.1.0.json` and emit `palace_*` / `palace-client.ts` / `palace-mcp-tools.ts` | The general mechanism exists; the instance is fused into output paths and the `palace.` namespace. |
 | Embedding service in the **generic HTTP host** | `jelly-server/src/embedding/{qwen3,runpod}.ts`, `routes/embed*` | A 600 MB model runtime (`@huggingface/transformers`) lives in the otherwise-generic protocol server. |
 | Heavy deps ride in via the composition | `package.json`: `@ladybugdb/core`, `kuzu-wasm`, `playcanvas`, `@threlte/*`; `jelly-server`: `@huggingface/transformers` | A clone of "the protocol" pulls a graph DB, a 3D engine, and an ONNX runtime. |
+
+**Closure status (2026-06-01).** Row 1 — the `gen_cypher` core-codegen DDL leak
+— is **closed** (Dreamball-9dq, §9.4): `gen_cypher` moved to
+`tools/graphstore-schema/`; core no longer emits `schema.cypher`. The
+`text-embed` and `graph-store/1` capabilities are **extracted** (§9.2/§9.4). The
+remaining rows (`src/archiform.zig` `@embedFile`, hand-written archiform types in
+`protocol_v2.zig`, palace CLI verbs, the embedding service in the HTTP host) are
+**not yet addressed** — they remain the tracked direction, not done work.
 
 **Sizing the imbalance:** the Memory Palace composition (`src/memory-palace/`,
 ≈ 14,960 LOC) is **larger than the entire Zig protocol core**

@@ -330,13 +330,15 @@ Dreamball/
 │   ├── memory-palace-0.1.0.json # Memory Palace archiform
 │   └── .pins/                   # blake3 fp pins (one per schema)
 ├── tools/
-│   ├── schema-gen/              # JSON Schema → generated outputs (D-030)
+│   ├── codegen-common/          # codegen_common.zig — shared ArchiformCtx + schema-read/pin + blake3/log
+│   ├── schema-gen/              # JSON Schema → core generated outputs (D-030); no graph-store DDL
 │   │   ├── main.zig             # Orchestrator: reads schema, verifies pin, dispatches
 │   │   ├── gen_zig.zig          # → src/protocol_v2.zig extensions
 │   │   ├── gen_ts.zig           # → src/lib/generated/types.ts
 │   │   ├── gen_valibot.zig      # → src/lib/generated/schemas.ts
 │   │   ├── gen_cbor.zig         # → src/lib/generated/cbor.ts
-│   │   └── gen_cypher.zig       # → src/memory-palace/schema.cypher
+│   │   └── …                    # + per-archiform projectors: gen_cli / gen_ts_client / gen_mcp_tools / gen_capabilities
+│   ├── graphstore-schema/       # gen_cypher.zig → src/memory-palace/schema.cypher (graph-store-owned; `zig build graphstore-schema`, Dreamball-9dq)
 │   └── mcp-server/              # stdio MCP server wrapping the CLI
 ├── jelly-server/                # Bun + Elysia HTTP server
 │   └── src/                     # WASM loader, routes, store, MCP docs
@@ -594,20 +596,27 @@ tools/schema-gen/main.zig                 ← orchestrator (D-030)
   dispatches generators in order,
   emits structured-log per phase (NFR10)
           │
-    ┌─────┼──────────────────────────────────────────┐
-    ▼     ▼          ▼             ▼          ▼
-gen_zig gen_ts  gen_valibot    gen_cbor   gen_cypher
-    │     │          │             │          │
-    ▼     ▼          ▼             ▼          ▼
-src/lib/generated/                     src/memory-palace/
-  ├── types.ts        ← gen_ts         │   schema.cypher  ← gen_cypher
-  ├── schemas.ts      ← gen_valibot    │
-  └── cbor.ts         ← gen_cbor       │
-  (Zig types folded                    │
-   into protocol_v2.zig ← gen_zig)     │
-                                       └── (also emits gen_cli, gen_ts_client,
-                                            gen_mcp_tools — action projections)
+    ┌─────┼─────────────┬───────────┐
+    ▼     ▼             ▼           ▼
+gen_zig gen_ts     gen_valibot  gen_cbor
+    │     │             │           │
+    ▼     ▼             ▼           ▼
+src/lib/generated/
+  ├── types.ts        ← gen_ts
+  ├── schemas.ts      ← gen_valibot
+  └── cbor.ts         ← gen_cbor
+  (Zig types folded into protocol_v2.zig ← gen_zig; per-archiform
+   projectors gen_cli / gen_ts_client / gen_mcp_tools / gen_capabilities
+   also run in the archiform pass)
 ```
+
+**Graph-store DDL is NOT emitted by core** (Dreamball-9dq — graph-store/1 §2
+leak fix). A separate graph-store-owned orchestrator (`tools/graphstore-schema/`,
+run by `zig build graphstore-schema` after `schemagen`, both chained by
+`bun run codegen`) emits `src/memory-palace/schema.cypher` via `gen_cypher.zig`.
+The shared `ArchiformCtx` + schema-read/pin + blake3/log helpers live in the
+neutral `tools/codegen-common/codegen_common.zig`, so neither core nor the
+per-archiform generators depend on the graph store's DDL generator.
 
 **Pin verification** runs twice: (1) `bun run schemas:verify` (called by
 `bun run codegen` before dispatch) and (2) inside `main.zig` itself
