@@ -126,22 +126,55 @@ pub fn build(b: *std.Build) void {
     const smoke_step = b.step("smoke", "Run end-to-end CLI smoke test");
     smoke_step.dependOn(&smoke_cmd.step);
 
+    // codegen-common — neutral shared codegen primitives (graph-store/1).
+    // Owns ArchiformCtx, loadArchiform (schema-read + pin-verify), blake3,
+    // structured-log helpers, and generator identity. Imported by BOTH the
+    // core schema-gen orchestrator and the graph-store orchestrator so
+    // neither imports the other (closes the §2 DDL leak; Dreamball-9dq).
+    const codegen_common_mod = b.createModule(.{
+        .root_source_file = b.path("tools/codegen-common/codegen_common.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // schema-gen — D-030 Option A JSON-Schema-canonical orchestrator.
     // Dispatches to the per-target generators (gen_zig, gen_ts,
-    // gen_valibot, gen_cbor, gen_cypher) under `tools/schema-gen/`.
+    // gen_valibot, gen_cbor) and the per-archiform generators under
+    // `tools/schema-gen/`. graph-store/1: gen_cypher moved out to the
+    // graph-store orchestrator; this exe no longer emits schema.cypher.
     // Legacy static-text generator deleted in Story 1.5 (cutover).
     const schemagen_mod = b.createModule(.{
         .root_source_file = b.path("tools/schema-gen/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    schemagen_mod.addImport("codegen_common", codegen_common_mod);
     const schemagen_exe = b.addExecutable(.{
         .name = "schema-gen",
         .root_module = schemagen_mod,
     });
     const schemagen_run = b.addRunArtifact(schemagen_exe);
-    const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts + src/memory-palace/schema.cypher");
+    const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts (core protocol + per-archiform projections)");
     schemagen_step.dependOn(&schemagen_run.step);
+
+    // graphstore-schema — graph-store-owned DDL generator (graph-store/1).
+    // Regenerates `src/memory-palace/schema.cypher` from the memory-palace
+    // archiform schema. Kept separate from `schemagen` so the protocol core
+    // never compiles the graph store's DDL (gen_cypher). `bun run codegen`
+    // runs this after `schemagen`.
+    const graphstore_schema_mod = b.createModule(.{
+        .root_source_file = b.path("tools/graphstore-schema/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    graphstore_schema_mod.addImport("codegen_common", codegen_common_mod);
+    const graphstore_schema_exe = b.addExecutable(.{
+        .name = "graphstore-schema",
+        .root_module = graphstore_schema_mod,
+    });
+    const graphstore_schema_run = b.addRunArtifact(graphstore_schema_exe);
+    const graphstore_schema_step = b.step("graphstore-schema", "Regenerate src/memory-palace/schema.cypher (graph-store DDL)");
+    graphstore_schema_step.dependOn(&graphstore_schema_run.step);
 
     // Story 3.2 — gen_cli unit tests (AC4 confirmation-fixture coverage).
     // Tests live inline in tools/schema-gen/gen_cli.zig under the
@@ -151,6 +184,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // gen_cli (and main.zig, which it imports) reference the shared
+    // `codegen_common` module — wire it into the test module too.
+    gen_cli_test_mod.addImport("codegen_common", codegen_common_mod);
     const gen_cli_tests = b.addTest(.{
         .root_module = gen_cli_test_mod,
     });

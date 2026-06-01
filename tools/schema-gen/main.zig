@@ -9,8 +9,8 @@
 //!      via `bun run codegen` → `scripts/schemas-verify.ts`; this
 //!      orchestrator re-runs the check so the structured-log entry
 //!      surfaces in `zig build schemagen` output as well).
-//!   3. Dispatches to five per-target generators in deterministic
-//!      order: gen_zig, gen_ts, gen_valibot, gen_cbor, gen_cypher.
+//!   3. Dispatches to the per-target generators (root pass) and then
+//!      the per-archiform generators in deterministic order.
 //!   4. Each generator emits provenance-headed output (NFR9). The
 //!      orchestrator emits one structured-log JSON line per phase to
 //!      stderr (NFR10): `schema-read`, `pin-verify`,
@@ -28,22 +28,27 @@
 //! mint-time authoring); decode paths take the raw CBOR-derived
 //! object directly.
 //!
-//! Per D-030 the generator surface is:
-//!   main.zig, gen_zig.zig, gen_ts.zig, gen_valibot.zig,
-//!   gen_cbor.zig, gen_cypher.zig.
-//! Provenance helpers (NFR9) are intentionally folded into this file
-//! rather than living in a sibling `provenance.zig` so the AC1 grep
-//! audit succeeds.
+//! graph-store/1 (Dreamball-9dq): this core orchestrator no longer
+//! emits `src/memory-palace/schema.cypher`. The Memory Palace graph
+//! DDL is owned by the graph-store orchestrator
+//! (`tools/graphstore-schema`, run via `zig build graphstore-schema`)
+//! — the core protocol schema-gen must not know about the graph
+//! store's DDL (the §2 leak). The shared `ArchiformCtx`, the
+//! schema-read/pin-verify helper, and the blake3 + structured-log
+//! primitives live in the neutral `codegen_common` module
+//! (`tools/codegen-common/codegen_common.zig`), imported by both
+//! orchestrators and every per-archiform generator.
 //!
 //! Run: `zig build schemagen` (typically via `bun run codegen`,
-//! which also runs `scripts/schemas-verify.ts` first).
+//! which also runs `scripts/schemas-verify.ts` first, then
+//! `zig build graphstore-schema`).
 
 const std = @import("std");
+const cc = @import("codegen_common");
 const gen_zig = @import("gen_zig.zig");
 const gen_ts = @import("gen_ts.zig");
 const gen_valibot = @import("gen_valibot.zig");
 const gen_cbor = @import("gen_cbor.zig");
-const gen_cypher = @import("gen_cypher.zig");
 const gen_cli = @import("gen_cli.zig");
 const gen_ts_client = @import("gen_ts_client.zig");
 const gen_mcp_tools = @import("gen_mcp_tools.zig");
@@ -53,17 +58,26 @@ const SCHEMA_PATH = "schemas/root-2.0.0.json";
 const PIN_PATH = "schemas/.pins/root-2.0.0.fp";
 const SCHEMA_VERSION = "2.0.0";
 const TS_OUT_DIR = "src/lib/generated";
-const CYPHER_OUT_DIR = "src/memory-palace";
 
 // ── Per-archiform schema paths (Story 2.2) ────────────────────────────────────
 const ARCHIFORM_SCHEMA_PATH = "schemas/memory-palace-0.1.0.json";
 const ARCHIFORM_PIN_PATH = "schemas/.pins/memory-palace-0.1.0.fp";
 const ARCHIFORM_SCHEMA_VERSION = "0.1.0";
 
-/// Generator identity baked at compile time. Deterministic per-binary
-/// per NFR9 — only the GENERATOR_COMMIT varies in provenance text.
-pub const GENERATOR_ID = "tools/schema-gen@2026-04-28";
-pub const GENERATOR_COMMIT = "story-1.3-initial";
+// ── Shared codegen primitives (codegen_common) ────────────────────────────────
+// Generator identity + the structured-log/blake3 helpers live in the neutral
+// `codegen_common` module so the graph-store orchestrator can share them
+// without importing this file (graph-store/1 §2 decoupling). Re-exported as
+// `pub` here so the per-archiform generators keep referencing them via
+// `main_mod.*`.
+pub const GENERATOR_ID = cc.GENERATOR_ID;
+pub const GENERATOR_COMMIT = cc.GENERATOR_COMMIT;
+pub const logKVPub = cc.logKV;
+
+// Internal aliases so this file's call sites stay terse.
+const logKV = cc.logKV;
+const logErr = cc.logErr;
+const blake3Hex = cc.blake3Hex;
 
 pub fn main() !void {
     var gpa_state: std.heap.DebugAllocator(.{}) = .init;
@@ -87,7 +101,10 @@ pub fn main() !void {
         return e;
     };
     var schema_fp_buf: [64]u8 = undefined;
-    const schema_fp = blake3Hex(schema_bytes, &schema_fp_buf);
+    // Dupe into the arena so the fp outlives the stack buffer — matches the
+    // convention in codegen_common.loadArchiform (the fp is stored into
+    // GeneratorCtx, so it must not alias a stack-local).
+    const schema_fp = try arena.dupe(u8, blake3Hex(schema_bytes, &schema_fp_buf));
     try logKV(&err_w, .{
         .{ "phase", "schema-read" },
         .{ "path", SCHEMA_PATH },
@@ -127,20 +144,17 @@ pub fn main() !void {
         return e;
     };
 
-    // 4) Build provenance headers (NFR9). Two leaders so TS and
-    //    Cypher outputs both lead with comment-syntax-correct text.
+    // 4) Build provenance header (NFR9). TS-style comment leader; the
+    //    Cypher leader moved out with the graph-store DDL generator.
     const ts_header = try buildHeader(arena, "//", schema_fp);
-    const cypher_header = try buildHeader(arena, "--", schema_fp);
 
     // 5) Dispatch generators in deterministic order.
     try ensureDir(io, TS_OUT_DIR);
-    try ensureDir(io, CYPHER_OUT_DIR);
 
     const ctx = GeneratorCtx{
         .io = io,
         .arena = arena,
         .ts_header = ts_header,
-        .cypher_header = cypher_header,
         .schema_fp = schema_fp,
         .stderr = &err_w,
     };
@@ -149,14 +163,12 @@ pub fn main() !void {
     try dispatch("gen_ts", &ctx, gen_ts.generate);
     try dispatch("gen_valibot", &ctx, gen_valibot.generate);
     try dispatch("gen_cbor", &ctx, gen_cbor.generate);
-    try dispatch("gen_cypher", &ctx, gen_cypher.generate);
 
     // ── Per-archiform pass (Story 2.2) ────────────────────────────────────────
     // Walk non-root schemas (currently only memory-palace-0.1.0.json) and
-    // dispatch the per-archiform generators. The archiform pass overwrites
-    // `src/memory-palace/schema.cypher` with a provenance header naming the
-    // archiform schema/pin as source (see gen_cypher.zig for the normalization
-    // documented in tests/codegen/normalizations/cypher-header-source-schema.md).
+    // dispatch the per-archiform generators. graph-store/1: gen_cypher is no
+    // longer dispatched here — `src/memory-palace/schema.cypher` is regenerated
+    // by the graph-store orchestrator (`zig build graphstore-schema`).
     try runArchiformPass(io, arena, &err_w);
 
     const t_end = std.Io.Clock.now(.real, io);
@@ -174,7 +186,6 @@ pub const GeneratorCtx = struct {
     io: std.Io,
     arena: std.mem.Allocator,
     ts_header: []const u8,
-    cypher_header: []const u8,
     schema_fp: []const u8,
     stderr: *std.Io.File.Writer,
 
@@ -189,7 +200,6 @@ pub const GeneratorCtx = struct {
     ) !void {
         const header = switch (header_kind) {
             .ts => self.ts_header,
-            .cypher => self.cypher_header,
         };
         var file = try std.Io.Dir.cwd().createFile(self.io, path, .{ .truncate = true });
         defer file.close(self.io);
@@ -206,7 +216,10 @@ pub const GeneratorCtx = struct {
     }
 };
 
-pub const HeaderKind = enum { ts, cypher };
+/// Comment-leader style for generated output headers. graph-store/1 removed
+/// the `.cypher` variant when the DDL generator moved to the graph-store
+/// orchestrator; this core orchestrator only emits TS-style outputs.
+pub const HeaderKind = enum { ts };
 
 fn dispatch(
     name: []const u8,
@@ -228,19 +241,8 @@ fn ensureDir(io: std.Io, path: []const u8) !void {
     };
 }
 
-fn blake3Hex(bytes: []const u8, out: *[64]u8) []const u8 {
-    var hash: [32]u8 = undefined;
-    std.crypto.hash.Blake3.hash(bytes, &hash, .{});
-    const hex_alphabet = "0123456789abcdef";
-    for (hash, 0..) |b, i| {
-        out[i * 2] = hex_alphabet[b >> 4];
-        out[i * 2 + 1] = hex_alphabet[b & 0x0f];
-    }
-    return out[0..64];
-}
-
-/// Build the provenance header (NFR9). `comment_prefix` selects
-/// TS-style (`//`) vs Cypher-style (`--`).
+/// Build the provenance header (NFR9). `comment_prefix` selects the
+/// comment-leader style (TS uses `//`).
 fn buildHeader(allocator: std.mem.Allocator, comment_prefix: []const u8, schema_fp: []const u8) ![]const u8 {
     return std.fmt.allocPrint(
         allocator,
@@ -268,101 +270,46 @@ fn buildHeader(allocator: std.mem.Allocator, comment_prefix: []const u8, schema_
     );
 }
 
-/// Public re-export of logKV for use by per-archiform generators (e.g. gen_cypher.zig).
-pub fn logKVPub(w: *std.Io.File.Writer, pairs: anytype) !void {
-    try logKV(w, pairs);
-}
-
 /// Per-archiform pass (Story 2.2).
-/// Reads `schemas/memory-palace-0.1.0.json`, verifies its pin, parses it,
-/// then dispatches per-archiform generators for TS, Valibot, Zig, and Cypher.
+/// Reads `schemas/memory-palace-0.1.0.json`, verifies its pin, parses it
+/// (via the shared `codegen_common.loadArchiform` helper), then dispatches
+/// the per-archiform generators for TS, Valibot, Zig, CLI, TS-client,
+/// MCP-tools, and capabilities. graph-store/1: gen_cypher is NOT dispatched
+/// here — schema.cypher is owned by the graph-store orchestrator.
 fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Writer) !void {
     try logKV(err_w, .{
         .{ "phase", "archiform-pass-start" },
         .{ "schema", ARCHIFORM_SCHEMA_PATH },
     });
 
-    // 1) Read archiform schema.
-    const schema_bytes = std.Io.Dir.cwd().readFileAlloc(io, ARCHIFORM_SCHEMA_PATH, arena, .limited(1 << 22)) catch |e| {
-        try logErr(err_w, "archiform-schema-read-failed", ARCHIFORM_SCHEMA_PATH, @errorName(e));
-        return e;
-    };
-    var schema_fp_buf: [64]u8 = undefined;
-    const schema_fp = blake3Hex(schema_bytes, &schema_fp_buf);
-    try logKV(err_w, .{
-        .{ "phase", "archiform-schema-read" },
-        .{ "path", ARCHIFORM_SCHEMA_PATH },
-        .{ "fp", schema_fp },
-        .{ "bytes", schema_bytes.len },
-    });
-
-    // 2) Pin verify.
-    const pin_bytes = std.Io.Dir.cwd().readFileAlloc(io, ARCHIFORM_PIN_PATH, arena, .limited(128)) catch |e| {
-        try logErr(err_w, "archiform-pin-verify", ARCHIFORM_PIN_PATH, @errorName(e));
-        return e;
-    };
-    const pin_text = std.mem.trim(u8, pin_bytes, &std.ascii.whitespace);
-    if (!std.mem.eql(u8, pin_text, schema_fp)) {
-        try logKV(err_w, .{
-            .{ "phase", "archiform-pin-verify" },
-            .{ "status", "mismatch" },
-            .{ "expected", pin_text },
-            .{ "actual", schema_fp },
-            .{ "schema", ARCHIFORM_SCHEMA_PATH },
-        });
-        return error.ArchiformSchemaPinMismatch;
-    }
-    try logKV(err_w, .{
-        .{ "phase", "archiform-pin-verify" },
-        .{ "status", "match" },
-        .{ "fp", schema_fp },
-    });
-
-    // 3) Parse schema.
-    const schema_value = std.json.parseFromSliceLeaky(std.json.Value, arena, schema_bytes, .{}) catch |e| {
-        try logErr(err_w, "archiform-schema-parse-failed", ARCHIFORM_SCHEMA_PATH, @errorName(e));
-        return e;
-    };
-
-    // 4) Build ArchiformCtx and dispatch per-archiform generators.
-    const actx = gen_cypher.ArchiformCtx{
-        .io = io,
-        .arena = arena,
-        .schema_path = ARCHIFORM_SCHEMA_PATH,
-        .schema_fp = schema_fp,
-        .schema_version = ARCHIFORM_SCHEMA_VERSION,
-        .pin_path = ARCHIFORM_PIN_PATH,
-        .schema_value = schema_value,
-        .stderr = err_w,
-        .generator_id = GENERATOR_ID,
-        .generator_commit = GENERATOR_COMMIT,
-    };
-
-    try logKV(err_w, .{
-        .{ "phase", "archiform-generator-dispatch" },
-        .{ "target", "gen_cypher" },
-        .{ "schema_fp", schema_fp },
-    });
-    try gen_cypher.generateArchiform(&actx);
+    // Read + pin-verify + parse the archiform schema (shared helper).
+    const actx = try cc.loadArchiform(
+        io,
+        arena,
+        ARCHIFORM_SCHEMA_PATH,
+        ARCHIFORM_PIN_PATH,
+        ARCHIFORM_SCHEMA_VERSION,
+        err_w,
+    );
 
     try logKV(err_w, .{
         .{ "phase", "archiform-generator-dispatch" },
         .{ "target", "gen_ts" },
-        .{ "schema_fp", schema_fp },
+        .{ "schema_fp", actx.schema_fp },
     });
     try gen_ts.generateArchiform(&actx);
 
     try logKV(err_w, .{
         .{ "phase", "archiform-generator-dispatch" },
         .{ "target", "gen_valibot" },
-        .{ "schema_fp", schema_fp },
+        .{ "schema_fp", actx.schema_fp },
     });
     try gen_valibot.generateArchiform(&actx);
 
     try logKV(err_w, .{
         .{ "phase", "archiform-generator-dispatch" },
         .{ "target", "gen_zig" },
-        .{ "schema_fp", schema_fp },
+        .{ "schema_fp", actx.schema_fp },
     });
     try gen_zig.generateArchiform(&actx);
 
@@ -373,7 +320,7 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
     try logKV(err_w, .{
         .{ "phase", "archiform-generator-dispatch" },
         .{ "target", "gen_cli" },
-        .{ "schema_fp", schema_fp },
+        .{ "schema_fp", actx.schema_fp },
     });
     try gen_cli.generateArchiform(&actx);
 
@@ -387,7 +334,7 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
     try logKV(err_w, .{
         .{ "phase", "archiform-generator-dispatch" },
         .{ "target", "gen_ts_client" },
-        .{ "schema_fp", schema_fp },
+        .{ "schema_fp", actx.schema_fp },
     });
     try gen_ts_client.generateArchiform(&actx);
 
@@ -401,7 +348,7 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
     try logKV(err_w, .{
         .{ "phase", "archiform-generator-dispatch" },
         .{ "target", "gen_mcp_tools" },
-        .{ "schema_fp", schema_fp },
+        .{ "schema_fp", actx.schema_fp },
     });
     try gen_mcp_tools.generateArchiform(&actx);
 
@@ -412,7 +359,7 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
     try logKV(err_w, .{
         .{ "phase", "archiform-generator-dispatch" },
         .{ "target", "gen_capabilities" },
-        .{ "schema_fp", schema_fp },
+        .{ "schema_fp", actx.schema_fp },
     });
     try gen_capabilities.generateArchiform(&actx);
 
@@ -420,82 +367,4 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
         .{ "phase", "archiform-pass-done" },
         .{ "schema", ARCHIFORM_SCHEMA_PATH },
     });
-}
-
-/// Emit one JSON line to stderr. Tuple of (key, value) pairs; values are
-/// rendered with std.json escaping. Numbers render numerically.
-fn logKV(w: *std.Io.File.Writer, pairs: anytype) !void {
-    try w.interface.writeAll("{");
-    inline for (pairs, 0..) |pair, i| {
-        if (i > 0) try w.interface.writeAll(",");
-        try writeJsonString(w, pair[0]);
-        try w.interface.writeAll(":");
-        try writeJsonValue(w, pair[1]);
-    }
-    try w.interface.writeAll("}\n");
-    try w.interface.flush();
-}
-
-fn logErr(w: *std.Io.File.Writer, phase: []const u8, path: []const u8, err: []const u8) !void {
-    try logKV(w, .{
-        .{ "phase", phase },
-        .{ "path", path },
-        .{ "error", err },
-    });
-}
-
-fn writeJsonString(w: *std.Io.File.Writer, s: []const u8) !void {
-    try w.interface.writeAll("\"");
-    for (s) |c| {
-        switch (c) {
-            '"' => try w.interface.writeAll("\\\""),
-            '\\' => try w.interface.writeAll("\\\\"),
-            '\n' => try w.interface.writeAll("\\n"),
-            '\r' => try w.interface.writeAll("\\r"),
-            '\t' => try w.interface.writeAll("\\t"),
-            else => {
-                if (c < 0x20) {
-                    var buf: [8]u8 = undefined;
-                    const slice = try std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{c});
-                    try w.interface.writeAll(slice);
-                } else {
-                    try w.interface.writeAll(&[_]u8{c});
-                }
-            },
-        }
-    }
-    try w.interface.writeAll("\"");
-}
-
-fn writeJsonValue(w: *std.Io.File.Writer, v: anytype) !void {
-    const T = @TypeOf(v);
-    const info = @typeInfo(T);
-    switch (info) {
-        .pointer => |p| {
-            if (p.size == .slice and p.child == u8) {
-                try writeJsonString(w, v);
-                return;
-            }
-            // String literal *const [N:0]u8 — coerce via std.mem.span.
-            try writeJsonString(w, std.mem.span(@as([*:0]const u8, @ptrCast(v))));
-        },
-        .array => |a| {
-            if (a.child == u8) {
-                try writeJsonString(w, &v);
-                return;
-            }
-            @compileError("logKV value: only string + numeric scalars supported");
-        },
-        .int, .comptime_int => {
-            var buf: [32]u8 = undefined;
-            const slice = try std.fmt.bufPrint(&buf, "{d}", .{v});
-            try w.interface.writeAll(slice);
-        },
-        .float, .comptime_float => {
-            var buf: [32]u8 = undefined;
-            const slice = try std.fmt.bufPrint(&buf, "{d}", .{v});
-            try w.interface.writeAll(slice);
-        },
-        else => @compileError("logKV value: unsupported type " ++ @typeName(T)),
-    }
 }

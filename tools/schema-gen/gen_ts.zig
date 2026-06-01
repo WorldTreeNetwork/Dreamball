@@ -12,7 +12,7 @@
 
 const std = @import("std");
 const main_mod = @import("main.zig");
-const gen_cypher = @import("gen_cypher.zig");
+const cc = @import("codegen_common");
 
 const OUT_PATH = "src/lib/generated/types.ts";
 const ARCHIFORM_OUT_PATH = "src/lib/generated/memory-palace.types.ts";
@@ -25,7 +25,7 @@ pub fn generate(ctx: *const main_mod.GeneratorCtx) !void {
 /// extensions to `src/lib/generated/memory-palace.types.ts`.
 /// Names avoid collision with root types (e.g. MemoryPalaceInscription
 /// vs root Inscription, MemoryPalaceTriple vs root Triple).
-pub fn generateArchiform(actx: *const gen_cypher.ArchiformCtx) !void {
+pub fn generateArchiform(actx: *const cc.ArchiformCtx) !void {
     // Build archiform TS header naming the memory-palace schema as source.
     const header = try std.fmt.allocPrint(
         actx.arena,

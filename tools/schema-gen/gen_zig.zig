@@ -19,7 +19,7 @@
 
 const std = @import("std");
 const main_mod = @import("main.zig");
-const gen_cypher = @import("gen_cypher.zig");
+const cc = @import("codegen_common");
 
 pub fn generate(ctx: *const main_mod.GeneratorCtx) !void {
     try ctx.stderr.interface.writeAll(
@@ -36,7 +36,7 @@ pub fn generate(ctx: *const main_mod.GeneratorCtx) !void {
 /// "gen_zig.zig emits Memory Palace type extensions to
 /// src/lib/generated/memory-palace.types.ts" but the Zig-side generated
 /// types (src/protocol_v2.zig extensions) are FR2 follow-up work.
-pub fn generateArchiform(actx: *const gen_cypher.ArchiformCtx) !void {
+pub fn generateArchiform(actx: *const cc.ArchiformCtx) !void {
     try actx.stderr.interface.writeAll(
         "{\"phase\":\"generator-skipped\",\"target\":\"gen_zig\",\"pass\":\"per-archiform\",\"reason\":\"Zig type extensions are FR2 follow-up; out of Story-2.2 scope\"}\n",
     );

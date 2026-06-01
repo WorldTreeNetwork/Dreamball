@@ -240,6 +240,18 @@ boundary cut:
 4. **Extract `graph-store`** behind `graph-store/1`, moving
    `gen_cypher` + `schema.cypher` into the provider; rely on
    replay-from-log (§4.1) for the in-memory/degraded provider.
+   - **Status (Dreamball-9dq, landed):** the §2 DDL leak is closed.
+     `gen_cypher.zig` no longer lives in core codegen — it moved to
+     `tools/graphstore-schema/`, compiled by a graph-store-owned
+     `zig build graphstore-schema` step (run after `zig build schemagen`
+     by `bun run codegen`). The core `schema-gen` exe no longer imports
+     or compiles `gen_cypher` and no longer emits `schema.cypher`. The
+     shared `ArchiformCtx` + schema-read/pin-verify + blake3/log helpers
+     were extracted to the neutral `tools/codegen-common/codegen_common.zig`
+     module so neither core nor the per-archiform generators depend on the
+     graph store's DDL generator. `schema.cypher` stays at
+     `src/memory-palace/` (the ladybug provider's runtime DDL, pinned
+     byte-for-byte by `tests/codegen/cypher-byte-equivalence.test.ts`).
 5. **Generalize the `dreamball.*` host** to interface-typed linking for
    Category A providers, expressed in our own capability vocabulary (not
    the WIT toolchain — §12); keep the allowlist semantics.

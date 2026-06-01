@@ -1,68 +1,42 @@
-//! Story 1.3 — gen_cypher per-target generator (root pass).
-//! Story 2.2 — adds generateArchiform() for per-archiform pass.
+//! gen_cypher — Memory Palace graph DDL generator (graph-store owned).
 //!
-//! Root pass (generate):
-//!   Emits the canonical DDL for the Memory Palace graph to
-//!   `src/memory-palace/schema.cypher` with a provenance header
-//!   naming the root schema as source. The DDL body is the BODY
-//!   constant below (D-030 Option A shadow phase).
+//! Relocated out of `tools/schema-gen/` in graph-store/1 (Dreamball-9dq)
+//! to close the §2 leak: the protocol core's schema-gen must NOT know
+//! about the graph store's DDL. This file is now compiled only by the
+//! graph-store orchestrator (`tools/graphstore-schema/main.zig`), never
+//! by the core `tools/schema-gen` exe.
 //!
 //! Per-archiform pass (generateArchiform):
-//!   Called by main.zig after the root pass when the per-archiform
-//!   schema dispatch runs. Re-emits `src/memory-palace/schema.cypher`
-//!   with a provenance header naming `schemas/memory-palace-0.1.0.json`
-//!   and its pin as source. The DDL body is identical to BODY.
+//!   Emits `src/memory-palace/schema.cypher` with a provenance header
+//!   naming `schemas/memory-palace-0.1.0.json` and its pin as source.
+//!   The DDL body is the BODY constant below.
 //!
 //!   The schema is validated structurally before emission: every table
 //!   name referenced in BODY must have a corresponding $defs entry in
-//!   the memory-palace schema with the correct x-cypher-table value,
-//!   and every $defs entry with x-cypher-kind must have a corresponding
-//!   CREATE statement in BODY. This makes the per-archiform pass the
-//!   AC6 drift gate: removing a table from the schema causes the
-//!   validation step to fail before any output is written.
+//!   the memory-palace schema with the correct x-cypher-table value.
+//!   This makes the per-archiform pass the AC6 drift gate: removing a
+//!   table from the schema causes the validation step to fail before any
+//!   output is written.
 //!
 //! Byte-equivalence note (AC2):
-//!   The DDL body produced by both passes is identical (same BODY
-//!   constant). The provenance header DIFFERS between passes:
-//!   - root pass: source-schema = schemas/root-2.0.0.json
-//!   - archiform pass: source-schema = schemas/memory-palace-0.1.0.json
-//!   This normalization is documented in:
-//!   tests/codegen/normalizations/cypher-header-source-schema.md
-//!   The pre-migration reference (tests/fixtures/pre-migration-schema.cypher)
-//!   was captured before Story 2.2 modified the provenance header.
+//!   The provenance header names the archiform schema as source; the DDL
+//!   body is byte-identical to the pre-migration reference
+//!   (tests/fixtures/pre-migration-schema.cypher). The 3-line header diff
+//!   is registered in
+//!   tests/codegen/normalizations/cypher-header-source-schema.md.
+//!   Gated by tests/codegen/cypher-byte-equivalence.test.ts.
 
 const std = @import("std");
-const main_mod = @import("main.zig");
+const cc = @import("codegen_common");
 
 const OUT_PATH = "src/memory-palace/schema.cypher";
 
-// ── Root pass (Story 1.3) ─────────────────────────────────────────────────────
-
-pub fn generate(ctx: *const main_mod.GeneratorCtx) !void {
-    try ctx.writeOutput(OUT_PATH, BODY, .cypher);
-}
-
 // ── Per-archiform pass (Story 2.2) ────────────────────────────────────────────
 
-/// ArchiformCtx carries the parsed schema JSON and per-archiform
-/// provenance strings needed by the per-archiform generators.
-pub const ArchiformCtx = struct {
-    io: std.Io,
-    arena: std.mem.Allocator,
-    schema_path: []const u8,
-    schema_fp: []const u8,
-    schema_version: []const u8,
-    pin_path: []const u8,
-    schema_value: std.json.Value,
-    stderr: *std.Io.File.Writer,
-    generator_id: []const u8,
-    generator_commit: []const u8,
-};
-
-/// Called by main.zig per-archiform dispatch after root pass completes.
+/// Called by the graph-store orchestrator's per-archiform dispatch.
 /// Validates the schema covers all tables declared in BODY, then emits
 /// `src/memory-palace/schema.cypher` with an archiform provenance header.
-pub fn generateArchiform(actx: *const ArchiformCtx) !void {
+pub fn generateArchiform(actx: *const cc.ArchiformCtx) !void {
     // Validate schema covers all expected tables before emitting.
     try validateSchemaCoverage(actx);
 
@@ -77,7 +51,7 @@ pub fn generateArchiform(actx: *const ArchiformCtx) !void {
     try fw.interface.writeAll(BODY);
     try fw.interface.flush();
 
-    try main_mod.logKVPub(actx.stderr, .{
+    try cc.logKV(actx.stderr, .{
         .{ "phase", "output-written" },
         .{ "path", OUT_PATH },
         .{ "bytes", header.len + BODY.len },
@@ -102,11 +76,11 @@ const EXPECTED_REL_TABLES = [_][]const u8{
 
 /// Validate that every table name BODY declares has a matching $defs entry
 /// in the archiform schema. Returns error.SchemaTableMissing if any is absent.
-fn validateSchemaCoverage(actx: *const ArchiformCtx) !void {
+fn validateSchemaCoverage(actx: *const cc.ArchiformCtx) !void {
     const defs = switch (actx.schema_value) {
         .object => |obj| blk: {
             const defs_val = obj.get("$defs") orelse {
-                try main_mod.logKVPub(actx.stderr, .{
+                try cc.logKV(actx.stderr, .{
                     .{ "phase", "schema-validate" },
                     .{ "status", "error" },
                     .{ "detail", "missing $defs" },
@@ -125,7 +99,7 @@ fn validateSchemaCoverage(actx: *const ArchiformCtx) !void {
     // Check all expected node tables.
     for (EXPECTED_NODE_TABLES) |table_name| {
         if (!hasTableDef(defs, table_name)) {
-            try main_mod.logKVPub(actx.stderr, .{
+            try cc.logKV(actx.stderr, .{
                 .{ "phase", "schema-validate" },
                 .{ "status", "missing-table" },
                 .{ "table", table_name },
@@ -139,7 +113,7 @@ fn validateSchemaCoverage(actx: *const ArchiformCtx) !void {
     // Check all expected rel tables.
     for (EXPECTED_REL_TABLES) |table_name| {
         if (!hasTableDef(defs, table_name)) {
-            try main_mod.logKVPub(actx.stderr, .{
+            try cc.logKV(actx.stderr, .{
                 .{ "phase", "schema-validate" },
                 .{ "status", "missing-table" },
                 .{ "table", table_name },
@@ -152,7 +126,7 @@ fn validateSchemaCoverage(actx: *const ArchiformCtx) !void {
 
     // Also verify Triple.fp MERGE key is declared (D-028 requirement).
     if (!hasFpMergeKey(defs, "Triple")) {
-        try main_mod.logKVPub(actx.stderr, .{
+        try cc.logKV(actx.stderr, .{
             .{ "phase", "schema-validate" },
             .{ "status", "missing-merge-key" },
             .{ "table", "Triple" },
@@ -161,7 +135,7 @@ fn validateSchemaCoverage(actx: *const ArchiformCtx) !void {
         return error.SchemaMissingMergeKey;
     }
 
-    try main_mod.logKVPub(actx.stderr, .{
+    try cc.logKV(actx.stderr, .{
         .{ "phase", "schema-validate" },
         .{ "status", "ok" },
         .{ "schema", actx.schema_path },
@@ -213,7 +187,7 @@ fn hasFpMergeKey(defs: std.json.ObjectMap, table_name: []const u8) bool {
 
 // ── Provenance header ────────────────────────────────────────────────────────
 
-fn buildArchiformHeader(allocator: std.mem.Allocator, actx: *const ArchiformCtx) ![]const u8 {
+fn buildArchiformHeader(allocator: std.mem.Allocator, actx: *const cc.ArchiformCtx) ![]const u8 {
     return std.fmt.allocPrint(
         allocator,
         \\-- DO NOT EDIT — generated by tools/schema-gen.

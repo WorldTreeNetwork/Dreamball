@@ -17,7 +17,7 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "test-storybook": "test-storybook",
-    "codegen": "bun run scripts/schemas-verify.ts && zig build schemagen",
+    "codegen": "bun run scripts/schemas-verify.ts && zig build schemagen && zig build graphstore-schema",
     "schemas:pin": "bun run scripts/schemas-pin.ts",
     "schemas:verify": "bun run scripts/schemas-verify.ts",
     "mcp": "bun src/mcp/main.ts",
