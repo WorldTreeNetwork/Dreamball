@@ -1,6 +1,6 @@
 /**
  * graph-store-conformance.test.ts — proves the in-memory engine satisfies
- * `graph-store/1` (jelly-server/src/capabilities/graph-store/).
+ * `graph-store/1` (src/lib/capabilities/graph-store/).
  *
  * This is the engine-independence thesis made executable: a non-kuzu engine
  * passes the same conformance suite, so it is a valid `service/graph-store`
@@ -9,8 +9,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { runGraphStoreConformance } from '../../jelly-server/src/capabilities/graph-store/conformance.js';
-import { InMemoryGraphStore } from '../../jelly-server/src/capabilities/graph-store/providers/in-memory.js';
+import { runGraphStoreConformance } from '../../src/lib/capabilities/graph-store/conformance.js';
+import { InMemoryGraphStore } from '../../src/lib/capabilities/graph-store/providers/in-memory.js';
 
 describe('graph-store/1 conformance — in-memory reference provider', () => {
   it('passes every conformance check (engine-agnostic contract)', async () => {

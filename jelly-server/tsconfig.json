@@ -10,6 +10,6 @@
     "noEmit": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*", "../src/lib/generated/**/*"],
+  "include": ["src/**/*", "../src/lib/generated/**/*", "../src/lib/capabilities/**/*"],
   "exclude": ["dist", "node_modules"]
 }

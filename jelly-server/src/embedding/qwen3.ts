@@ -25,7 +25,7 @@
  * NFR11 (sanctioned network exit), SEC6 (no implicit exfiltration).
  */
 
-import { readRunpodConfig, embedViaRunpod, type RunpodConfig } from './runpod';
+import { readRunpodConfig, embedViaRunpod, type RunpodConfig } from './runpod.js';
 
 // ---------------------------------------------------------------------------
 // Types
