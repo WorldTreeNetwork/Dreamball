@@ -80,18 +80,23 @@ describe('resolvePalaceCapabilities() against the generated manifest', () => {
     expect(knn.degradedTo).toBe('sequential-replay');
   });
 
-  it('reports store + scene as unbound (no provider yet) — honestly', () => {
-    expect(find(report, 'store').status).toBe('unbound');
+  it('binds store to the in-memory graph-store provider', () => {
+    const store = find(report, 'store');
+    expect(store.status).toBe('bound');
+    expect(store.providerId).toBe('in-memory');
+  });
+
+  it('reports scene as unbound (no render provider yet) — honestly', () => {
     expect(find(report, 'scene').status).toBe('unbound');
-    expect(find(report, 'store').reason).toMatch(/no provider registered/);
+    expect(find(report, 'scene').reason).toMatch(/no provider registered/);
   });
 
   it('report.ok is false while required capabilities lack providers', () => {
     expect(report.ok).toBe(false);
   });
 
-  it('assertRequiredBound throws and names the unbound required capabilities', () => {
-    expect(() => assertRequiredBound(report)).toThrow(/store|scene/);
+  it('assertRequiredBound throws, naming only the remaining unbound (scene)', () => {
+    expect(() => assertRequiredBound(report)).toThrow(/scene/);
   });
 });
 

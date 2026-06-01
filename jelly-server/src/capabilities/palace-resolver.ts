@@ -4,10 +4,11 @@
  * Wires the generated requirements manifest (`PALACE_CAPABILITIES`) to the
  * server's provider registry via the generic resolver (resolver-core.ts).
  *
- * Today the jelly-server runtime offers one capability provider family —
- * `service/text-embed` (mock / runpod / onnx-local) — so `embed` binds. The
- * other declared needs have no provider yet, and the report is honest about it:
- *   - `service/graph-store` (store) → unbound   ← roadmap: graph-store extraction
+ * The jelly-server runtime currently offers two capability provider families —
+ * `service/text-embed` (mock / runpod / onnx-local) and `service/graph-store`
+ * (the in-memory reference provider, conformance-verified). So:
+ *   - `service/text-embed` (embed) → bound
+ *   - `service/graph-store` (store) → bound (in-memory; ladybug-napi is next)
  *   - `render/omnispherical` (scene) → unbound  ← renderer-scope, browser-side
  *   - `service/vector-knn` (knn, optional) → degraded → "sequential-replay"
  *
@@ -34,7 +35,17 @@ export function buildServerRegistry(): ProviderRegistry {
     id: p.id,
     available: () => p.available(),
   }));
-  return new Map([['service/text-embed', textEmbed]]);
+  // graph-store: the always-available in-memory reference provider (conformance-
+  // verified in ./graph-store/conformance.ts). The persistent ladybug-napi
+  // provider (preferred when LadybugDB's vector extension is present — Dreamball-7bc)
+  // is a later increment and would register ahead of in-memory in priority order.
+  const graphStore: CapabilityProviderDescriptor[] = [
+    { interface: 'service/graph-store', implementsVersion: '1.0', id: 'in-memory', available: () => true },
+  ];
+  return new Map([
+    ['service/graph-store', graphStore],
+    ['service/text-embed', textEmbed],
+  ]);
 }
 
 /** Resolve the palace's declared capability needs against the server registry. */
