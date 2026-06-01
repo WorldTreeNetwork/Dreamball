@@ -469,6 +469,19 @@ HTTP /kNN endpoint. Offline K-NN is degraded for MVP. Epic 6 must add the
 **Path forward**: S2.3 implements HTTP fallback kNN; S6.3 adds /kNN endpoint.
 TODO-KNN-FALLBACK markers must be preserved until both stories land.
 
+**Update 2026-05-31 — superseded by engine unification.** This relaxation
+exists only because the browser ran a *different engine* (`kuzu-wasm`) than the
+server (`@ladybugdb/core`). Note the internal contradiction: this entry records
+a HARD BLOCK, while `docs/decisions/2026-04-22-vector-parity-spike.md` records a
+*PASS* (set-equal top-10) for the same comparison — the question was never
+cleanly settled. It becomes **moot** under
+[`docs/decisions/2026-05-31-browser-graph-store-opfs.md`](decisions/2026-05-31-browser-graph-store-opfs.md):
+the browser store moves to `@ladybugdb/wasm-core` + OPFS (the IDBFS blocker in
+[LadybugDB/ladybug#399](https://github.com/LadybugDB/ladybug/issues/399) is moot
+— LadybugDB's wasm persistence is OPFS, not IDBFS). Same engine both sides ⇒
+K-NN parity is automatic and the HTTP fallback is no longer a correctness
+requirement. Land alongside the `graph-store` capability extraction.
+
 ---
 
 ### 12. Qwen3-Embedding-0.6B weights not bundled (S6.1 TODO-EMBEDDING)
