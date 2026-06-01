@@ -35,6 +35,17 @@
 #define _DEFAULT_SOURCE 1
 #endif
 
+/* On Darwin, defining _POSIX_C_SOURCE (above) flips <stdlib.h> into strict-POSIX
+ * mode, which HIDES BSD extensions — including arc4random_buf, the very symbol
+ * the __APPLE__ branch of OQS_randombytes calls. _DARWIN_C_SOURCE re-exposes the
+ * Darwin "default" surface so the declaration is visible. Linux is unaffected
+ * (guarded by __APPLE__); CI is green there because it takes the getentropy
+ * path. Without this, native-macOS builds fail with "call to undeclared
+ * function 'arc4random_buf'" under Zig 0.16's implicit-decl-is-an-error rule. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
