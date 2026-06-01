@@ -624,6 +624,17 @@
     }
   },
 
+  "x-capabilities": {
+    "requires": {
+      "store": { "interface": "service/graph-store", "version": "^1", "select": "prefer-local" },
+      "embed": { "interface": "service/text-embed", "version": "^1", "params": { "dim": 256 } },
+      "scene": { "interface": "render/omnispherical", "version": "^1" }
+    },
+    "optional": {
+      "knn": { "interface": "service/vector-knn", "version": "^1", "degradesTo": "sequential-replay" }
+    }
+  },
+
   "x-actions": {
     "mint": {
       "summary": "Mint a new Memory Palace DreamBall with genesis mythos, oracle Agent, seed archiform registry, and a rooted timeline.",

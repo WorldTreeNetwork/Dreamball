@@ -36,7 +36,7 @@ import { transmitRoute } from './routes/transmit.js';
 import { sealRelicRoute } from './routes/seal-relic.js';
 import { unlockRelicRoute } from './routes/unlock-relic.js';
 import { embedRoute } from './routes/embed.js';
-import { loadQwen3Model } from './embedding/qwen3.js';
+import { resolveTextEmbed } from './capabilities/text-embed/resolver.js';
 import { buildMcpDoc, buildTypesDoc } from './mcp-doc.js';
 
 const PORT = Number(process.env.JELLY_SERVER_PORT ?? 9808);
@@ -133,15 +133,18 @@ export const app = new Elysia()
 // can defeat.
 if (process.env.JELLY_SERVER_NO_LISTEN !== '1') {
   try {
-    // Load Qwen3-Embedding-0.6B once at boot — fail-fast if model absent (S6.1 AC10).
-    // In mock mode (JELLY_EMBED_MOCK=1), loadQwen3Model() is a no-op.
-    // This runs inside the listen guard so test imports (JELLY_SERVER_NO_LISTEN=1)
-    // never trigger the model load or process.exit path.
-    await loadQwen3Model().catch((err: unknown) => {
+    // Bind the text-embed/1 capability once at boot — fail-fast if no provider
+    // is available (S6.1 AC10). Selection (mock / runpod / onnx-local) lives in
+    // the resolver, the single binding point. In mock mode the mock provider
+    // binds with nothing to load. This runs inside the listen guard so test
+    // imports (JELLY_SERVER_NO_LISTEN=1) never trigger provider load or exit.
+    // See docs/decisions/2026-05-31-capability-provider-model.md.
+    await resolveTextEmbed().catch((err: unknown) => {
       process.stderr.write(
         JSON.stringify({
           ts: new Date().toISOString(),
-          event: 'embedding_model_load_failed',
+          event: 'capability_bind_failed',
+          capability: 'text-embed/1',
           error: err instanceof Error ? err.message : String(err),
         }) + '\n'
       );

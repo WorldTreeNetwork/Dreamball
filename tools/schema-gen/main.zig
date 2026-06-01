@@ -47,6 +47,7 @@ const gen_cypher = @import("gen_cypher.zig");
 const gen_cli = @import("gen_cli.zig");
 const gen_ts_client = @import("gen_ts_client.zig");
 const gen_mcp_tools = @import("gen_mcp_tools.zig");
+const gen_capabilities = @import("gen_capabilities.zig");
 
 const SCHEMA_PATH = "schemas/root-2.0.0.json";
 const PIN_PATH = "schemas/.pins/root-2.0.0.fp";
@@ -403,6 +404,17 @@ fn runArchiformPass(io: std.Io, arena: std.mem.Allocator, err_w: *std.Io.File.Wr
         .{ "schema_fp", schema_fp },
     });
     try gen_mcp_tools.generateArchiform(&actx);
+
+    // gen_capabilities per-archiform pass — projects `x-capabilities` (if
+    // present) into a typed requirements manifest the resolver consumes. No-op
+    // (logs skip) when the schema declares no capability block, so wiring it in
+    // is additive. Spec: docs/decisions/2026-05-31-capabilities-schema-vocabulary.md.
+    try logKV(err_w, .{
+        .{ "phase", "archiform-generator-dispatch" },
+        .{ "target", "gen_capabilities" },
+        .{ "schema_fp", schema_fp },
+    });
+    try gen_capabilities.generateArchiform(&actx);
 
     try logKV(err_w, .{
         .{ "phase", "archiform-pass-done" },

@@ -21,20 +21,17 @@
  */
 
 import Elysia, { t } from 'elysia';
-import { embed as qwen3Embed, truncateMrl } from '../embedding/qwen3.js';
-import { mockEmbed } from './embed.mock.js';
+import { resolveTextEmbed } from '../capabilities/text-embed/resolver.js';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+// model / dimension / truncation now come from the bound text-embed/1
+// capability (capabilities/text-embed/interface.ts), not hardcoded here.
 
-const MODEL_NAME = 'qwen3-embedding-0.6b';
-const OUTPUT_DIM = 256;
-const TRUNCATION = 'mrl-256';
 const MAX_CONTENT_BYTES = 1_048_576; // 1 MB
 
 const SUPPORTED_CONTENT_TYPES = ['text/markdown', 'text/plain', 'text/asciidoc'] as const;
-type SupportedContentType = typeof SUPPORTED_CONTENT_TYPES[number];
 
 // ---------------------------------------------------------------------------
 // Route
@@ -67,28 +64,22 @@ export const embedRoute = new Elysia().post(
       };
     }
 
-    // Compute embedding: mock mode or real Qwen3
-    let vec256: number[];
+    // Resolve the text-embed/1 capability to its bound provider, then embed.
+    // Selection (mock / runpod / onnx-local) happens once in the resolver, not
+    // here — the route is provider-agnostic. resolveTextEmbed() is idempotent:
+    // boot binds eagerly, this covers the lazy/test path.
+    // TODO-EMBEDDING: bring-model-local-or-byo
+    //   Provider binding lives in capabilities/text-embed/resolver.ts. See
+    //   docs/decisions/2026-05-31-capability-provider-model.md.
+    const embedder = await resolveTextEmbed();
+    const vec256 = await embedder.embed(content); // Float32Array, MRL-truncated
 
-    if (process.env.JELLY_EMBED_MOCK === '1') {
-      // Test seam: use deterministic mock (AC8)
-      vec256 = await mockEmbed({ content, contentType });
-    } else {
-      // Production: Qwen3-Embedding-0.6B via onnxruntime-node (AC1, AC3)
-      // TODO-EMBEDDING: bring-model-local-or-byo
-      //   The model is loaded at boot by loadQwen3Model() in index.ts.
-      //   If JELLY_EMBED_MODEL_PATH is absent, boot will have already failed.
-      const raw1024 = await qwen3Embed(content);
-      const truncated = truncateMrl(raw1024, OUTPUT_DIM);
-      vec256 = Array.from(truncated);
-    }
-
-    // D-012 response schema
+    // D-012 response schema (shape declared by the text-embed/1 interface)
     return {
-      vector: vec256,
-      model: MODEL_NAME,
-      dimension: OUTPUT_DIM,
-      truncation: TRUNCATION,
+      vector: Array.from(vec256),
+      model: embedder.modelIdentity,
+      dimension: embedder.outputDim,
+      truncation: embedder.truncation,
     };
   },
   {
