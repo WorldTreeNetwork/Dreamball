@@ -78,7 +78,7 @@ const TYPES_OUT =
     \\}
     \\
     \\export interface DreamBall {
-    \\  type: 'jelly.dreamball' | `jelly.dreamball.${DreamBallType}`;
+    \\  type: 'ball.dreamball' | `ball.dreamball.${DreamBallType}`;
     \\  'format-version': 1 | 2;
     \\  stage: Stage;
     \\  identity: Fingerprint;       // the Ed25519 pubkey in b58
@@ -146,7 +146,7 @@ const SCHEMAS_OUT =
     \\
     \\export const DreamBallRelicSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball.relic'),
+    \\  type: v.literal('ball.dreamball.relic'),
     \\  'sealed-payload-hash': Base58Schema,
     \\  'unlock-guild': Base58Schema,
     \\  'reveal-hint': v.optional(v.string()),

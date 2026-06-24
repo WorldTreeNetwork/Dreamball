@@ -1,5 +1,5 @@
 /**
- * Wishes store — Phase-1 lifecycle. A wish is a `jelly.dreamball` in
+ * Wishes store — Phase-1 lifecycle. A wish is a `ball.dreamball` in
  * `stage: seed` attached to a Tree branch. The Tree's agent germinates
  * it through `budding → ripening → ripe`; the user `plucks` it into a
  * downloadable `.jelly`. See docs/products/wishing-tree/PHASES.md §6.

@@ -7,7 +7,7 @@
     • Decodes the palace field envelope via jelly.wasm (TC6 — no hand-written CBOR).
     • Validates decoded shape against Valibot DreamBallFieldSchema (AC1).
     • Renders each room as a Threlte mesh node placed at layout.position when
-      the field envelope's jelly.layout contains the room's child-fp; falls back
+      the field envelope's ball.layout contains the room's child-fp; falls back
       to a deterministic polar-shell grid otherwise (AC2, AC3).
     • Wraps each room node in an omnispherical onion-shell sphere (AC2).
     • Click on a room node → dispatches `navigate` CustomEvent
@@ -22,7 +22,7 @@
 
   Coord-frame contract (ADR 2026-04-24-coord-frames):
     • Outer field: polar (omnispherical-grid §12.2).
-    • Placement: cartesian local-to-field-origin (jelly.layout §13.2).
+    • Placement: cartesian local-to-field-origin (ball.layout §13.2).
     • Conversion: polarShellToCartesian() called once at load; rooms placed
       using their cartesian layout.position directly (or grid-fallback coords).
 
@@ -49,7 +49,7 @@
 
   interface Props {
     /**
-     * Blake3 fp of the palace (jelly.dreamball.field envelope).
+     * Blake3 fp of the palace (ball.dreamball.field envelope).
      * Used to query room list from the store.
      */
     palaceFp: string;
@@ -109,7 +109,7 @@
   // ─── Decoded palace data ──────────────────────────────────────────────────
 
   /**
-   * Parsed jelly.layout placements from the palace envelope, keyed by child-fp.
+   * Parsed ball.layout placements from the palace envelope, keyed by child-fp.
    * Populated by decodePalaceEnvelope(). Empty map = no layout in envelope.
    */
   let layoutByChildFp: Map<string, { position: [number, number, number]; facing: [number, number, number, number] }> = $state(new Map());
@@ -126,7 +126,7 @@
   // ─── Envelope decode (AC1) ────────────────────────────────────────────────
 
   /**
-   * Decode the palace envelope bytes via jelly.wasm, extract jelly.layout
+   * Decode the palace envelope bytes via jelly.wasm, extract ball.layout
    * placements from the field envelope's `contains` attribute, and populate
    * layoutByChildFp.
    *
@@ -145,25 +145,25 @@
     const fieldResult = v.safeParse(DreamBallFieldSchema, result.data);
     if (!fieldResult.success) {
       // Not a fatal error for rendering — warn and proceed without layout.
-      decodeError = `Valibot: envelope is not a jelly.dreamball.field`;
+      decodeError = `Valibot: envelope is not a ball.dreamball.field`;
       return;
     }
 
-    // Extract layout placements from the `jelly.layout` attribute.
+    // Extract layout placements from the `ball.layout` attribute.
     // In the MVP, layout is embedded as a JSON attribute on the field envelope.
     // The WASM parser surfaces it in `result.data` — we look for an array of
     // placements in the `contains` list (the field's child fps carry their
     // own layout attribute attached to the parent). In practice the
-    // `jelly.layout` envelope is a sibling attribute on the field.
+    // `ball.layout` envelope is a sibling attribute on the field.
     //
     // MVP scope: the WASM parser exposes `result.data` as the field's DreamBall
-    // object. If it carried a `jelly.layout` embedded attribute (as noted in
-    // PROTOCOL §13.2), it would appear as `(result.data as any)['jelly.layout']`.
+    // object. If it carried a `ball.layout` embedded attribute (as noted in
+    // PROTOCOL §13.2), it would appear as `(result.data as any)['ball.layout']`.
     // Until full nested-attribute decoding lands in the Zig parser, we read
     // whatever the WASM surfaces. This is intentional — the Zig side is the
     // authority; TS never hand-parses.
     const raw = result.data as Record<string, unknown>;
-    const jellyLayout = raw['jelly.layout'] as {
+    const jellyLayout = raw['ball.layout'] as {
       placements?: Array<{
         'child-fp': string;
         position: [number, number, number];
@@ -178,7 +178,7 @@
       }
       layoutByChildFp = newMap;
     }
-    // If no jelly.layout found, layoutByChildFp stays empty → grid fallback for all rooms.
+    // If no ball.layout found, layoutByChildFp stays empty → grid fallback for all rooms.
   }
 
   // ─── Grid fallback (AC3) ──────────────────────────────────────────────────
@@ -245,7 +245,7 @@
     if (anyRoomFallback && !gridFallbackLogged) {
       gridFallbackLogged = true;
       console.info(
-        `[PalaceLens] palace "${palaceFp}": one or more rooms have no jelly.layout — using deterministic Fibonacci-shell grid fallback (AC3).`
+        `[PalaceLens] palace "${palaceFp}": one or more rooms have no ball.layout — using deterministic Fibonacci-shell grid fallback (AC3).`
       );
     }
   });

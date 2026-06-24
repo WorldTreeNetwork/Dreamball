@@ -1,5 +1,5 @@
 <!--
-  Avatar type tour — shows a jelly.dreamball.avatar in every applicable lens.
+  Avatar type tour — shows a ball.dreamball.avatar in every applicable lens.
   Meaningful lenses: thumbnail (listing), avatar (3D visual), flat (slot dump), phone (mobile).
   Skipped: knowledge-graph (no triples on avatar), emotional-state (no emotional-register),
   omnispherical (no grid), splat (no splat asset on base mock).

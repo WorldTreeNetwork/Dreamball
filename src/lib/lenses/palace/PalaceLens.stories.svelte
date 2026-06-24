@@ -3,7 +3,7 @@
 
   Three stories covering AC2, AC3, AC4, AC6:
 
-    1. "Grid fallback - 3+ rooms" — palace with ≥3 rooms, no jelly.layout.
+    1. "Grid fallback - 3+ rooms" — palace with ≥3 rooms, no ball.layout.
        Asserts canvas renders and palace-fp is visible (AC3, AC6).
 
     2. "Layout positions - 3+ rooms" — palace with ≥3 rooms, each with layout.position.
@@ -117,7 +117,7 @@
 </Story>
 
 <!--
-  Story 2: Layout positions — ≥3 rooms placed at declared jelly.layout coords (AC2).
+  Story 2: Layout positions — ≥3 rooms placed at declared ball.layout coords (AC2).
 -->
 <Story name="Layout positions - 3plus rooms">
   {#snippet template()}

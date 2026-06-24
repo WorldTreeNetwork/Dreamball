@@ -270,12 +270,12 @@ const tools: ToolSpec[] = [
 		handler: async () => ({
 			'format-version': 2,
 			types: [
-				{ tag: 'avatar', wire: 'jelly.dreamball.avatar', summary: 'look-heavy, worn, visible to observer' },
-				{ tag: 'agent', wire: 'jelly.dreamball.agent', summary: 'act-heavy — model, memory, knowledge, emotion, skills' },
-				{ tag: 'tool', wire: 'jelly.dreamball.tool', summary: 'single skill, transferable via transmission' },
-				{ tag: 'relic', wire: 'jelly.dreamball.relic', summary: 'sealed payload, reveals on unlock' },
-				{ tag: 'field', wire: 'jelly.dreamball.field', summary: 'omnispherical ambient layer' },
-				{ tag: 'guild', wire: 'jelly.dreamball.guild', summary: 'group with a recrypt-style keyspace' }
+				{ tag: 'avatar', wire: 'ball.dreamball.avatar', summary: 'look-heavy, worn, visible to observer' },
+				{ tag: 'agent', wire: 'ball.dreamball.agent', summary: 'act-heavy — model, memory, knowledge, emotion, skills' },
+				{ tag: 'tool', wire: 'ball.dreamball.tool', summary: 'single skill, transferable via transmission' },
+				{ tag: 'relic', wire: 'ball.dreamball.relic', summary: 'sealed payload, reveals on unlock' },
+				{ tag: 'field', wire: 'ball.dreamball.field', summary: 'omnispherical ambient layer' },
+				{ tag: 'guild', wire: 'ball.dreamball.guild', summary: 'group with a recrypt-style keyspace' }
 			],
 			shared_core_fields: ['type', 'format-version', 'stage', 'identity', 'genesis-hash', 'revision'],
 			agent_slots: [

@@ -112,7 +112,7 @@ describe('WASM write-ops', () => {
 		const parsedPacked = wasm.parseJelly(envPtr, envelope.length);
 		const parsedBytes = readPacked(wasm, parsedPacked);
 		const parsed = JSON.parse(new TextDecoder().decode(parsedBytes));
-		expect(parsed.type).toBe('jelly.dreamball.avatar');
+		expect(parsed.type).toBe('ball.dreamball.avatar');
 		expect(parsed.stage).toBe('seed');
 		expect(parsed.name).toBe('spike-curiosity');
 
@@ -125,13 +125,13 @@ describe('WASM write-ops', () => {
 
 	it('mintDreamBall covers every type_id 0..5 and the untyped legacy shape (6)', () => {
 		const typeMap = [
-			[0, 'jelly.dreamball.avatar'],
-			[1, 'jelly.dreamball.agent'],
-			[2, 'jelly.dreamball.tool'],
-			[3, 'jelly.dreamball.relic'],
-			[4, 'jelly.dreamball.field'],
-			[5, 'jelly.dreamball.guild'],
-			[6, 'jelly.dreamball']
+			[0, 'ball.dreamball.avatar'],
+			[1, 'ball.dreamball.agent'],
+			[2, 'ball.dreamball.tool'],
+			[3, 'ball.dreamball.relic'],
+			[4, 'ball.dreamball.field'],
+			[5, 'ball.dreamball.guild'],
+			[6, 'ball.dreamball']
 		] as const;
 
 		for (const [id, expectedType] of typeMap) {

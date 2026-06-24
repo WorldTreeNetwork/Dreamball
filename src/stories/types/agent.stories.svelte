@@ -1,5 +1,5 @@
 <!--
-  Agent type tour — shows a jelly.dreamball.agent in every applicable lens.
+  Agent type tour — shows a ball.dreamball.agent in every applicable lens.
   Meaningful lenses: all 8 — agent has look (avatar/splat), knowledge-graph triples,
   emotional-register axes, personality-master-prompt (flat), phone, omnispherical (if grid present).
   Skipped: splat (base mock uses gltf, not sog), omnispherical (agent has no grid by default).

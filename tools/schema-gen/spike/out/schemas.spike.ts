@@ -46,7 +46,7 @@ const commonCore = {
 
 export const DreamBallRelicSchema = v.object({
   ...commonCore,
-  type: v.literal('jelly.dreamball.relic'),
+  type: v.literal('ball.dreamball.relic'),
   'sealed-payload-hash': Base58Schema,
   'unlock-guild': Base58Schema,
   'reveal-hint': v.optional(v.string()),

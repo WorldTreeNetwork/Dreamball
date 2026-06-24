@@ -1,7 +1,7 @@
-//! `jelly palace rename-mythos` — append a new canonical jelly.mythos to a palace.
+//! `jelly palace rename-mythos` — append a new canonical ball.mythos to a palace.
 //!
-//! Appends a new `jelly.mythos` with `predecessor = Blake3(prior head)`, emits a
-//! paired `"true-naming"` `jelly.action` referenced by `discovered-in`, bumps
+//! Appends a new `ball.mythos` with `predecessor = Blake3(prior head)`, emits a
+//! paired `"true-naming"` `ball.action` referenced by `discovered-in`, bumps
 //! revision, re-signs with both signatures, and rejects second-genesis attempts.
 //!
 //! Args:
@@ -72,7 +72,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
             \\                           [--true-name <word>]
             \\                           [--form <form>]
             \\
-            \\Append a new canonical jelly.mythos to the palace's true-name chain.
+            \\Append a new canonical ball.mythos to the palace's true-name chain.
             \\
             \\  <palace>        Path prefix (expects <palace>.bundle + <palace>.key)
             \\  --body          New mythos body text (required)

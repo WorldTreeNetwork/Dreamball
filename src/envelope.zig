@@ -32,12 +32,12 @@ const dcbor = @import("dcbor.zig");
 const protocol = @import("protocol.zig");
 const Fingerprint = @import("fingerprint.zig").Fingerprint;
 
-pub const DREAMBALL_TYPE: []const u8 = "jelly.dreamball";
-pub const LOOK_TYPE: []const u8 = "jelly.look";
-pub const FEEL_TYPE: []const u8 = "jelly.feel";
-pub const ACT_TYPE: []const u8 = "jelly.act";
-pub const ASSET_TYPE: []const u8 = "jelly.asset";
-pub const SKILL_TYPE: []const u8 = "jelly.skill";
+pub const DREAMBALL_TYPE: []const u8 = "ball.dreamball";
+pub const LOOK_TYPE: []const u8 = "ball.look";
+pub const FEEL_TYPE: []const u8 = "ball.feel";
+pub const ACT_TYPE: []const u8 = "ball.act";
+pub const ASSET_TYPE: []const u8 = "ball.asset";
+pub const SKILL_TYPE: []const u8 = "ball.skill";
 
 const PairList = dcbor.PairList;
 

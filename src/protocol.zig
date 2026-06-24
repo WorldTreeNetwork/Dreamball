@@ -28,22 +28,22 @@ pub const DreamBallType = enum {
 
     pub fn toWireString(self: DreamBallType) []const u8 {
         return switch (self) {
-            .avatar => "jelly.dreamball.avatar",
-            .agent => "jelly.dreamball.agent",
-            .tool => "jelly.dreamball.tool",
-            .relic => "jelly.dreamball.relic",
-            .field => "jelly.dreamball.field",
-            .guild => "jelly.dreamball.guild",
+            .avatar => "ball.dreamball.avatar",
+            .agent => "ball.dreamball.agent",
+            .tool => "ball.dreamball.tool",
+            .relic => "ball.dreamball.relic",
+            .field => "ball.dreamball.field",
+            .guild => "ball.dreamball.guild",
         };
     }
 
     pub fn fromWireString(s: []const u8) ?DreamBallType {
-        if (std.mem.eql(u8, s, "jelly.dreamball.avatar")) return .avatar;
-        if (std.mem.eql(u8, s, "jelly.dreamball.agent")) return .agent;
-        if (std.mem.eql(u8, s, "jelly.dreamball.tool")) return .tool;
-        if (std.mem.eql(u8, s, "jelly.dreamball.relic")) return .relic;
-        if (std.mem.eql(u8, s, "jelly.dreamball.field")) return .field;
-        if (std.mem.eql(u8, s, "jelly.dreamball.guild")) return .guild;
+        if (std.mem.eql(u8, s, "ball.dreamball.avatar")) return .avatar;
+        if (std.mem.eql(u8, s, "ball.dreamball.agent")) return .agent;
+        if (std.mem.eql(u8, s, "ball.dreamball.tool")) return .tool;
+        if (std.mem.eql(u8, s, "ball.dreamball.relic")) return .relic;
+        if (std.mem.eql(u8, s, "ball.dreamball.field")) return .field;
+        if (std.mem.eql(u8, s, "ball.dreamball.guild")) return .guild;
         return null;
     }
 
@@ -190,7 +190,7 @@ pub const DreamBall = struct {
     /// Fingerprints of DreamBalls this one is derived from.
     derived_from: []const Fingerprint = &.{},
     signatures: []const Signature = &.{},
-    /// §13.1 optional field-kind attribute on jelly.dreamball.field envelopes.
+    /// §13.1 optional field-kind attribute on ball.dreamball.field envelopes.
     /// Values: "palace" | "room" | "ambient" | <open-enum>.  Null = not a field.
     field_kind: ?[]const u8 = null,
     /// FR5 / D-017 — optional archiform_fp on the genesis envelope.

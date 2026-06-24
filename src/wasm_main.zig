@@ -95,12 +95,12 @@ export fn parseJelly(input_ptr: u32, input_len: u32) u64 {
     const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
     const alloc_ = fba_state.allocator();
 
-    // Format detection: "JELY" magic → sealed wrapper; 0xD8 0xC8 → bare envelope;
+    // Format detection: "BALL" magic → sealed wrapper; 0xD8 0xC8 → bare envelope;
     // '{' → canonical JSON (pass-through); anything else → error.
     var envelope_bytes: []const u8 = input_bytes;
     var sealed_attachments_count: usize = 0;
 
-    if (input_bytes.len >= 4 and std.mem.eql(u8, input_bytes[0..4], "JELY")) {
+    if (input_bytes.len >= 4 and std.mem.eql(u8, input_bytes[0..4], "BALL")) {
         const parsed = sealing.readSealedFile(alloc_, input_bytes) catch |e| {
             setErr("sealed-file parse failed: {t}", .{e});
             return 0;
@@ -115,7 +115,7 @@ export fn parseJelly(input_ptr: u32, input_len: u32) u64 {
         // Canonical JSON — echo it back (the user already has the target shape).
         return pack(input_bytes);
     } else {
-        setErr("unknown .jelly format; expected JELY magic, CBOR tag 200, or JSON object", .{});
+        setErr("unknown .jelly format; expected BALL magic, CBOR tag 200, or JSON object", .{});
         return 0;
     }
 
@@ -459,7 +459,7 @@ export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
 
     // Peel sealed wrapper if present.
     var envelope_bytes: []const u8 = input_bytes;
-    if (input_bytes.len >= 4 and std.mem.eql(u8, input_bytes[0..4], "JELY")) {
+    if (input_bytes.len >= 4 and std.mem.eql(u8, input_bytes[0..4], "BALL")) {
         const parsed = sealing.readSealedFile(alloc_, input_bytes) catch |e| {
             setErr("sealed parse failed: {t}", .{e});
             return -1;
@@ -468,7 +468,7 @@ export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
     } else if (input_bytes.len >= 2 and input_bytes[0] == 0xD8 and input_bytes[1] == 0xC8) {
         // bare envelope, use as-is
     } else {
-        setErr("verify: input is not a .jelly envelope (expected JELY or tag 200)", .{});
+        setErr("verify: input is not a .jelly envelope (expected BALL or tag 200)", .{});
         return -1;
     }
 

@@ -32,7 +32,7 @@
 	const tree: Node = $derived({
 		label: name,
 		kind: dreamType,
-		detail: `jelly.dreamball.${dreamType} · rev 0`,
+		detail: `ball.dreamball.${dreamType} · rev 0`,
 		open: true,
 		children: buildScaffold(dreamType)
 	});
@@ -120,7 +120,7 @@
 						{ label: 'requires (0)', kind: 'tools' }
 					]
 				},
-				{ label: 'applicable-to', kind: 'skill', detail: '[jelly.dreamball.agent]' }
+				{ label: 'applicable-to', kind: 'skill', detail: '[ball.dreamball.agent]' }
 			],
 			relic: [
 				{ label: 'sealed-payload-hash', kind: 'sealed', detail: '—' },

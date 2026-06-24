@@ -5,7 +5,7 @@
 
   ⚠ TODO-CRYPTO: real implementation uses Argon2id passphrase + AES-GCM
   wrap, persisted only via IndexedDB encrypted blobs, surfaced as
-  jelly.secret-ref envelopes whose locator points at the local store.
+  ball.secret-ref envelopes whose locator points at the local store.
 -->
 <script lang="ts">
 	import { iconFor } from './icons.js';

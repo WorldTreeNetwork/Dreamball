@@ -353,7 +353,7 @@ fn parseMythosInfo(buf: []const u8) MythosInfo {
 
 // ── Timeline head-hashes extraction ───────────────────────────────────────────
 
-/// Extract head_hashes from a jelly.timeline envelope.
+/// Extract head_hashes from a ball.timeline envelope.
 /// Returns a slice of 32-byte arrays allocated from gpa.
 fn parseTimelineHeadHashes(gpa: Allocator, buf: []const u8) ![][32]u8 {
     var result: std.ArrayList([32]u8) = .empty;
@@ -475,7 +475,7 @@ const RoomInfo = struct {
     item_count: usize,
 };
 
-/// Extract "name" from a jelly.dreamball.field (room) envelope via its attributes.
+/// Extract "name" from a ball.dreamball.field (room) envelope via its attributes.
 fn extractRoomName(buf: []const u8) []const u8 {
     var pos: usize = 0;
     // Skip tag(200)
@@ -610,13 +610,13 @@ fn loadTopology(gpa: Allocator, palace_path: []const u8) !struct { topo: PalaceT
         const cbytes = casRead(gpa, cas_path, &cfp) orelse continue;
         defer gpa.free(cbytes);
         const env_type = detectEnvelopeType(cbytes) orelse continue;
-        if (std.mem.eql(u8, env_type, "jelly.dreamball.agent")) {
+        if (std.mem.eql(u8, env_type, "ball.dreamball.agent")) {
             @memcpy(&oracle_fp, &cfp);
-        } else if (std.mem.eql(u8, env_type, "jelly.mythos")) {
+        } else if (std.mem.eql(u8, env_type, "ball.mythos")) {
             mythos_head_fp = cfp;
-        } else if (std.mem.eql(u8, env_type, "jelly.timeline")) {
+        } else if (std.mem.eql(u8, env_type, "ball.timeline")) {
             timeline_fp = cfp;
-        } else if (std.mem.eql(u8, env_type, "jelly.dreamball.field")) {
+        } else if (std.mem.eql(u8, env_type, "ball.dreamball.field")) {
             // Could be a room
             const room_fk = detectFieldKind(cbytes) orelse "";
             if (std.mem.eql(u8, room_fk, "room")) {
@@ -642,12 +642,12 @@ fn loadTopology(gpa: Allocator, palace_path: []const u8) !struct { topo: PalaceT
         const cbytes = casRead(gpa, cas_path, &bfp) orelse continue;
         defer gpa.free(cbytes);
         const env_type = detectEnvelopeType(cbytes) orelse continue;
-        if (std.mem.eql(u8, env_type, "jelly.mythos")) {
+        if (std.mem.eql(u8, env_type, "ball.mythos")) {
             // Use last mythos seen in bundle as the head
             mythos_head_fp = bfp;
-        } else if (std.mem.eql(u8, env_type, "jelly.timeline")) {
+        } else if (std.mem.eql(u8, env_type, "ball.timeline")) {
             timeline_fp = bfp;
-        } else if (std.mem.eql(u8, env_type, "jelly.dreamball.field")) {
+        } else if (std.mem.eql(u8, env_type, "ball.dreamball.field")) {
             const room_fk = detectFieldKind(cbytes) orelse "";
             if (std.mem.eql(u8, room_fk, "room")) {
                 // Only add if not already present
@@ -877,14 +877,14 @@ test "detectFieldKind: returns null on minimal DreamBall without field-kind attr
     // A minimal DreamBall fixture should not have a field-kind attribute.
     // Use the golden fixture from src/golden.zig (embedded directly here as a
     // hand-crafted minimal envelope).
-    // tag(200) array(1) tag(201) map(2) "type" "jelly.dreamball" "format-version" 2
+    // tag(200) array(1) tag(201) map(2) "type" "ball.dreamball" "format-version" 2
     const minimal: []const u8 = &[_]u8{
         0xD8, 0xC8, // tag(200)
         0x81,       // array(1)
         0xD8, 0xC9, // tag(201)
         0xA2,       // map(2)
         0x64, 't', 'y', 'p', 'e', // "type"
-        0x6F, 'j', 'e', 'l', 'l', 'y', '.', 'd', 'r', 'e', 'a', 'm', 'b', 'a', 'l', 'l', // "jelly.dreamball"
+        0x6E, 'b', 'a', 'l', 'l', '.', 'd', 'r', 'e', 'a', 'm', 'b', 'a', 'l', 'l', // "ball.dreamball"
         0x6E, 'f', 'o', 'r', 'm', 'a', 't', '-', 'v', 'e', 'r', 's', 'i', 'o', 'n', // "format-version"
         0x02, // 2
     };
@@ -894,14 +894,14 @@ test "detectFieldKind: returns null on minimal DreamBall without field-kind attr
 
 test "parseTimelineHeadHashes: empty timeline returns empty slice" {
     const allocator = std.testing.allocator;
-    // Minimal timeline: tag(200) array(1) tag(201) map(2) "type" "jelly.timeline" "format-version" 3
+    // Minimal timeline: tag(200) array(1) tag(201) map(2) "type" "ball.timeline" "format-version" 3
     const minimal: []const u8 = &[_]u8{
         0xD8, 0xC8, // tag(200)
         0x81,       // array(1)
         0xD8, 0xC9, // tag(201)
         0xA2,       // map(2)
         0x64, 't', 'y', 'p', 'e', // "type"
-        0x6E, 'j', 'e', 'l', 'l', 'y', '.', 't', 'i', 'm', 'e', 'l', 'i', 'n', 'e', // "jelly.timeline"
+        0x6D, 'b', 'a', 'l', 'l', '.', 't', 'i', 'm', 'e', 'l', 'i', 'n', 'e', // "ball.timeline"
         0x6E, 'f', 'o', 'r', 'm', 'a', 't', '-', 'v', 'e', 'r', 's', 'i', 'o', 'n', // "format-version"
         0x03, // 3
     };

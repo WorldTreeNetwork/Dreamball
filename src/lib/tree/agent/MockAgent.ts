@@ -7,7 +7,7 @@
  * and CI fixtures. Hash the wish, derive everything from the hash.
  *
  * TODO-LLM: replace `synthesise` with a real LLM call gated by:
- *   1. A resolved API key from the Root Zone (jelly.secret-ref locator).
+ *   1. A resolved API key from the Root Zone (ball.secret-ref locator).
  *   2. The Tree's emotional-register `urgency` budget (refuses if > 0.9).
  *   3. The invocation.txt system prompt + the wish text as the user turn.
  */

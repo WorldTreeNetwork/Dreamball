@@ -54,7 +54,7 @@
 			Alice mints a Tool DreamBall. Bob mints an Agent. They both join the Hummingbird Guild.
 		</li>
 		<li class:active={step >= 1} class:done={step > 1}>
-			Alice issues <code>jelly transmit</code>. A <code>jelly.transmission</code> receipt is produced.
+			Alice issues <code>jelly transmit</code>. A <code>ball.transmission</code> receipt is produced.
 		</li>
 		<li class:active={step >= 2} class:done={step > 2}>
 			Bob's Agent custodian re-fetches the Agent. The new skill appears in <code>act.skill</code>.

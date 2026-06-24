@@ -20,7 +20,7 @@
 /**
  * Decoded palace room as returned by `roomsFor`.
  *
- * `layout` carries the `jelly.layout` envelope for the room if present;
+ * `layout` carries the `ball.layout` envelope for the room if present;
  * its `placements` array maps child-fp → [x,y,z] + quaternion. When absent
  * (null), the lens falls back to the deterministic-grid algorithm (AC3).
  *
@@ -31,7 +31,7 @@ export interface RoomData {
   fp: string;
   /** Optional display name. */
   name?: string;
-  /** Decoded jelly.layout for this room, or null when absent. */
+  /** Decoded ball.layout for this room, or null when absent. */
   layout: {
     placements: Array<{
       'child-fp': string;
@@ -44,7 +44,7 @@ export interface RoomData {
 /**
  * Palace summary as returned by `getPalace`.
  *
- * The palace envelope itself is a `jelly.dreamball.field`; here we
+ * The palace envelope itself is a `ball.dreamball.field`; here we
  * surface just the fields the lens needs to render the outer shell.
  */
 export interface PalaceData {
@@ -72,7 +72,7 @@ export interface PalaceData {
  * A single inscription item returned by `roomContents(roomFp)`.
  *
  * `placement` carries cartesian position + quaternion facing when the room's
- * `jelly.layout` specifies it; null when absent → lens uses deterministic grid
+ * `ball.layout` specifies it; null when absent → lens uses deterministic grid
  * fallback (AC2). Coords are local-to-room-origin per ADR 2026-04-24-coord-frames §2.
  *
  * `surface` is the inscription's render surface tag (e.g. "scroll", "tablet")
@@ -87,7 +87,7 @@ export interface RoomContentsItem {
   surface?: string;
   /**
    * Cartesian position [x,y,z] and quaternion facing [qx,qy,qz,qw] local to the
-   * room origin. Null when jelly.layout does not specify a placement for this item.
+   * room origin. Null when ball.layout does not specify a placement for this item.
    *
    * Quaternion order: [qx, qy, qz, qw] per glTF 2.0 / ADR 2026-04-24-coord-frames.
    */
@@ -425,7 +425,7 @@ export interface StoreAPI {
    *
    * Flow (all within one logical tx — SEC11 ordering):
    *   1. Look up (or lazily create) the aqueduct between fromFp and toFp via
-   *      getOrCreateAqueduct. First-traversal side-effects: a jelly.aqueduct
+   *      getOrCreateAqueduct. First-traversal side-effects: a ball.aqueduct
    *      row with D-003 defaults (resistance=0.3, capacitance=0.5, strength=0,
    *      kind="visit") AND a paired aqueduct-created ActionLog entry (both
    *      derived fps — replay-reproducible, no timestamps in the fp).
@@ -624,14 +624,14 @@ export interface StoreAPI {
    * D-007: the sole entry point for palace-level reads from lens code.
    * Returns null if the palace fp is not found in the store.
    *
-   * @param palaceFp  Blake3 fp of the palace (jelly.dreamball.field)
+   * @param palaceFp  Blake3 fp of the palace (ball.dreamball.field)
    */
   getPalace(palaceFp: string): Promise<PalaceData | null>;
 
   /**
    * Return all rooms contained within a palace.
    *
-   * D-007: returns decoded room data including jelly.layout when present
+   * D-007: returns decoded room data including ball.layout when present
    * (or null when absent — triggers AC3 grid-fallback in the lens).
    * Order is deterministic: rooms are returned sorted by fp lexicographically,
    * which gives the grid-fallback stable positions across mounts.
@@ -644,7 +644,7 @@ export interface StoreAPI {
    * Return all inscriptions contained within a room, with placement data.
    *
    * D-007: the sole entry point for room-interior reads from RoomLens (S5.3 / FR16).
-   * Each item carries a `placement` object when jelly.layout specifies position +
+   * Each item carries a `placement` object when ball.layout specifies position +
    * facing for that inscription; null when absent → lens uses deterministic grid
    * fallback. Items are returned sorted by fp lexicographically for stable grid
    * fallback ordering across mounts.

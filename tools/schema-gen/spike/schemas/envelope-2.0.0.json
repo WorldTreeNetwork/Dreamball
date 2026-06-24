@@ -5,7 +5,7 @@
   "description": "The DreamBall wire envelope (src/protocol.zig DreamBall struct). Spike target #1: discriminated-union over `type` literal x 7 variants, optional fields, signature list, identity bytes, format-version. The most expressively complex Zig root type per Assumption #1.",
   "type": "object",
   "x-zig-type": "DreamBall",
-  "x-wire-type": "jelly.dreamball",
+  "x-wire-type": "ball.dreamball",
   "x-format-version": [1, 2],
   "x-cbor-attribute-encoding": "v2-tag-200-envelope-with-tag-201-leaf-and-attribute-pairs",
   "required": ["type", "format-version", "stage", "identity", "genesis-hash", "revision"],
@@ -15,13 +15,13 @@
       "$comment": "Discriminator. Closed enum of 7 variants. Per AC3 spike report: discriminated-union via JSON Schema string-literal enum is the chosen normalization.",
       "type": "string",
       "enum": [
-        "jelly.dreamball",
-        "jelly.dreamball.avatar",
-        "jelly.dreamball.agent",
-        "jelly.dreamball.tool",
-        "jelly.dreamball.relic",
-        "jelly.dreamball.field",
-        "jelly.dreamball.guild"
+        "ball.dreamball",
+        "ball.dreamball.avatar",
+        "ball.dreamball.agent",
+        "ball.dreamball.tool",
+        "ball.dreamball.relic",
+        "ball.dreamball.field",
+        "ball.dreamball.guild"
       ],
       "x-cbor": "text-string",
       "x-zig": "DreamBallType",
@@ -101,7 +101,7 @@
       "x-optional": true
     },
     "sealed-payload-hash": {
-      "$comment": "Relic-variant only. Carried inline on jelly.dreamball.relic envelopes.",
+      "$comment": "Relic-variant only. Carried inline on ball.dreamball.relic envelopes.",
       "type": ["string", "null"],
       "x-cbor": "byte-string-32",
       "x-zig": "?[32]u8",

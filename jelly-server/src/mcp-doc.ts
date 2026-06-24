@@ -70,7 +70,7 @@ const routes: RouteDoc[] = [
     exampleRequest: { type: 'avatar', name: 'Alice' },
     exampleResponse: {
       fingerprint: 'AbC123...',
-      dreamball: { type: 'jelly.dreamball.avatar', stage: 'dreamball', identity: 'b58:AbC123...' },
+      dreamball: { type: 'ball.dreamball.avatar', stage: 'dreamball', identity: 'b58:AbC123...' },
       secret_key_b58: 'b58:...',
       created_at: '2026-04-19T00:00:00Z'
     },
@@ -92,7 +92,7 @@ const routes: RouteDoc[] = [
       }
     },
     exampleResponse: [
-      { fingerprint: 'AbC123...', summary: { type: 'jelly.dreamball.avatar', name: 'Alice', stage: 'dreamball' } }
+      { fingerprint: 'AbC123...', summary: { type: 'ball.dreamball.avatar', name: 'Alice', stage: 'dreamball' } }
     ]
   },
   {
@@ -101,7 +101,7 @@ const routes: RouteDoc[] = [
     summary: 'Get a DreamBall',
     description: 'Returns the stored DreamBall JSON by fingerprint. Never includes secret_key_b58. Returns 404 on miss.',
     outputSchema: toJsonSchema(DreamBallSchema) as object,
-    exampleResponse: { type: 'jelly.dreamball.avatar', stage: 'dreamball', identity: 'b58:AbC123...' },
+    exampleResponse: { type: 'ball.dreamball.avatar', stage: 'dreamball', identity: 'b58:AbC123...' },
     exampleError: { error: 'not found', fingerprint: 'AbC123...' }
   },
   {
@@ -142,7 +142,7 @@ const routes: RouteDoc[] = [
     },
     outputSchema: toJsonSchema(DreamBallSchema) as object,
     exampleRequest: { secret_key_b58: 'b58:...', updates: { name: 'Alice v2' } },
-    exampleResponse: { type: 'jelly.dreamball.avatar', revision: 2, name: 'Alice v2' },
+    exampleResponse: { type: 'ball.dreamball.avatar', revision: 2, name: 'Alice v2' },
     exampleError: { error: 'not found', fingerprint: 'AbC123...' }
   },
   {
@@ -159,7 +159,7 @@ const routes: RouteDoc[] = [
       required: ['guild_fp', 'secret_key_b58']
     },
     exampleRequest: { guild_fp: 'GuildFp123...', secret_key_b58: 'b58:...' },
-    exampleResponse: { type: 'jelly.dreamball.avatar', guild: ['b58:GuildFp123...'] }
+    exampleResponse: { type: 'ball.dreamball.avatar', guild: ['b58:GuildFp123...'] }
   },
   {
     method: 'POST',
@@ -192,7 +192,7 @@ const routes: RouteDoc[] = [
       required: ['inner_dreamball_json', 'unlock_guild_fp']
     },
     exampleRequest: {
-      inner_dreamball_json: '{"type":"jelly.dreamball.agent",...}',
+      inner_dreamball_json: '{"type":"ball.dreamball.agent",...}',
       unlock_guild_fp: 'GuildFp...',
       reveal_hint: 'Contains the agent memory'
     }
@@ -203,7 +203,7 @@ const routes: RouteDoc[] = [
     summary: 'Unlock a relic',
     description: 'Extracts the inner DreamBall from a sealed relic. MVP: subprocesses to jelly CLI.',
     inputSchema: { type: 'object', properties: {} },
-    exampleResponse: { type: 'jelly.dreamball.agent', stage: 'dreamball' }
+    exampleResponse: { type: 'ball.dreamball.agent', stage: 'dreamball' }
   }
 ];
 
@@ -233,49 +233,49 @@ const wasmExports = [
 const dreamballTypes = [
   {
     tag: 'avatar',
-    wire: 'jelly.dreamball.avatar',
+    wire: 'ball.dreamball.avatar',
     summary: 'A worn identity — look-heavy, visible to the observer.',
     populatedSlots: ['look', 'feel'],
     schema: toJsonSchema(DreamBallAvatarSchema)
   },
   {
     tag: 'agent',
-    wire: 'jelly.dreamball.agent',
+    wire: 'ball.dreamball.agent',
     summary: 'An autonomous agent — act-heavy with memory, knowledge graph, emotional register, and skills.',
     populatedSlots: ['look', 'feel', 'act', 'memory', 'knowledge-graph', 'emotional-register', 'interaction-set', 'personality-master-prompt', 'secret'],
     schema: toJsonSchema(DreamBallAgentSchema)
   },
   {
     tag: 'tool',
-    wire: 'jelly.dreamball.tool',
+    wire: 'ball.dreamball.tool',
     summary: 'A single transferable skill, transmitted via guild.',
     populatedSlots: ['skill', 'applicable-to'],
     schema: toJsonSchema(DreamBallToolSchema)
   },
   {
     tag: 'relic',
-    wire: 'jelly.dreamball.relic',
+    wire: 'ball.dreamball.relic',
     summary: 'A sealed payload that reveals on unlock by an authorized guild member.',
     populatedSlots: ['sealed-payload-hash', 'unlock-guild', 'reveal-hint', 'sealed-until'],
     schema: toJsonSchema(DreamBallRelicSchema)
   },
   {
     tag: 'field',
-    wire: 'jelly.dreamball.field',
+    wire: 'ball.dreamball.field',
     summary: 'An omnispherical ambient layer — the spatial context a DreamBall inhabits.',
     populatedSlots: ['omnispherical-grid', 'ambient-palette', 'dream-field-id'],
     schema: toJsonSchema(DreamBallFieldSchema)
   },
   {
     tag: 'guild',
-    wire: 'jelly.dreamball.guild',
+    wire: 'ball.dreamball.guild',
     summary: 'A group with a recrypt-style keyspace. Members can unlock relics and receive transmissions.',
     populatedSlots: ['guild-name', 'keyspace-root-hash', 'member', 'admin', 'policy'],
     schema: toJsonSchema(DreamBallGuildSchema)
   },
   {
     tag: 'untyped',
-    wire: 'jelly.dreamball',
+    wire: 'ball.dreamball',
     summary: 'Legacy v1 DreamBall with no subtype suffix.',
     populatedSlots: ['look', 'feel', 'act'],
     schema: toJsonSchema(DreamBallUntypedSchema)

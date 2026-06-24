@@ -11,7 +11,7 @@ const protocol = @import("protocol.zig");
 const Fingerprint = @import("fingerprint.zig").Fingerprint;
 
 // ============================================================================
-// §12.2 jelly.omnispherical-grid
+// §12.2 ball.omnispherical-grid
 // ============================================================================
 
 pub const Vec3 = struct { x: f64, y: f64, z: f64 };
@@ -33,7 +33,7 @@ pub const OmnisphericalGrid = struct {
 };
 
 // ============================================================================
-// §12.3 jelly.memory
+// §12.3 ball.memory
 // ============================================================================
 
 pub const MemoryConnectionKind = enum {
@@ -83,7 +83,7 @@ pub const Memory = struct {
 };
 
 // ============================================================================
-// §12.4 jelly.knowledge-graph
+// §12.4 ball.knowledge-graph
 // ============================================================================
 
 pub const Triple = struct {
@@ -99,7 +99,7 @@ pub const KnowledgeGraph = struct {
 };
 
 // ============================================================================
-// §12.5 jelly.emotional-register
+// §12.5 ball.emotional-register
 // ============================================================================
 
 pub const EmotionalAxis = struct {
@@ -115,7 +115,7 @@ pub const EmotionalRegister = struct {
 };
 
 // ============================================================================
-// §12.6 jelly.interaction-set
+// §12.6 ball.interaction-set
 // ============================================================================
 
 pub const InteractionKind = enum { speak, listen, act, receive };
@@ -146,7 +146,7 @@ pub const InteractionSet = struct {
 };
 
 // ============================================================================
-// §12.7 jelly.guild-policy
+// §12.7 ball.guild-policy
 // ============================================================================
 
 pub const GuildPolicy = struct {
@@ -162,7 +162,7 @@ pub const GuildPolicy = struct {
 };
 
 // ============================================================================
-// §12.8 jelly.secret-ref
+// §12.8 ball.secret-ref
 // ============================================================================
 
 pub const SecretRef = struct {
@@ -175,7 +175,7 @@ pub const SecretRef = struct {
 };
 
 // ============================================================================
-// §12.9 jelly.transmission
+// §12.9 ball.transmission
 // ============================================================================
 
 pub const Transmission = struct {
@@ -228,10 +228,10 @@ pub const Relic = struct {
 };
 
 // ============================================================================
-// §13.1 field-kind attribute on jelly.dreamball.field
+// §13.1 field-kind attribute on ball.dreamball.field
 // ============================================================================
 
-/// Optional `field-kind` attribute on a `jelly.dreamball.field` envelope.
+/// Optional `field-kind` attribute on a `ball.dreamball.field` envelope.
 /// Attribute-level addition — does NOT bump `format-version`.
 /// Unknown values MUST be preserved verbatim (open-enum rule, §13.1).
 pub const FieldKind = struct {
@@ -245,7 +245,7 @@ pub const FieldKind = struct {
 };
 
 // ============================================================================
-// §13.2 jelly.layout
+// §13.2 ball.layout
 // ============================================================================
 
 /// A quaternion rotation.
@@ -268,15 +268,15 @@ pub const Placement = struct {
 
 pub const Layout = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.layout"`.
-    pub const type_string: []const u8 = "jelly.layout";
+    /// Wire type string: `"ball.layout"`.
+    pub const type_string: []const u8 = "ball.layout";
 
     placements: []const Placement = &.{},
     note: ?[]const u8 = null,
 };
 
 // ============================================================================
-// §13.3 jelly.timeline + jelly.action
+// §13.3 ball.timeline + ball.action
 // ============================================================================
 
 /// RC2 — ActionKind enum with all 9 known kinds.
@@ -309,8 +309,8 @@ pub const ActionKind = enum {
 
 pub const Timeline = struct {
     pub const format_version: u32 = 3;
-    /// Wire type string: `"jelly.timeline"`.
-    pub const type_string: []const u8 = "jelly.timeline";
+    /// Wire type string: `"ball.timeline"`.
+    pub const type_string: []const u8 = "ball.timeline";
 
     /// 1:1 identity anchor — which palace this timeline belongs to.
     palace_fp: [32]u8,
@@ -321,13 +321,13 @@ pub const Timeline = struct {
     note: ?[]const u8 = null,
 };
 
-/// A `jelly.action-ref` is a 32-byte Blake3 of a canonical `jelly.action` envelope.
+/// A `ball.action-ref` is a 32-byte Blake3 of a canonical `ball.action` envelope.
 pub const ActionRef = [32]u8;
 
 pub const Action = struct {
     pub const format_version: u32 = 3;
-    /// Wire type string: `"jelly.action"`.
-    pub const type_string: []const u8 = "jelly.action";
+    /// Wire type string: `"ball.action"`.
+    pub const type_string: []const u8 = "ball.action";
 
     action_kind: ActionKind,
     /// ACKS — previous head(s) this action acknowledges; one for linear, multiple for merges.
@@ -345,7 +345,7 @@ pub const Action = struct {
 };
 
 // ============================================================================
-// §13.4 jelly.aqueduct
+// §13.4 ball.aqueduct
 // ============================================================================
 
 pub const AqueductPhase = enum {
@@ -366,8 +366,8 @@ pub const AqueductPhase = enum {
 
 pub const Aqueduct = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.aqueduct"`.
-    pub const type_string: []const u8 = "jelly.aqueduct";
+    /// Wire type string: `"ball.aqueduct"`.
+    pub const type_string: []const u8 = "ball.aqueduct";
 
     from: [32]u8,
     to: [32]u8,
@@ -385,13 +385,13 @@ pub const Aqueduct = struct {
 };
 
 // ============================================================================
-// §13.5 jelly.element-tag
+// §13.5 ball.element-tag
 // ============================================================================
 
 pub const ElementTag = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.element-tag"`.
-    pub const type_string: []const u8 = "jelly.element-tag";
+    /// Wire type string: `"ball.element-tag"`.
+    pub const type_string: []const u8 = "ball.element-tag";
 
     /// Open-enum element value; e.g. "wood", "fire", "earth", "metal", "water", …
     element: []const u8,
@@ -401,7 +401,7 @@ pub const ElementTag = struct {
 };
 
 // ============================================================================
-// §13.6 jelly.trust-observation
+// §13.6 ball.trust-observation
 // ============================================================================
 
 pub const TrustAxis = struct {
@@ -412,8 +412,8 @@ pub const TrustAxis = struct {
 
 pub const TrustObservation = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.trust-observation"`.
-    pub const type_string: []const u8 = "jelly.trust-observation";
+    /// Wire type string: `"ball.trust-observation"`.
+    pub const type_string: []const u8 = "ball.trust-observation";
 
     /// Fingerprint of the signer/observer.
     observer: [32]u8,
@@ -427,33 +427,33 @@ pub const TrustObservation = struct {
 };
 
 // ============================================================================
-// §13.7 jelly.inscription
+// §13.7 ball.inscription
 // ============================================================================
 
 pub const Inscription = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.inscription"`.
-    pub const type_string: []const u8 = "jelly.inscription";
+    /// Wire type string: `"ball.inscription"`.
+    pub const type_string: []const u8 = "ball.inscription";
 
     /// Open-enum surface; e.g. "scroll", "tablet", "book-spread", "etched-wall", "floating-glyph", …
     surface: []const u8,
-    /// "auto" = renderer chooses; "curator" = parent room's jelly.layout.
+    /// "auto" = renderer chooses; "curator" = parent room's ball.layout.
     placement: []const u8 = "auto",
     note: ?[]const u8 = null,
 };
 
 // ============================================================================
-// §13.8 jelly.mythos
+// §13.8 ball.mythos
 // ============================================================================
 
 pub const Mythos = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.mythos"`.
-    pub const type_string: []const u8 = "jelly.mythos";
+    /// Wire type string: `"ball.mythos"`.
+    pub const type_string: []const u8 = "ball.mythos";
 
     /// true iff this is the first mythos of this chain.
     is_genesis: bool,
-    /// Blake3 of the prior jelly.mythos envelope; MUST be absent iff is_genesis is true.
+    /// Blake3 of the prior ball.mythos envelope; MUST be absent iff is_genesis is true.
     predecessor: ?[32]u8 = null,
 
     /// POETIC ONLY — fingerprint of the DreamBall this mythos is about.
@@ -476,13 +476,13 @@ pub const Mythos = struct {
 };
 
 // ============================================================================
-// §13.9 jelly.archiform
+// §13.9 ball.archiform
 // ============================================================================
 
 pub const Archiform = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.archiform"`.
-    pub const type_string: []const u8 = "jelly.archiform";
+    /// Wire type string: `"ball.archiform"`.
+    pub const type_string: []const u8 = "ball.archiform";
 
     /// Open-enum form; e.g. "library", "forge", "throne-room", …
     form: []const u8,
@@ -499,14 +499,14 @@ pub const Archiform = struct {
 
 pub const PalaceInvariantError = error{
     /// PROTOCOL.md §13.11 fixture 1: a Field with field-kind "palace" MUST carry
-    /// a jelly.mythos attribute. This error is returned when that invariant is
+    /// a ball.mythos attribute. This error is returned when that invariant is
     /// violated. Full enforcement lives in Epic 3 (`jelly verify`).
     PalaceMissingMythos,
 };
 
 /// Checks the palace-root invariant from PROTOCOL.md §13.11 fixture 1:
-/// a Field tagged `field-kind: "palace"` MUST carry a `jelly.mythos` attribute.
-/// `has_mythos` should be set to true if the envelope carries any `jelly.mythos` attribute.
+/// a Field tagged `field-kind: "palace"` MUST carry a `ball.mythos` attribute.
+/// `has_mythos` should be set to true if the envelope carries any `ball.mythos` attribute.
 pub fn palaceInvariants(field_kind: ?[]const u8, has_mythos: bool) PalaceInvariantError!void {
     if (field_kind) |fk| {
         if (std.mem.eql(u8, fk, FieldKind.palace) and !has_mythos) {
@@ -578,7 +578,7 @@ test "Interaction kind string" {
 test "struct shape: Layout" {
     const l: Layout = .{};
     try std.testing.expectEqual(@as(u32, 2), Layout.format_version);
-    try std.testing.expectEqualStrings("jelly.layout", Layout.type_string);
+    try std.testing.expectEqualStrings("ball.layout", Layout.type_string);
     try std.testing.expectEqual(@as(usize, 0), l.placements.len);
     try std.testing.expectEqual(@as(?[]const u8, null), l.note);
 }
@@ -590,7 +590,7 @@ test "struct shape: Timeline" {
         .head_hashes = &heads,
     };
     try std.testing.expectEqual(@as(u32, 3), Timeline.format_version);
-    try std.testing.expectEqualStrings("jelly.timeline", Timeline.type_string);
+    try std.testing.expectEqualStrings("ball.timeline", Timeline.type_string);
     try std.testing.expectEqual(@as(usize, 1), t.head_hashes.len);
     try std.testing.expectEqual(@as(u8, 0xAB), t.head_hashes[0][0]);
 }
@@ -603,7 +603,7 @@ test "struct shape: Action" {
         .actor = [_]u8{0x03} ** 32,
     };
     try std.testing.expectEqual(@as(u32, 3), Action.format_version);
-    try std.testing.expectEqualStrings("jelly.action", Action.type_string);
+    try std.testing.expectEqualStrings("ball.action", Action.type_string);
     try std.testing.expectEqualStrings("true-naming", a.action_kind.toWireString());
     try std.testing.expectEqual(@as(usize, 0), a.deps.len);
     try std.testing.expectEqual(@as(usize, 0), a.nacks.len);
@@ -616,7 +616,7 @@ test "struct shape: Aqueduct" {
         .kind = "gaze",
     };
     try std.testing.expectEqual(@as(u32, 2), Aqueduct.format_version);
-    try std.testing.expectEqualStrings("jelly.aqueduct", Aqueduct.type_string);
+    try std.testing.expectEqualStrings("ball.aqueduct", Aqueduct.type_string);
     try std.testing.expectEqual(@as(?f32, null), aq.conductance);
     try std.testing.expectEqual(@as(?AqueductPhase, null), aq.phase);
 }
@@ -624,7 +624,7 @@ test "struct shape: Aqueduct" {
 test "struct shape: ElementTag" {
     const et: ElementTag = .{ .element = "wood" };
     try std.testing.expectEqual(@as(u32, 2), ElementTag.format_version);
-    try std.testing.expectEqualStrings("jelly.element-tag", ElementTag.type_string);
+    try std.testing.expectEqualStrings("ball.element-tag", ElementTag.type_string);
     try std.testing.expectEqualStrings("wood", et.element);
     try std.testing.expectEqual(@as(?[]const u8, null), et.phase);
 }
@@ -635,7 +635,7 @@ test "struct shape: TrustObservation" {
         .about = [_]u8{0x07} ** 32,
     };
     try std.testing.expectEqual(@as(u32, 2), TrustObservation.format_version);
-    try std.testing.expectEqualStrings("jelly.trust-observation", TrustObservation.type_string);
+    try std.testing.expectEqualStrings("ball.trust-observation", TrustObservation.type_string);
     try std.testing.expectEqual(@as(usize, 0), to.axes.len);
     try std.testing.expectEqual(@as(usize, 0), to.signatures.len);
 }
@@ -643,7 +643,7 @@ test "struct shape: TrustObservation" {
 test "struct shape: Inscription" {
     const ins: Inscription = .{ .surface = "scroll" };
     try std.testing.expectEqual(@as(u32, 2), Inscription.format_version);
-    try std.testing.expectEqualStrings("jelly.inscription", Inscription.type_string);
+    try std.testing.expectEqualStrings("ball.inscription", Inscription.type_string);
     try std.testing.expectEqualStrings("scroll", ins.surface);
     try std.testing.expectEqualStrings("auto", ins.placement);
 }
@@ -651,7 +651,7 @@ test "struct shape: Inscription" {
 test "struct shape: Mythos" {
     const m: Mythos = .{ .is_genesis = true };
     try std.testing.expectEqual(@as(u32, 2), Mythos.format_version);
-    try std.testing.expectEqualStrings("jelly.mythos", Mythos.type_string);
+    try std.testing.expectEqualStrings("ball.mythos", Mythos.type_string);
     try std.testing.expect(m.is_genesis);
     try std.testing.expectEqual(@as(?[32]u8, null), m.predecessor);
     try std.testing.expectEqual(@as(?[32]u8, null), m.about);
@@ -660,7 +660,7 @@ test "struct shape: Mythos" {
 test "struct shape: Archiform" {
     const ar: Archiform = .{ .form = "library" };
     try std.testing.expectEqual(@as(u32, 2), Archiform.format_version);
-    try std.testing.expectEqualStrings("jelly.archiform", Archiform.type_string);
+    try std.testing.expectEqualStrings("ball.archiform", Archiform.type_string);
     try std.testing.expectEqualStrings("library", ar.form);
     try std.testing.expectEqual(@as(?[]const u8, null), ar.parent_form);
 }

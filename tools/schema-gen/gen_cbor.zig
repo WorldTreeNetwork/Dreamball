@@ -39,8 +39,8 @@ const BODY =
     \\// Matches the subset the canonical Zig encoder in src/envelope.zig
     \\// emits: tags 200 (envelope) / 201 (leaf) / 1 (epoch time),
     \\// canonical map-key ordering, smallest-int form, text/bytes/array/
-    \\// map/uint/f64. Floats only appear inside jelly.omnispherical-grid /
-    \\// jelly.memory / jelly.emotional-register envelopes — see
+    \\// map/uint/f64. Floats only appear inside ball.omnispherical-grid /
+    \\// ball.memory / ball.emotional-register envelopes — see
     \\// docs/PROTOCOL.md §12.2.
     \\//
     \\// Per D-018 the ENCODE side is the canonical Zig algorithm exposed
@@ -279,7 +279,7 @@ const BODY =
     \\  return toBase58Tagged(raw as Uint8Array);
     \\}
     \\
-    \\/** Decode a jelly.layout CBOR envelope. */
+    \\/** Decode a ball.layout CBOR envelope. */
     \\export function decodeLayout(bytes: Uint8Array): Layout {
     \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  void core; // type/format-version checked implicitly
@@ -297,10 +297,10 @@ const BODY =
     \\      });
     \\    } else if (k === 'note') { note = v as string; }
     \\  }
-    \\  return { type: 'jelly.layout', 'format-version': 2, placements, note };
+    \\  return { type: 'ball.layout', 'format-version': 2, placements, note };
     \\}
     \\
-    \\/** Decode a jelly.timeline CBOR envelope. */
+    \\/** Decode a ball.timeline CBOR envelope. */
     \\export function decodeTimeline(bytes: Uint8Array): Timeline {
     \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  const palaceFp = b58Bytes(core['palace-fp']);
@@ -310,10 +310,10 @@ const BODY =
     \\    if (k === 'head-hashes') headHashes.push(b58Bytes(v));
     \\    else if (k === 'note') note = v as string;
     \\  }
-    \\  return { type: 'jelly.timeline', 'format-version': 3, 'palace-fp': palaceFp, 'head-hashes': headHashes, note };
+    \\  return { type: 'ball.timeline', 'format-version': 3, 'palace-fp': palaceFp, 'head-hashes': headHashes, note };
     \\}
     \\
-    \\/** Decode a jelly.action CBOR envelope. */
+    \\/** Decode a ball.action CBOR envelope. */
     \\export function decodeAction(bytes: Uint8Array): Action {
     \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  // action-kind, actor, parent-hashes are in the core map.
@@ -338,7 +338,7 @@ const BODY =
     \\    else if (k === 'nacks') nacks.push(b58Bytes(v));
     \\  }
     \\  const out: Action = {
-    \\    type: 'jelly.action', 'format-version': 3,
+    \\    type: 'ball.action', 'format-version': 3,
     \\    'action-kind': actionKind, actor, 'parent-hashes': parentHashes
     \\  };
     \\  if (targetFp !== undefined) out['target-fp'] = targetFp;
@@ -348,7 +348,7 @@ const BODY =
     \\  return out;
     \\}
     \\
-    \\/** Decode a jelly.aqueduct CBOR envelope. */
+    \\/** Decode a ball.aqueduct CBOR envelope. */
     \\export function decodeAqueduct(bytes: Uint8Array): Aqueduct {
     \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  // from, to, kind are in the core map; all numeric fields are attributes.
@@ -379,7 +379,7 @@ const BODY =
     \\    throw new Error('decodeAqueduct: missing required numeric attribute');
     \\  }
     \\  const out: Aqueduct = {
-    \\    type: 'jelly.aqueduct', 'format-version': 2,
+    \\    type: 'ball.aqueduct', 'format-version': 2,
     \\    from, to, kind, capacity, strength, resistance, capacitance
     \\  };
     \\  if (conductance !== undefined) out.conductance = conductance;
@@ -388,7 +388,7 @@ const BODY =
     \\  return out;
     \\}
     \\
-    \\/** Decode a jelly.element-tag CBOR envelope. */
+    \\/** Decode a ball.element-tag CBOR envelope. */
     \\export function decodeElementTag(bytes: Uint8Array): ElementTag {
     \\  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  let element: string | undefined;
@@ -400,13 +400,13 @@ const BODY =
     \\    else if (k === 'note') note = v as string;
     \\  }
     \\  if (element === undefined) throw new Error('decodeElementTag: missing element attribute');
-    \\  const out: ElementTag = { type: 'jelly.element-tag', 'format-version': 2, element };
+    \\  const out: ElementTag = { type: 'ball.element-tag', 'format-version': 2, element };
     \\  if (phase !== undefined) out.phase = phase;
     \\  if (note !== undefined) out.note = note;
     \\  return out;
     \\}
     \\
-    \\/** Decode a jelly.trust-observation CBOR envelope. */
+    \\/** Decode a ball.trust-observation CBOR envelope. */
     \\export function decodeTrustObservation(bytes: Uint8Array): TrustObservation {
     \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  const observer = b58Bytes(core['observer']);
@@ -430,7 +430,7 @@ const BODY =
     \\      signatures!.push({ alg: pair[0] as 'ed25519' | 'ml-dsa-87', value: b58Bytes(pair[1]) });
     \\    }
     \\  }
-    \\  const out: TrustObservation = { type: 'jelly.trust-observation', 'format-version': 2, observer, about };
+    \\  const out: TrustObservation = { type: 'ball.trust-observation', 'format-version': 2, observer, about };
     \\  if (axes.length > 0) out.axes = axes;
     \\  if (observedAt !== undefined) out['observed-at'] = observedAt;
     \\  if (context !== undefined) out.context = context;
@@ -438,7 +438,7 @@ const BODY =
     \\  return out;
     \\}
     \\
-    \\/** Decode a jelly.inscription CBOR envelope. */
+    \\/** Decode a ball.inscription CBOR envelope. */
     \\export function decodeInscription(bytes: Uint8Array): Inscription {
     \\  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  let surface: string | undefined;
@@ -450,12 +450,12 @@ const BODY =
     \\    else if (k === 'note') note = v as string;
     \\  }
     \\  if (surface === undefined) throw new Error('decodeInscription: missing surface attribute');
-    \\  const out: Inscription = { type: 'jelly.inscription', 'format-version': 2, surface, placement };
+    \\  const out: Inscription = { type: 'ball.inscription', 'format-version': 2, surface, placement };
     \\  if (note !== undefined) out.note = note;
     \\  return out;
     \\}
     \\
-    \\/** Decode a jelly.mythos CBOR envelope. */
+    \\/** Decode a ball.mythos CBOR envelope. */
     \\export function decodeMythos(bytes: Uint8Array): Mythos {
     \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  const isGenesis = core['is-genesis'] as boolean;
@@ -484,7 +484,7 @@ const BODY =
     \\      authoredAt = (tagged.__cborTag === 1 ? tagged.value : v) as number;
     \\    }
     \\  }
-    \\  const out: Mythos = { type: 'jelly.mythos', 'format-version': 2, 'is-genesis': isGenesis };
+    \\  const out: Mythos = { type: 'ball.mythos', 'format-version': 2, 'is-genesis': isGenesis };
     \\  if (predecessor !== undefined) out.predecessor = predecessor;
     \\  if (about !== undefined) out.about = about;
     \\  if (form !== undefined) out.form = form;
@@ -498,7 +498,7 @@ const BODY =
     \\  return out;
     \\}
     \\
-    \\/** Decode a jelly.archiform CBOR envelope. */
+    \\/** Decode a ball.archiform CBOR envelope. */
     \\export function decodeArchiform(bytes: Uint8Array): Archiform {
     \\  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  let form: string | undefined;
@@ -512,7 +512,7 @@ const BODY =
     \\    else if (k === 'note') note = v as string;
     \\  }
     \\  if (form === undefined) throw new Error('decodeArchiform: missing form attribute');
-    \\  const out: Archiform = { type: 'jelly.archiform', 'format-version': 2, form };
+    \\  const out: Archiform = { type: 'ball.archiform', 'format-version': 2, form };
     \\  if (tradition !== undefined) out.tradition = tradition;
     \\  if (parentForm !== undefined) out['parent-form'] = parentForm;
     \\  if (note !== undefined) out.note = note;
@@ -561,21 +561,21 @@ const TEST_BODY =
     \\
     \\describe('decodeEnvelope', () => {
     \\  it('reads a minimal tag-200 envelope wrapping a leaf map', () => {
-    \\    // tag 200 → tag 201 → map { "type": "jelly.test" }
-    \\    // CBOR bytes: 0xD8 0xC8 | 0xD8 0xC9 | 0xA1 | text("type") | text("jelly.test")
+    \\    // tag 200 → tag 201 → map { "type": "ball.test" }
+    \\    // CBOR bytes: 0xD8 0xC8 | 0xD8 0xC9 | 0xA1 | text("type") | text("ball.test")
     \\    const bytes = new Uint8Array([
     \\      0xd8, 0xc8,
     \\      0xd8, 0xc9,
     \\      0xa1,
     \\      0x64, 0x74, 0x79, 0x70, 0x65,
-    \\      0x6a, 0x6a, 0x65, 0x6c, 0x6c, 0x79, 0x2e, 0x74, 0x65, 0x73, 0x74
+    \\      0x69, 0x62, 0x61, 0x6c, 0x6c, 0x2e, 0x74, 0x65, 0x73, 0x74
     \\    ]);
     \\    const decoded = decodeEnvelope(bytes) as { __cborTag: number; value: unknown };
     \\    expect(decoded.__cborTag).toBe(200);
     \\    const inner = (decoded.value as { __cborTag: number; value: unknown });
     \\    expect(inner.__cborTag).toBe(201);
     \\    const leaf = inner.value as Record<string, unknown>;
-    \\    expect(leaf.type).toBe('jelly.test');
+    \\    expect(leaf.type).toBe('ball.test');
     \\  });
     \\});
     \\

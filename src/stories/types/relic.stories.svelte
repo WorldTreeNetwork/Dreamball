@@ -1,5 +1,5 @@
 <!--
-  Relic type tour — shows a jelly.dreamball.relic in every applicable lens.
+  Relic type tour — shows a ball.dreamball.relic in every applicable lens.
   Meaningful lenses: thumbnail (sealed state chip), flat (sealed-payload-hash,
   unlock-guild, reveal-hint slots), phone (mobile card).
   Skipped: avatar/splat (no look), knowledge-graph (no triples),

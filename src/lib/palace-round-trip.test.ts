@@ -53,10 +53,10 @@ function loadFixture(name: string): Uint8Array {
 // ── AC2: CLI-path envelopes — decode + re-decode structural equality ──────────
 
 describe('round-trip parity: Timeline (CLI-path)', () => {
-	it('decodes and validates jelly.timeline', () => {
+	it('decodes and validates ball.timeline', () => {
 		const bytes = loadFixture('timeline.cbor');
 		const decoded = decodeTimeline(bytes);
-		expect(decoded.type).toBe('jelly.timeline');
+		expect(decoded.type).toBe('ball.timeline');
 		expect(decoded['format-version']).toBe(3);
 		expect(decoded['head-hashes'].length).toBe(1);
 		const result = v.safeParse(TimelineSchema, decoded);
@@ -72,10 +72,10 @@ describe('round-trip parity: Timeline (CLI-path)', () => {
 });
 
 describe('round-trip parity: Action (CLI-path)', () => {
-	it('decodes and validates jelly.action', () => {
+	it('decodes and validates ball.action', () => {
 		const bytes = loadFixture('action.cbor');
 		const decoded = decodeAction(bytes);
-		expect(decoded.type).toBe('jelly.action');
+		expect(decoded.type).toBe('ball.action');
 		expect(decoded['format-version']).toBe(3);
 		expect(decoded['action-kind']).toBe('palace-minted');
 		expect(decoded['parent-hashes'].length).toBe(1);
@@ -92,10 +92,10 @@ describe('round-trip parity: Action (CLI-path)', () => {
 });
 
 describe('round-trip parity: Aqueduct (CLI-path)', () => {
-	it('decodes and validates jelly.aqueduct', () => {
+	it('decodes and validates ball.aqueduct', () => {
 		const bytes = loadFixture('aqueduct.cbor');
 		const decoded = decodeAqueduct(bytes);
-		expect(decoded.type).toBe('jelly.aqueduct');
+		expect(decoded.type).toBe('ball.aqueduct');
 		expect(decoded['format-version']).toBe(2);
 		expect(decoded.kind).toBe('gaze');
 		expect(decoded.phase).toBe('resonant');
@@ -112,10 +112,10 @@ describe('round-trip parity: Aqueduct (CLI-path)', () => {
 });
 
 describe('round-trip parity: Mythos (CLI-path)', () => {
-	it('decodes and validates jelly.mythos', () => {
+	it('decodes and validates ball.mythos', () => {
 		const bytes = loadFixture('mythos.cbor');
 		const decoded = decodeMythos(bytes);
-		expect(decoded.type).toBe('jelly.mythos');
+		expect(decoded.type).toBe('ball.mythos');
 		expect(decoded['format-version']).toBe(2);
 		expect(decoded['is-genesis']).toBe(true);
 		expect(decoded['true-name']).toBe('The Palace of Remembered Light');
@@ -134,10 +134,10 @@ describe('round-trip parity: Mythos (CLI-path)', () => {
 // ── AC2: decode-only envelopes — decode succeeds + schema validates ────────────
 
 describe('decode-only: Layout', () => {
-	it('decodes and validates jelly.layout', () => {
+	it('decodes and validates ball.layout', () => {
 		const bytes = loadFixture('layout.cbor');
 		const decoded = decodeLayout(bytes);
-		expect(decoded.type).toBe('jelly.layout');
+		expect(decoded.type).toBe('ball.layout');
 		expect(decoded['format-version']).toBe(2);
 		expect(decoded.placements.length).toBe(2);
 		const result = v.safeParse(LayoutSchema, decoded);
@@ -146,10 +146,10 @@ describe('decode-only: Layout', () => {
 });
 
 describe('decode-only: ElementTag', () => {
-	it('decodes and validates jelly.element-tag', () => {
+	it('decodes and validates ball.element-tag', () => {
 		const bytes = loadFixture('element_tag.cbor');
 		const decoded = decodeElementTag(bytes);
-		expect(decoded.type).toBe('jelly.element-tag');
+		expect(decoded.type).toBe('ball.element-tag');
 		expect(decoded.element).toBe('fire');
 		expect(decoded.phase).toBe('yang');
 		const result = v.safeParse(ElementTagSchema, decoded);
@@ -158,10 +158,10 @@ describe('decode-only: ElementTag', () => {
 });
 
 describe('decode-only: TrustObservation', () => {
-	it('decodes and validates jelly.trust-observation', () => {
+	it('decodes and validates ball.trust-observation', () => {
 		const bytes = loadFixture('trust_observation.cbor');
 		const decoded = decodeTrustObservation(bytes);
-		expect(decoded.type).toBe('jelly.trust-observation');
+		expect(decoded.type).toBe('ball.trust-observation');
 		expect(decoded.axes?.length).toBe(2);
 		expect(decoded.signatures?.length).toBe(1);
 		const result = v.safeParse(TrustObservationSchema, decoded);
@@ -170,10 +170,10 @@ describe('decode-only: TrustObservation', () => {
 });
 
 describe('decode-only: Inscription', () => {
-	it('decodes and validates jelly.inscription', () => {
+	it('decodes and validates ball.inscription', () => {
 		const bytes = loadFixture('inscription.cbor');
 		const decoded = decodeInscription(bytes);
-		expect(decoded.type).toBe('jelly.inscription');
+		expect(decoded.type).toBe('ball.inscription');
 		expect(decoded.surface).toBe('scroll');
 		expect(decoded.placement).toBe('curator');
 		expect(decoded.note).toContain('markdown');
@@ -183,10 +183,10 @@ describe('decode-only: Inscription', () => {
 });
 
 describe('decode-only: Archiform', () => {
-	it('decodes and validates jelly.archiform', () => {
+	it('decodes and validates ball.archiform', () => {
 		const bytes = loadFixture('archiform.cbor');
 		const decoded = decodeArchiform(bytes);
-		expect(decoded.type).toBe('jelly.archiform');
+		expect(decoded.type).toBe('ball.archiform');
 		expect(decoded.form).toBe('library');
 		expect(decoded.tradition).toBe('hermetic');
 		expect(decoded['parent-form']).toBe('forge');
@@ -199,13 +199,13 @@ describe('decode-only: Archiform', () => {
 
 describe('AC3: Valibot rejects malformed palace envelopes', () => {
 	it('LayoutSchema rejects missing placements', () => {
-		const r = v.safeParse(LayoutSchema, { type: 'jelly.layout', 'format-version': 2 });
+		const r = v.safeParse(LayoutSchema, { type: 'ball.layout', 'format-version': 2 });
 		expect(r.success).toBe(false);
 	});
 
 	it('TimelineSchema rejects wrong type literal', () => {
 		const r = v.safeParse(TimelineSchema, {
-			type: 'jelly.NOT-timeline',
+			type: 'ball.NOT-timeline',
 			'format-version': 3,
 			'palace-fp': 'b58:abc',
 			'head-hashes': []
@@ -215,7 +215,7 @@ describe('AC3: Valibot rejects malformed palace envelopes', () => {
 
 	it('ActionSchema rejects unknown action-kind', () => {
 		const r = v.safeParse(ActionSchema, {
-			type: 'jelly.action',
+			type: 'ball.action',
 			'format-version': 3,
 			'action-kind': 'unknown-kind',
 			actor: 'b58:abc',
@@ -226,7 +226,7 @@ describe('AC3: Valibot rejects malformed palace envelopes', () => {
 
 	it('AqueductSchema rejects missing required numeric fields', () => {
 		const r = v.safeParse(AqueductSchema, {
-			type: 'jelly.aqueduct',
+			type: 'ball.aqueduct',
 			'format-version': 2,
 			from: 'b58:abc',
 			to: 'b58:def',
@@ -238,7 +238,7 @@ describe('AC3: Valibot rejects malformed palace envelopes', () => {
 
 	it('MythosSchema rejects missing is-genesis', () => {
 		const r = v.safeParse(MythosSchema, {
-			type: 'jelly.mythos',
+			type: 'ball.mythos',
 			'format-version': 2
 			// missing is-genesis
 		});

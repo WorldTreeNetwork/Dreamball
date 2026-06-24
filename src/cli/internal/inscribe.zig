@@ -1,7 +1,7 @@
 //! `jelly palace inscribe` — inscribe an artefact into a Room inside a palace.
 //!
 //! Reads an existing palace bundle, validates the target room is known,
-//! builds a new signed `jelly.action` of kind `"avatar-inscribed"`, writes
+//! builds a new signed `ball.action` of kind `"avatar-inscribed"`, writes
 //! envelopes (inscription + optionally mythos + optionally archiform + action) to
 //! staging, invokes the bun bridge (`src/lib/bridge/palace-inscribe.ts`), then
 //! promotes on success or rolls back on failure (SEC11 / AC7).

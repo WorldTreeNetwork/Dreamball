@@ -12,7 +12,7 @@ import { safeParseDreamBall, parseDreamBall } from './parse.js';
 describe('Valibot schemas', () => {
 	it('validates a minimal untyped v1 DreamBall', () => {
 		const ok = {
-			type: 'jelly.dreamball',
+			type: 'ball.dreamball',
 			'format-version': 1,
 			stage: 'seed',
 			identity: 'b58:abcABC',
@@ -25,7 +25,7 @@ describe('Valibot schemas', () => {
 
 	it('validates a v2 agent DreamBall with nested slots', () => {
 		const ok = {
-			type: 'jelly.dreamball.agent',
+			type: 'ball.dreamball.agent',
 			'format-version': 2,
 			stage: 'dreamball',
 			identity: 'b58:aaaa',
@@ -43,7 +43,7 @@ describe('Valibot schemas', () => {
 
 	it('discriminates on `type` field via DreamBallSchema', () => {
 		const toolBall = {
-			type: 'jelly.dreamball.tool',
+			type: 'ball.dreamball.tool',
 			'format-version': 2,
 			stage: 'dreamball',
 			identity: 'b58:zzz',
@@ -53,12 +53,12 @@ describe('Valibot schemas', () => {
 		};
 		const r = v.safeParse(DreamBallSchema, toolBall);
 		expect(r.success).toBe(true);
-		if (r.success) expect(r.output.type).toBe('jelly.dreamball.tool');
+		if (r.success) expect(r.output.type).toBe('ball.dreamball.tool');
 	});
 
 	it('rejects a DreamBall with bad base58 identity', () => {
 		const bad = {
-			type: 'jelly.dreamball',
+			type: 'ball.dreamball',
 			'format-version': 1,
 			stage: 'seed',
 			identity: 'not-b58-prefix',
@@ -84,13 +84,13 @@ describe('Valibot schemas', () => {
 	it('parseDreamBall throws on malformed input', () => {
 		expect(() =>
 			parseDreamBall(
-				JSON.stringify({ type: 'jelly.dreamball', 'format-version': 1, stage: 'BAD' })
+				JSON.stringify({ type: 'ball.dreamball', 'format-version': 1, stage: 'BAD' })
 			)
 		).toThrow();
 	});
 
 	it('safeParseDreamBall returns issues for malformed input', () => {
-		const r = safeParseDreamBall('{"type":"jelly.dreamball","format-version":1,"stage":"BAD"}');
+		const r = safeParseDreamBall('{"type":"ball.dreamball","format-version":1,"stage":"BAD"}');
 		expect(r.success).toBe(false);
 		if (!r.success) expect(r.issues.length).toBeGreaterThan(0);
 	});

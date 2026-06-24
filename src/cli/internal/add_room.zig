@@ -1,7 +1,7 @@
 //! `jelly palace add-room` — add a Room to an existing palace DreamBall.
 //!
 //! Reads an existing palace bundle (resolved via <palace>.bundle + <palace>.key),
-//! builds a new signed `jelly.action` of kind `"room-added"`, writes new envelopes
+//! builds a new signed `ball.action` of kind `"room-added"`, writes new envelopes
 //! (room + optionally mythos + optionally archiform + action) to a staging directory,
 //! invokes the bun bridge (`src/lib/bridge/palace-add-room.ts`) which mirrors them
 //! into LadybugDB, then promotes on success or rolls back on failure (SEC11 / AC7).
@@ -16,7 +16,7 @@
 //! AC7: every add-room emits a dual-signed "room-added" action; palace head-hashes updated.
 //! AC5: --archiform validates against the registry; unknown → exit non-zero (AC5 says warn, but
 //!      the S3.3 spec note at AC5 says "exit 0 + stderr warning". We emit warning + exit 0.
-//! AC4: --mythos attaches a jelly.mythos with is-genesis:true; absent → no attribute.
+//! AC4: --mythos attaches a ball.mythos with is-genesis:true; absent → no attribute.
 //! AC6: cycle enforcement delegated to the bridge (has graph already loaded).
 
 const std = @import("std");

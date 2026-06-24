@@ -11,12 +11,12 @@
 //! code without coupling the two language runtimes at link time.
 //!
 //! Six envelopes minted in dependency order:
-//!   1. jelly.dreamball.agent  — oracle agent (own hybrid keypair; TC21)
-//!   2. jelly.mythos           — genesis mythos (is-genesis: true; no predecessor)
-//!   3. jelly.asset            — archiform registry (@embedFile; D-014)
-//!   4. jelly.action           — "palace-minted" dual-signed (NFR12)
-//!   5. jelly.timeline         — root timeline with head_hashes = {action.fp}
-//!   6. jelly.dreamball.field  — palace field (field-kind: "palace"; AC1)
+//!   1. ball.dreamball.agent  — oracle agent (own hybrid keypair; TC21)
+//!   2. ball.mythos           — genesis mythos (is-genesis: true; no predecessor)
+//!   3. ball.asset            — archiform registry (@embedFile; D-014)
+//!   4. ball.action           — "palace-minted" dual-signed (NFR12)
+//!   5. ball.timeline         — root timeline with head_hashes = {action.fp}
+//!   6. ball.dreamball.field  — palace field (field-kind: "palace"; AC1)
 //!
 //! Wire format: TC14 — action + timeline at format-version 3; others at 2.
 
@@ -465,7 +465,7 @@ fn setFileMode0600(path: []const u8) !void {
 }
 
 // ── Signed action encoder ─────────────────────────────────────────────────────
-// Encodes a jelly.action envelope with attached "signed" attributes.
+// Encodes a ball.action envelope with attached "signed" attributes.
 // v2.Action has no signatures field (it is not a DreamBall), so we emit
 // the signed attribute pair directly using zbor + dcbor from the dreamball module.
 

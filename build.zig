@@ -248,6 +248,27 @@ pub fn build(b: *std.Build) void {
     const envelope_fixture_step = b.step("export-envelope-fixtures", "Write fixtures/envelope_golden/*.cbor for Vitest round-trip tests");
     envelope_fixture_step.dependOn(&envelope_fixture_run.step);
 
+    // export-palace-fixtures — regenerate the 6 negative-test palace fixtures
+    // under tests/fixtures/ used by scripts/cli-smoke.sh (palace verify AC5–AC10
+    // + rename-mythos AC4). Mints a real valid ball.* palace via the dreamball
+    // encoders, then applies one targeted mutation per fixture so each trips
+    // exactly one verify invariant. See tools/export-palace-fixtures/main.zig.
+    const palace_fixture_mod = b.createModule(.{
+        .root_source_file = b.path("tools/export-palace-fixtures/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    palace_fixture_mod.addImport("dreamball", mod);
+    // The signed-action encoder reaches zbor directly (same as the CLI mint path).
+    palace_fixture_mod.addImport("zbor", zbor_mod);
+    const palace_fixture_exe = b.addExecutable(.{
+        .name = "export-palace-fixtures",
+        .root_module = palace_fixture_mod,
+    });
+    const palace_fixture_run = b.addRunArtifact(palace_fixture_exe);
+    const palace_fixture_step = b.step("export-palace-fixtures", "Regenerate tests/fixtures/palace-* negative-test fixtures (ball.* envelopes)");
+    palace_fixture_step.dependOn(&palace_fixture_run.step);
+
     // export-mldsa-fixture — deterministic KAT vector for WASM verify tests.
     // Uses a seeded PRNG (tools/export-mldsa-fixture/deterministic_rand.c)
     // so the same fixtures/ml_dsa_87_golden.json bytes are produced on

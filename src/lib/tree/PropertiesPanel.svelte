@@ -86,7 +86,7 @@
 			case 'ml-dsa-87':
 				return [{ k: 'length', v: '4627 bytes' }, { k: 'status', v: selection.detail || 'placeholder · awaiting liboqs' }];
 			case 'secret':
-				return [{ k: 'count', v: '0' }, { k: 'storage', v: 'jelly.secret-ref · IndexedDB (encrypted)' }];
+				return [{ k: 'count', v: '0' }, { k: 'storage', v: 'ball.secret-ref · IndexedDB (encrypted)' }];
 			case 'field':
 			case 'avatar':
 			case 'agent':
@@ -94,7 +94,7 @@
 			case 'relic':
 			case 'guild':
 				return [
-					{ k: 'type', v: `jelly.dreamball.${kind}` },
+					{ k: 'type', v: `ball.dreamball.${kind}` },
 					{ k: 'stage', v: 'seed' },
 					{ k: 'format-version', v: '2' }
 				];

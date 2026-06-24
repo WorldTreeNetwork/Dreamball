@@ -3,16 +3,16 @@
 //! When the target is a palace bundle (detected by field-kind == "palace"),
 //! verify.zig routes here. Six invariants are checked:
 //!
-//!   (a) AC5: ≥1 direct room — palace contains at least one jelly.dreamball.field
+//!   (a) AC5: ≥1 direct room — palace contains at least one ball.dreamball.field
 //!       with field-kind == "room".
-//!   (b) AC6: oracle is sole direct Agent — exactly one jelly.dreamball.agent
+//!   (b) AC6: oracle is sole direct Agent — exactly one ball.dreamball.agent
 //!       directly contained; second one is rejected.
-//!   (c) AC7: action parent-hashes resolve — every jelly.action in the bundle
+//!   (c) AC7: action parent-hashes resolve — every ball.action in the bundle
 //!       has parent-hashes that are all resolvable within the CAS.
 //!   (d) AC8: mythos chain to single genesis — via mythos-chain.walkToGenesis
 //!       (imported directly, NOT copied; S3.4 AC6 contract).
 //!   (e) AC9: head-hashes are timeline leaves — every fp in the timeline's
-//!       head-hashes must be a jelly.action in CAS that is not referenced as a
+//!       head-hashes must be a ball.action in CAS that is not referenced as a
 //!       parent by any other action in the bundle (i.e., truly a leaf).
 //!   (f) AC10: oracle actor-fp — every action whose actor fp equals the oracle
 //!       fp must match the oracle fp derived from the oracle key file.
@@ -23,7 +23,7 @@
 //! ## NOT VERIFIED IN MVP — cryptographic signature check over action envelopes
 //!
 //! Invariants (a)–(f) are **structural**. This file does NOT verify the
-//! ed25519 + ML-DSA dual signatures carried in `jelly.action.signatures`
+//! ed25519 + ML-DSA dual signatures carried in `ball.action.signatures`
 //! against any signer public key. An attacker with CAS-write access can
 //! forge an action whose `actor` fp matches the oracle fp; verify will
 //! pass it. The MVP threat model (local-first, single-custodian per D-011)
@@ -247,7 +247,7 @@ fn detectFieldKind(buf: []const u8) ?[]const u8 {
 
 // ── Action parent-hashes extraction ───────────────────────────────────────────
 
-/// Extract parent-hashes from a jelly.action envelope. Returns gpa-owned slice.
+/// Extract parent-hashes from a ball.action envelope. Returns gpa-owned slice.
 fn parseActionParentHashes(gpa: Allocator, buf: []const u8) ![][32]u8 {
     var result: std.ArrayList([32]u8) = .empty;
     errdefer result.deinit(gpa);
@@ -348,7 +348,7 @@ fn parseActionParentHashes(gpa: Allocator, buf: []const u8) ![][32]u8 {
     return result.toOwnedSlice(gpa);
 }
 
-/// Extract the actor field (32-byte bstr) from a jelly.action envelope core map.
+/// Extract the actor field (32-byte bstr) from a ball.action envelope core map.
 fn parseActionActor(buf: []const u8) ?[32]u8 {
     var pos: usize = 0;
     if (pos + 1 < buf.len and buf[pos] == 0xD8) {
@@ -413,7 +413,7 @@ fn parseActionActor(buf: []const u8) ?[32]u8 {
     return null;
 }
 
-/// Extract head-hashes from a jelly.timeline envelope.
+/// Extract head-hashes from a ball.timeline envelope.
 fn parseTimelineHeadHashes(gpa: Allocator, buf: []const u8) ![][32]u8 {
     var result: std.ArrayList([32]u8) = .empty;
     errdefer result.deinit(gpa);
@@ -616,21 +616,21 @@ pub fn run(gpa: Allocator, palace_path: []const u8) !u8 {
         defer gpa.free(cbytes);
         const env_type = detectEnvelopeType(cbytes) orelse continue;
 
-        if (std.mem.eql(u8, env_type, "jelly.dreamball.agent")) {
+        if (std.mem.eql(u8, env_type, "ball.dreamball.agent")) {
             agent_count += 1;
             if (agent_count == 1) @memcpy(&first_agent_fp, &bfp);
-        } else if (std.mem.eql(u8, env_type, "jelly.dreamball.field")) {
+        } else if (std.mem.eql(u8, env_type, "ball.dreamball.field")) {
             const rfk = detectFieldKind(cbytes) orelse "";
             if (std.mem.eql(u8, rfk, "room")) {
                 room_count += 1;
             }
-        } else if (std.mem.eql(u8, env_type, "jelly.action")) {
+        } else if (std.mem.eql(u8, env_type, "ball.action")) {
             try action_fps.append(gpa, bfp);
             const actor = parseActionActor(cbytes) orelse [_]u8{0} ** 32;
             try action_actors.append(gpa, actor);
-        } else if (std.mem.eql(u8, env_type, "jelly.mythos")) {
+        } else if (std.mem.eql(u8, env_type, "ball.mythos")) {
             mythos_head_fp = bfp;
-        } else if (std.mem.eql(u8, env_type, "jelly.timeline")) {
+        } else if (std.mem.eql(u8, env_type, "ball.timeline")) {
             timeline_fp = bfp;
         }
     }
@@ -741,15 +741,15 @@ pub fn run(gpa: Allocator, palace_path: []const u8) !u8 {
         }
 
         for (head_hashes) |hh| {
-            // Must be a jelly.action in CAS
+            // Must be a ball.action in CAS
             const hbytes = casRead(gpa, cas_path, &hh);
             if (hbytes) |hb| {
                 defer gpa.free(hb);
                 const ht = detectEnvelopeType(hb) orelse "";
-                if (!std.mem.eql(u8, ht, "jelly.action")) {
+                if (!std.mem.eql(u8, ht, "ball.action")) {
                     const hex = palace_mint.hexArray(&hh);
                     try printStderr(
-                        "error: head-hash {s} is not a jelly.action (invariant e)\n",
+                        "error: head-hash {s} is not a ball.action (invariant e)\n",
                         .{&hex},
                     );
                     return 1;
@@ -853,7 +853,7 @@ test "detectFieldKind: returns null for short buffer" {
 test "parseActionParentHashes: empty parent-hashes array" {
     const allocator = std.testing.allocator;
     // A minimal action with empty parent-hashes.
-    // tag(200) array(1) tag(201) map(4) "type" "jelly.action" "actor" bstr[32] "action-kind" "palace-minted" "parent-hashes" array(0) "format-version" 3
+    // tag(200) array(1) tag(201) map(4) "type" "ball.action" "actor" bstr[32] "action-kind" "palace-minted" "parent-hashes" array(0) "format-version" 3
     // We use a hand-built buffer containing just the type field to check graceful empty result.
     const minimal: []const u8 = &[_]u8{
         0xD8, 0xC8, // tag(200)
@@ -861,7 +861,7 @@ test "parseActionParentHashes: empty parent-hashes array" {
         0xD8, 0xC9, // tag(201)
         0xA2,       // map(2)
         0x64, 't', 'y', 'p', 'e',
-        0x6B, 'j', 'e', 'l', 'l', 'y', '.', 'a', 'c', 't', 'i', 'o', 'n', // "jelly.action"
+        0x6B, 'b', 'a', 'l', 'l', '.', 'a', 'c', 't', 'i', 'o', 'n', // "ball.action"
         0x6E, 'p', 'a', 'r', 'e', 'n', 't', '-', 'h', 'a', 's', 'h', 'e', 's', // "parent-hashes"
         0x80, // array(0)
     };
@@ -888,7 +888,7 @@ test "parseTimelineHeadHashes: returns empty slice for empty array in timeline" 
         0xD8, 0xC9, // tag(201)
         0xA2,       // map(2)
         0x64, 't', 'y', 'p', 'e',
-        0x6E, 'j', 'e', 'l', 'l', 'y', '.', 't', 'i', 'm', 'e', 'l', 'i', 'n', 'e',
+        0x6D, 'b', 'a', 'l', 'l', '.', 't', 'i', 'm', 'e', 'l', 'i', 'n', 'e', // "ball.timeline"
         0x6E, 'f', 'o', 'r', 'm', 'a', 't', '-', 'v', 'e', 'r', 's', 'i', 'o', 'n',
         0x03,
     };

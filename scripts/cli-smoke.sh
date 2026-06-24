@@ -30,7 +30,7 @@ echo "==> show (text)"
 "$JELLY" show seed.jelly | grep -q "stage:"
 
 echo "==> show (json)"
-"$JELLY" show seed.jelly --format=json | grep -q '"type":"jelly.dreamball"'
+"$JELLY" show seed.jelly --format=json | grep -q '"type":"ball.dreamball"'
 
 echo "==> verify (pristine)"
 "$JELLY" verify seed.jelly
@@ -50,7 +50,7 @@ fi
 
 echo "==> export-json"
 "$JELLY" export-json seed.jelly --out seed.jelly.json > /dev/null
-grep -q '"type":"jelly.dreamball"' seed.jelly.json
+grep -q '"type":"ball.dreamball"' seed.jelly.json
 
 echo "==> seal / unseal (round-trip)"
 "$JELLY" seal seed.jelly --out seed.dragon.jelly > /dev/null

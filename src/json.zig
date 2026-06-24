@@ -53,7 +53,7 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     if (db.dreamball_type) |t| {
         try buf.writeAll(t.toWireString());
     } else {
-        try buf.writeAll("jelly.dreamball");
+        try buf.writeAll("ball.dreamball");
     }
     try buf.writeByte('"');
     try buf.writeByte(',');
@@ -210,7 +210,7 @@ fn writeEscapedString(buf: *Buf, s: []const u8) !void {
 fn writeAsset(allocator: Allocator, buf: *Buf, a: protocol.Asset) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.asset\"");
+    try buf.writeAll("\"ball.asset\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -251,7 +251,7 @@ fn writeAsset(allocator: Allocator, buf: *Buf, a: protocol.Asset) !void {
 fn writeSkill(allocator: Allocator, buf: *Buf, s: protocol.Skill) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.skill\"");
+    try buf.writeAll("\"ball.skill\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -294,7 +294,7 @@ fn writeSkill(allocator: Allocator, buf: *Buf, s: protocol.Skill) !void {
 fn writeLook(allocator: Allocator, buf: *Buf, l: protocol.Look) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.look\"");
+    try buf.writeAll("\"ball.look\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -329,7 +329,7 @@ fn writeLook(allocator: Allocator, buf: *Buf, l: protocol.Look) !void {
 fn writeFeel(buf: *Buf, f: protocol.Feel) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.feel\"");
+    try buf.writeAll("\"ball.feel\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -369,7 +369,7 @@ fn writeFeel(buf: *Buf, f: protocol.Feel) !void {
 fn writeAct(allocator: Allocator, buf: *Buf, a: protocol.Act) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.act\"");
+    try buf.writeAll("\"ball.act\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -458,7 +458,7 @@ fn dreamBallFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.
         else => return ImportError.InvalidJson,
     };
 
-    try expectStringEq(obj, "type", "jelly.dreamball");
+    try expectStringEq(obj, "type", "ball.dreamball");
 
     const identity = try decodeB58Field(arena, obj, "identity");
     if (identity.len != 32) return ImportError.InvalidJson;
@@ -585,7 +585,7 @@ fn assetFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Asse
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.asset");
+    try expectStringEq(obj, "type", "ball.asset");
     const mt_v = obj.get("media-type") orelse return ImportError.MissingField;
     const hash_bytes = try decodeB58Field(arena, obj, "hash");
     if (hash_bytes.len != 32) return ImportError.InvalidJson;
@@ -619,7 +619,7 @@ fn skillFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Skil
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.skill");
+    try expectStringEq(obj, "type", "ball.skill");
     const name_v = obj.get("name") orelse return ImportError.MissingField;
     var skill = protocol.Skill{ .name = try dupeString(arena, try getString(name_v)) };
     if (obj.get("trigger")) |t| skill.trigger = try dupeString(arena, try getString(t));
@@ -643,7 +643,7 @@ fn lookFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Look 
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.look");
+    try expectStringEq(obj, "type", "ball.look");
     var look = protocol.Look{};
     if (obj.get("asset")) |a| {
         const arr = switch (a) {
@@ -665,7 +665,7 @@ fn feelFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Feel 
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.feel");
+    try expectStringEq(obj, "type", "ball.feel");
     var feel = protocol.Feel{};
     if (obj.get("personality")) |p| feel.personality = try dupeString(arena, try getString(p));
     if (obj.get("voice")) |x| feel.voice = try dupeString(arena, try getString(x));
@@ -688,7 +688,7 @@ fn actFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Act {
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.act");
+    try expectStringEq(obj, "type", "ball.act");
     var act = protocol.Act{};
     if (obj.get("model")) |m| act.model = try dupeString(arena, try getString(m));
     if (obj.get("system-prompt")) |sp| act.system_prompt = try dupeString(arena, try getString(sp));
@@ -786,7 +786,7 @@ test "JSON export minimal seed" {
     };
     const json = try writeDreamBall(allocator, db);
     defer allocator.free(json);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"jelly.dreamball\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"ball.dreamball\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"stage\":\"seed\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"format-version\":1") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"identity\":\"b58:") != null);
@@ -826,7 +826,7 @@ test "JSON export with nested look/feel/act" {
     const json = try writeDreamBall(allocator, db);
     defer allocator.free(json);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"look\":{") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"jelly.look\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"ball.look\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"background\":\"color:#123\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"feel\":{") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"personality\":\"playful\"") != null);

@@ -1,5 +1,5 @@
 /**
- * action-mirror.ts — Sync a decoded jelly.action envelope into LadybugDB rows.
+ * action-mirror.ts — Sync a decoded ball.action envelope into LadybugDB rows.
  *
  * Responsibility (D-016 / S2.4):
  *   Given a decoded action envelope + palace context, write within one logical

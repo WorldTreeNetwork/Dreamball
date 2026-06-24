@@ -34,7 +34,7 @@
       "x-zig": "Stage"
     },
     "DreamBallType": {
-      "$comment": "The six DreamBall categories. Wire form is the short tag; envelope.type literal is `jelly.dreamball.<tag>`.",
+      "$comment": "The six DreamBall categories. Wire form is the short tag; envelope.type literal is `ball.dreamball.<tag>`.",
       "type": "string",
       "enum": ["avatar", "agent", "tool", "relic", "field", "guild"],
       "x-cbor": "text-string",
@@ -324,7 +324,7 @@
       "$comment": "Per src/protocol_v2.zig OmnisphericalGrid (PROTOCOL.md §12.2). resolution is forward-only — see VISION.md §4.4.5.",
       "type": "object",
       "x-zig-type": "OmnisphericalGrid",
-      "x-wire-type": "jelly.omnispherical-grid",
+      "x-wire-type": "ball.omnispherical-grid",
       "additionalProperties": false,
       "properties": {
         "pole-north": { "$ref": "#/$defs/Vec3" },
@@ -438,7 +438,7 @@
       "$comment": "Per src/protocol_v2.zig Memory (PROTOCOL.md §12.3).",
       "type": "object",
       "x-zig-type": "Memory",
-      "x-wire-type": "jelly.memory",
+      "x-wire-type": "ball.memory",
       "additionalProperties": false,
       "properties": {
         "nodes": {
@@ -475,7 +475,7 @@
       "$comment": "Per src/protocol_v2.zig KnowledgeGraph (PROTOCOL.md §12.4).",
       "type": "object",
       "x-zig-type": "KnowledgeGraph",
-      "x-wire-type": "jelly.knowledge-graph",
+      "x-wire-type": "ball.knowledge-graph",
       "additionalProperties": false,
       "properties": {
         "triples": {
@@ -507,7 +507,7 @@
       "$comment": "Per src/protocol_v2.zig EmotionalRegister (PROTOCOL.md §12.5).",
       "type": "object",
       "x-zig-type": "EmotionalRegister",
-      "x-wire-type": "jelly.emotional-register",
+      "x-wire-type": "ball.emotional-register",
       "additionalProperties": false,
       "properties": {
         "axes": {
@@ -561,7 +561,7 @@
       "$comment": "Per src/protocol_v2.zig InteractionSet (PROTOCOL.md §12.6). set-id is content-addressable: 16 random bytes at creation time.",
       "type": "object",
       "x-zig-type": "InteractionSet",
-      "x-wire-type": "jelly.interaction-set",
+      "x-wire-type": "ball.interaction-set",
       "required": ["set-id"],
       "additionalProperties": false,
       "properties": {
@@ -587,7 +587,7 @@
       "$comment": "Per src/protocol_v2.zig GuildPolicy (PROTOCOL.md §12.7). Slot bucket lists; default split is sensible.",
       "type": "object",
       "x-zig-type": "GuildPolicy",
-      "x-wire-type": "jelly.guild-policy",
+      "x-wire-type": "ball.guild-policy",
       "additionalProperties": false,
       "properties": {
         "public": {
@@ -617,7 +617,7 @@
       "$comment": "Per src/protocol_v2.zig SecretRef (PROTOCOL.md §12.8). locator is opaque (e.g. recrypt://…).",
       "type": "object",
       "x-zig-type": "SecretRef",
-      "x-wire-type": "jelly.secret-ref",
+      "x-wire-type": "ball.secret-ref",
       "required": ["name", "locator"],
       "additionalProperties": false,
       "properties": {
@@ -640,7 +640,7 @@
       "$comment": "Per src/protocol_v2.zig Transmission (PROTOCOL.md §12.9). When sender-identity is present the envelope bumps to format-version 3.",
       "type": "object",
       "x-zig-type": "Transmission",
-      "x-wire-type": "jelly.transmission",
+      "x-wire-type": "ball.transmission",
       "x-format-version": [2, 3],
       "required": ["tool-fp", "target-fp", "via-guild"],
       "additionalProperties": false,
@@ -701,7 +701,7 @@
       "$comment": "Per src/protocol_v2.zig Guild (PROTOCOL.md §12.1).",
       "type": "object",
       "x-zig-type": "Guild",
-      "x-wire-type": "jelly.dreamball.guild",
+      "x-wire-type": "ball.dreamball.guild",
       "required": ["guild-name", "keyspace-root-hash"],
       "additionalProperties": false,
       "properties": {
@@ -720,10 +720,10 @@
       }
     },
     "Relic": {
-      "$comment": "The 'sealed body' framing inlined on jelly.dreamball.relic envelopes. Lifted from tools/schema-gen/spike/schemas/sealed-body-2.0.0.json.",
+      "$comment": "The 'sealed body' framing inlined on ball.dreamball.relic envelopes. Lifted from tools/schema-gen/spike/schemas/sealed-body-2.0.0.json.",
       "type": "object",
       "x-zig-type": "Relic",
-      "x-wire-type": "jelly.dreamball.relic",
+      "x-wire-type": "ball.dreamball.relic",
       "x-format-version": 2,
       "x-cbor-attribute-encoding": "v2-tag-200-envelope-with-tag-201-leaf-and-attribute-pairs",
       "required": ["sealed-payload-hash", "unlock-guild"],
@@ -815,7 +815,7 @@
       "$comment": "Per src/protocol_v2.zig Layout (PROTOCOL.md §13.2).",
       "type": "object",
       "x-zig-type": "Layout",
-      "x-wire-type": "jelly.layout",
+      "x-wire-type": "ball.layout",
       "x-format-version": 2,
       "additionalProperties": false,
       "properties": {
@@ -833,7 +833,7 @@
       }
     },
     "ActionRef": {
-      "$comment": "Per src/protocol_v2.zig ActionRef — 32-byte Blake3 of a canonical jelly.action envelope.",
+      "$comment": "Per src/protocol_v2.zig ActionRef — 32-byte Blake3 of a canonical ball.action envelope.",
       "type": "string",
       "x-cbor": "byte-string-32",
       "x-zig": "[32]u8",
@@ -843,7 +843,7 @@
       "$comment": "Per src/protocol_v2.zig Timeline (PROTOCOL.md §13.3).",
       "type": "object",
       "x-zig-type": "Timeline",
-      "x-wire-type": "jelly.timeline",
+      "x-wire-type": "ball.timeline",
       "x-format-version": 3,
       "required": ["palace-fp", "head-hashes"],
       "additionalProperties": false,
@@ -868,7 +868,7 @@
       "$comment": "Per src/protocol_v2.zig Action (PROTOCOL.md §13.3). parent-hashes are ACKS; deps is disjoint logical dependencies; nacks are invalidated prior actions.",
       "type": "object",
       "x-zig-type": "Action",
-      "x-wire-type": "jelly.action",
+      "x-wire-type": "ball.action",
       "x-format-version": 3,
       "required": ["action-kind", "parent-hashes", "actor"],
       "additionalProperties": false,
@@ -907,7 +907,7 @@
       "$comment": "Per src/protocol_v2.zig Aqueduct (PROTOCOL.md §13.4). conductance is a snapshot accumulator — not load-bearing, MAY be absent (TC16). kind is open-enum.",
       "type": "object",
       "x-zig-type": "Aqueduct",
-      "x-wire-type": "jelly.aqueduct",
+      "x-wire-type": "ball.aqueduct",
       "x-format-version": 2,
       "required": ["from", "to", "kind"],
       "additionalProperties": false,
@@ -947,7 +947,7 @@
       "$comment": "Per src/protocol_v2.zig ElementTag (PROTOCOL.md §13.5). element + phase are open-enum.",
       "type": "object",
       "x-zig-type": "ElementTag",
-      "x-wire-type": "jelly.element-tag",
+      "x-wire-type": "ball.element-tag",
       "x-format-version": 2,
       "required": ["element"],
       "additionalProperties": false,
@@ -994,7 +994,7 @@
       "$comment": "Per src/protocol_v2.zig TrustObservation (PROTOCOL.md §13.6).",
       "type": "object",
       "x-zig-type": "TrustObservation",
-      "x-wire-type": "jelly.trust-observation",
+      "x-wire-type": "ball.trust-observation",
       "x-format-version": 2,
       "required": ["observer", "about"],
       "additionalProperties": false,
@@ -1030,7 +1030,7 @@
       "$comment": "Per src/protocol_v2.zig Inscription (PROTOCOL.md §13.7). surface is open-enum; placement = 'auto' | 'curator'.",
       "type": "object",
       "x-zig-type": "Inscription",
-      "x-wire-type": "jelly.inscription",
+      "x-wire-type": "ball.inscription",
       "x-format-version": 2,
       "required": ["surface"],
       "additionalProperties": false,
@@ -1042,7 +1042,7 @@
           "x-zig": "[]const u8"
         },
         "placement": {
-          "$comment": "auto = renderer chooses; curator = parent room's jelly.layout.",
+          "$comment": "auto = renderer chooses; curator = parent room's ball.layout.",
           "type": "string",
           "x-cbor": "text-string",
           "x-zig": "[]const u8"
@@ -1059,7 +1059,7 @@
       "$comment": "Per src/protocol_v2.zig Mythos (PROTOCOL.md §13.8). predecessor MUST be absent iff is-genesis is true. POETIC and CANONICAL fields differ — see PROTOCOL.md.",
       "type": "object",
       "x-zig-type": "Mythos",
-      "x-wire-type": "jelly.mythos",
+      "x-wire-type": "ball.mythos",
       "x-format-version": 2,
       "required": ["is-genesis"],
       "additionalProperties": false,
@@ -1126,7 +1126,7 @@
       "$comment": "Per src/protocol_v2.zig Archiform (PROTOCOL.md §13.9). form, tradition, parent-form are open-enum.",
       "type": "object",
       "x-zig-type": "Archiform",
-      "x-wire-type": "jelly.archiform",
+      "x-wire-type": "ball.archiform",
       "x-format-version": 2,
       "required": ["form"],
       "additionalProperties": false,
@@ -1162,7 +1162,7 @@
       "$comment": "The DreamBall wire envelope (src/protocol.zig DreamBall). Lifted from tools/schema-gen/spike/schemas/envelope-2.0.0.json + extended with the post-spike per-variant attribute surfaces (look, feel, act, memory, knowledge-graph, emotional-register, interaction-set, contains, derived-from, guilds, dreamball-type, identity-pq, field-kind). Discriminated-union over `type` × 7 variants — per spike Gap 1 the schema authors flat with closed enum; the per-variant `oneOf` narrowing is a Phase 3 generator concern.",
       "type": "object",
       "x-zig-type": "DreamBall",
-      "x-wire-type": "jelly.dreamball",
+      "x-wire-type": "ball.dreamball",
       "x-format-version": [1, 2, 3],
       "x-cbor-attribute-encoding": "v2-tag-200-envelope-with-tag-201-leaf-and-attribute-pairs",
       "required": ["type", "format-version", "stage", "identity", "genesis-hash", "revision"],
@@ -1172,13 +1172,13 @@
           "$comment": "Discriminator. Closed enum of 7 variants.",
           "type": "string",
           "enum": [
-            "jelly.dreamball",
-            "jelly.dreamball.avatar",
-            "jelly.dreamball.agent",
-            "jelly.dreamball.tool",
-            "jelly.dreamball.relic",
-            "jelly.dreamball.field",
-            "jelly.dreamball.guild"
+            "ball.dreamball",
+            "ball.dreamball.avatar",
+            "ball.dreamball.agent",
+            "ball.dreamball.tool",
+            "ball.dreamball.relic",
+            "ball.dreamball.field",
+            "ball.dreamball.guild"
           ],
           "x-cbor": "text-string",
           "x-zig": "DreamBallType",
@@ -1307,7 +1307,7 @@
           "x-cbor-section": "attribute"
         },
         "field-kind": {
-          "$comment": "§13.1 attribute on jelly.dreamball.field envelopes. Open-enum; values palace | room | ambient | ...",
+          "$comment": "§13.1 attribute on ball.dreamball.field envelopes. Open-enum; values palace | room | ambient | ...",
           "type": ["string", "null"],
           "x-cbor": "text-string",
           "x-zig": "?[]const u8",
@@ -1324,7 +1324,7 @@
           "x-ts-type": "Bytes32"
         },
         "sealed-payload-hash": {
-          "$comment": "Relic-variant only. Carried inline on jelly.dreamball.relic envelopes.",
+          "$comment": "Relic-variant only. Carried inline on ball.dreamball.relic envelopes.",
           "type": ["string", "null"],
           "x-cbor": "byte-string-32",
           "x-zig": "?[32]u8",

@@ -45,7 +45,7 @@ describe('jelly-wasm loader', () => {
 		//   0xD8 0xC8               tag 200 (envelope)
 		//   0xD8 0xC9               tag 201 (leaf)
 		//   0xA6                    map(6)
-		//     "type"          "jelly.dreamball"
+		//     "type"          "ball.dreamball"
 		//     "stage"         "seed"
 		//     "identity"      bytes(32)  all zeros
 		//     "revision"      0
@@ -57,7 +57,7 @@ describe('jelly-wasm loader', () => {
 			0xd8, 0xc8, 0xd8, 0xc9, 0xa6,
 			// "type"
 			0x64, 0x74, 0x79, 0x70, 0x65,
-			0x6f, 0x6a, 0x65, 0x6c, 0x6c, 0x79, 0x2e, 0x64, 0x72, 0x65, 0x61, 0x6d, 0x62, 0x61, 0x6c, 0x6c,
+			0x6e, 0x62, 0x61, 0x6c, 0x6c, 0x2e, 0x64, 0x72, 0x65, 0x61, 0x6d, 0x62, 0x61, 0x6c, 0x6c,
 			// "stage"
 			0x65, 0x73, 0x74, 0x61, 0x67, 0x65,
 			0x64, 0x73, 0x65, 0x65, 0x64,
@@ -94,7 +94,7 @@ describe('jelly-wasm loader', () => {
 		);
 		const parsed = JSON.parse(jsonText);
 
-		expect(parsed.type).toBe('jelly.dreamball');
+		expect(parsed.type).toBe('ball.dreamball');
 		expect(parsed.stage).toBe('seed');
 		expect(parsed['format-version']).toBe(1);
 		expect(parsed.revision).toBe(0);
@@ -116,7 +116,7 @@ describe('jelly-wasm loader', () => {
 	});
 
 	it('echoes a canonical JSON input', async () => {
-		const json = '{"type":"jelly.dreamball","stage":"seed","revision":0}';
+		const json = '{"type":"ball.dreamball","stage":"seed","revision":0}';
 		const bytes = new TextEncoder().encode(json);
 		wasm.reset();
 		const ptr = wasm.alloc(bytes.length);
@@ -128,6 +128,6 @@ describe('jelly-wasm loader', () => {
 		const jsonText = new TextDecoder().decode(
 			new Uint8Array(wasm.memory.buffer, resultPtr, resultLen)
 		);
-		expect(jsonText).toContain('"type":"jelly.dreamball"');
+		expect(jsonText).toContain('"type":"ball.dreamball"');
 	});
 });

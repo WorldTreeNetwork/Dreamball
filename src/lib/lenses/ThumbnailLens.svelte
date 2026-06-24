@@ -11,9 +11,9 @@
 	let { ball }: Props = $props();
 
 	const typeTag = $derived(
-		ball.type === 'jelly.dreamball'
+		ball.type === 'ball.dreamball'
 			? 'untyped'
-			: ball.type.replace('jelly.dreamball.', '')
+			: ball.type.replace('ball.dreamball.', '')
 	);
 	const fpShort = $derived(ball.identity.slice(4, 14));
 </script>

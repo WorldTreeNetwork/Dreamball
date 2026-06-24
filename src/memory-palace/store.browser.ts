@@ -1119,7 +1119,7 @@ export class BrowserStore implements StoreAPI {
     return rows.map((r) => ({
       fp: String(r.fp),
       surface: r.surface != null ? String(r.surface) : undefined,
-      // placement is null for MVP — jelly.layout nested decode deferred to Zig parser.
+      // placement is null for MVP — ball.layout nested decode deferred to Zig parser.
       placement: null,
     }));
   }

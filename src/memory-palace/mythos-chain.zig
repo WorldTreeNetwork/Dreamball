@@ -51,7 +51,7 @@ pub const CasLookupFn = *const fn (fp: *const [32]u8, userdata: ?*anyopaque) ?[]
 
 // ── Minimal CBOR parser for mythos fields ────────────────────────────────────
 //
-// We only need to extract two fields from a jelly.mythos envelope:
+// We only need to extract two fields from a ball.mythos envelope:
 //   - is-genesis (bool)
 //   - predecessor (optional 32-byte bstr)
 //
@@ -188,13 +188,13 @@ fn readTstr(buf: []const u8, pos: usize) ScanError!struct { key: []const u8, len
     return .{ .key = buf[start..end], .len = hlen + @as(usize, @intCast(slen)) };
 }
 
-/// Parsed fields from a jelly.mythos envelope.
+/// Parsed fields from a ball.mythos envelope.
 const MythosFields = struct {
     is_genesis: bool = false,
     predecessor: ?[32]u8 = null,
 };
 
-/// Scan the CBOR bytes of a jelly.mythos envelope and extract is-genesis and
+/// Scan the CBOR bytes of a ball.mythos envelope and extract is-genesis and
 /// predecessor. Tolerates extra fields (open-schema rule).
 ///
 /// The dCBOR encoding emitted by `envelope_v2.encodeMythos` is:
@@ -462,7 +462,7 @@ const TestCas = struct {
     }
 };
 
-/// Build a minimal dCBOR-encoded jelly.mythos envelope for testing.
+/// Build a minimal dCBOR-encoded ball.mythos envelope for testing.
 /// Only encodes the fields walkToGenesis cares about.
 fn buildTestMythosBytes(
     allocator: Allocator,
@@ -470,7 +470,7 @@ fn buildTestMythosBytes(
     predecessor: ?*const [32]u8,
 ) ![]u8 {
     // We build a hand-crafted dCBOR bytes that parseMythosFields can read.
-    // Format: tag(200) [ tag(201) {map("is-genesis"→bool, "type"→"jelly.mythos", "format-version"→2)},
+    // Format: tag(200) [ tag(201) {map("is-genesis"→bool, "type"→"ball.mythos", "format-version"→2)},
     //                    optional ["predecessor", bstr[32]] ]
     const zbor = @import("zbor");
     const dcbor_mod = @import("../dcbor.zig");
@@ -490,7 +490,7 @@ fn buildTestMythosBytes(
     // canonical order: "type"(4), "is-genesis"(10), "format-version"(14)
     try zbor.builder.writeMap(w, 3);
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.mythos");
+    try zbor.builder.writeTextString(w, "ball.mythos");
     try zbor.builder.writeTextString(w, "is-genesis");
     if (is_genesis) {
         try zbor.builder.writeTrue(w);

@@ -28,9 +28,9 @@ codegen`, commit the updated outputs.
 
 ## Why types.ts uses string literals for `type` discriminants
 
-The CBOR core carries `type: "jelly.dreamball.avatar"` (etc.).
+The CBOR core carries `type: "ball.dreamball.avatar"` (etc.).
 Mirroring that as a string literal type in TypeScript means the
-compiler can narrow on `ball.type === 'jelly.dreamball.avatar'`
+compiler can narrow on `ball.type === 'ball.dreamball.avatar'`
 and give you the right attribute surface for that variant. The
 short-tag form (`'avatar' | 'agent' | ...`) also appears as
 `DreamBallType` for CLI-adjacent UIs.

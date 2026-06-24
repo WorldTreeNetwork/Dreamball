@@ -1,7 +1,7 @@
 //! `jelly palace move` — move an inscription from one Room to another.
 //!
 //! Reads an existing palace bundle, validates both source and destination rooms,
-//! builds a new signed `jelly.action` of kind `"move"`, writes it to staging,
+//! builds a new signed `ball.action` of kind `"move"`, writes it to staging,
 //! invokes the bun bridge (`src/lib/bridge/palace-move.ts`) which updates:
 //!   - LadybugDB LIVES_IN edge (delete old, create new)
 //!   - oracle Agent knowledge_graph triple via updateTriple

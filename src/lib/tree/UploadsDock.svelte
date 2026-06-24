@@ -1,6 +1,6 @@
 <!--
   UploadsDock — drop-zone for authoring payloads. Files become
-  `jelly.asset` envelopes attached to the current DreamBall's `look`
+  `ball.asset` envelopes attached to the current DreamBall's `look`
   (visual) or `act.script` (executable) slot based on media type.
   Phase 0 accepts files into a local staging list; no envelope write yet.
 -->

@@ -10,7 +10,7 @@ import type { SynthesisedFruit } from './agent/MockAgent.js';
 export function fruitToJellyJson(fruit: SynthesisedFruit): unknown {
 	return {
 		_warning: 'mock — not real dCBOR, not signed. Phase 0/1 placeholder.',
-		type: `jelly.dreamball.${fruit.type}`,
+		type: `ball.dreamball.${fruit.type}`,
 		'format-version': 2,
 		stage: fruit.stage,
 		identity: fruit.identityFp,
@@ -67,7 +67,7 @@ export function downloadTreeBundle(meta: {
 }): void {
 	const env = {
 		_warning: 'mock — not real dCBOR. Phase-4 self-publish placeholder.',
-		type: 'jelly.dreamball.field',
+		type: 'ball.dreamball.field',
 		'format-version': 2,
 		stage: 'dreamball',
 		identity: 'b58:tree_identity_placeholder',

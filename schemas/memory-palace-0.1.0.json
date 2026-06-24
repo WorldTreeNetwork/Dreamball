@@ -80,7 +80,7 @@
       "x-zig-type": "InscriptionNode",
       "x-cypher-table": "Inscription",
       "x-cypher-kind": "node",
-      "x-wire-type": "jelly.inscription",
+      "x-wire-type": "ball.inscription",
       "x-format-version": 2,
       "required": ["fp"],
       "additionalProperties": false,
@@ -133,14 +133,14 @@
           "x-zig": "i64"
         },
         "surface": {
-          "$comment": "Open-enum surface from jelly.inscription wire type; e.g. scroll, tablet, book-spread.",
+          "$comment": "Open-enum surface from ball.inscription wire type; e.g. scroll, tablet, book-spread.",
           "type": ["string", "null"],
           "x-cbor": "text-string",
           "x-zig": "?[]const u8",
           "x-optional": true
         },
         "placement": {
-          "$comment": "auto = renderer chooses; curator = parent room's jelly.layout.",
+          "$comment": "auto = renderer chooses; curator = parent room's ball.layout.",
           "type": ["string", "null"],
           "x-cbor": "text-string",
           "x-zig": "?[]const u8",
@@ -250,7 +250,7 @@
       "x-zig-type": "MythosNode",
       "x-cypher-table": "Mythos",
       "x-cypher-kind": "node",
-      "x-wire-type": "jelly.mythos",
+      "x-wire-type": "ball.mythos",
       "x-format-version": 2,
       "required": ["fp"],
       "additionalProperties": false,
@@ -296,7 +296,7 @@
       "x-zig-type": "AqueductNode",
       "x-cypher-table": "Aqueduct",
       "x-cypher-kind": "node",
-      "x-wire-type": "jelly.aqueduct",
+      "x-wire-type": "ball.aqueduct",
       "x-format-version": 2,
       "required": ["fp"],
       "additionalProperties": false,
@@ -549,7 +549,7 @@
     },
 
     "ActionManifestEffects": {
-      "$comment": "Story 3.1: Closed kind enum describing the primary side-effect class of an action. ActionEnvelope = writes a signed jelly.action to the ActionLog; Read = read-only graph query; Derived = recomputes derived state from existing ActionLog entries (idempotent replay).",
+      "$comment": "Story 3.1: Closed kind enum describing the primary side-effect class of an action. ActionEnvelope = writes a signed ball.action to the ActionLog; Read = read-only graph query; Derived = recomputes derived state from existing ActionLog entries (idempotent replay).",
       "type": "object",
       "required": ["kind"],
       "additionalProperties": false,
@@ -799,7 +799,7 @@
     },
 
     "rename-mythos": {
-      "summary": "Append a new canonical jelly.mythos to a palace's true-name chain, producing a signed true-naming action.",
+      "summary": "Append a new canonical ball.mythos to a palace's true-name chain, producing a signed true-naming action.",
       "inputs": {
         "type": "object",
         "required": ["palace", "body"],

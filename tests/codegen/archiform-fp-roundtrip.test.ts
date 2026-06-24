@@ -89,7 +89,7 @@ describe('Story 2.3 — archiform_fp', () => {
 	it('AC2 — Valibot DreamBallSchema accepts a genesis envelope WITHOUT archiform-fp', () => {
 		// Sprint-001 wire shape: optional field absent. Must validate.
 		const sprint1Json = {
-			type: 'jelly.dreamball.field',
+			type: 'ball.dreamball.field',
 			'format-version': 2,
 			stage: 'seed',
 			identity: 'b58:ABC123' as const,
@@ -105,7 +105,7 @@ describe('Story 2.3 — archiform_fp', () => {
 		// Sprint-002 wire shape carries the optional field. Validator
 		// passes the new field through commonCore.
 		const sprint2Json = {
-			type: 'jelly.dreamball.field',
+			type: 'ball.dreamball.field',
 			'format-version': 2,
 			stage: 'seed',
 			identity: 'b58:ABC123' as const,

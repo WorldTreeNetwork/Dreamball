@@ -371,10 +371,10 @@ const BODY =
     \\  'archiform-fp': v.optional(Base58Schema)
     \\};
     \\
-    \\/** v1 legacy shape — `jelly.dreamball` with no subtype suffix. */
+    \\/** v1 legacy shape — `ball.dreamball` with no subtype suffix. */
     \\export const DreamBallUntypedSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball'),
+    \\  type: v.literal('ball.dreamball'),
     \\  look: v.optional(LookSchema),
     \\  feel: v.optional(FeelSchema),
     \\  act: v.optional(ActSchema)
@@ -382,14 +382,14 @@ const BODY =
     \\
     \\export const DreamBallAvatarSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball.avatar'),
+    \\  type: v.literal('ball.dreamball.avatar'),
     \\  look: v.optional(LookSchema),
     \\  feel: v.optional(FeelSchema)
     \\});
     \\
     \\export const DreamBallAgentSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball.agent'),
+    \\  type: v.literal('ball.dreamball.agent'),
     \\  look: v.optional(LookSchema),
     \\  feel: v.optional(FeelSchema),
     \\  act: v.optional(ActSchema),
@@ -403,14 +403,14 @@ const BODY =
     \\
     \\export const DreamBallToolSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball.tool'),
+    \\  type: v.literal('ball.dreamball.tool'),
     \\  skill: v.optional(SkillSchema),
     \\  'applicable-to': v.optional(v.array(v.string()))
     \\});
     \\
     \\export const DreamBallRelicSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball.relic'),
+    \\  type: v.literal('ball.dreamball.relic'),
     \\  'sealed-payload-hash': Base58Schema,
     \\  'unlock-guild': Base58Schema,
     \\  'reveal-hint': v.optional(v.string()),
@@ -419,7 +419,7 @@ const BODY =
     \\
     \\export const DreamBallFieldSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball.field'),
+    \\  type: v.literal('ball.dreamball.field'),
     \\  'omnispherical-grid': v.optional(OmnisphericalGridSchema),
     \\  'ambient-palette': v.optional(v.array(v.string())),
     \\  'dream-field-id': v.optional(v.string())
@@ -427,7 +427,7 @@ const BODY =
     \\
     \\export const DreamBallGuildSchema = v.object({
     \\  ...commonCore,
-    \\  type: v.literal('jelly.dreamball.guild'),
+    \\  type: v.literal('ball.dreamball.guild'),
     \\  'guild-name': v.optional(v.string()),
     \\  'keyspace-root-hash': v.optional(Base58Schema),
     \\  member: v.optional(v.array(Base58Schema)),
@@ -469,7 +469,7 @@ const BODY =
     \\});
     \\
     \\export const LayoutSchema = v.object({
-    \\  type: v.literal('jelly.layout'),
+    \\  type: v.literal('ball.layout'),
     \\  'format-version': v.literal(2),
     \\  placements: v.array(PlacementSchema),
     \\  note: v.optional(v.string())
@@ -488,7 +488,7 @@ const BODY =
     \\]);
     \\
     \\export const TimelineSchema = v.object({
-    \\  type: v.literal('jelly.timeline'),
+    \\  type: v.literal('ball.timeline'),
     \\  'format-version': v.literal(3),
     \\  'palace-fp': Base58Schema,
     \\  'head-hashes': v.array(Base58Schema),
@@ -496,7 +496,7 @@ const BODY =
     \\});
     \\
     \\export const ActionSchema = v.object({
-    \\  type: v.literal('jelly.action'),
+    \\  type: v.literal('ball.action'),
     \\  'format-version': v.literal(3),
     \\  'action-kind': ActionKindSchema,
     \\  actor: Base58Schema,
@@ -510,7 +510,7 @@ const BODY =
     \\export const AqueductPhaseSchema = v.picklist(['in', 'out', 'standing', 'resonant']);
     \\
     \\export const AqueductSchema = v.object({
-    \\  type: v.literal('jelly.aqueduct'),
+    \\  type: v.literal('ball.aqueduct'),
     \\  'format-version': v.literal(2),
     \\  from: Base58Schema,
     \\  to: Base58Schema,
@@ -525,7 +525,7 @@ const BODY =
     \\});
     \\
     \\export const ElementTagSchema = v.object({
-    \\  type: v.literal('jelly.element-tag'),
+    \\  type: v.literal('ball.element-tag'),
     \\  'format-version': v.literal(2),
     \\  element: v.string(),
     \\  phase: v.optional(v.string()),
@@ -539,7 +539,7 @@ const BODY =
     \\});
     \\
     \\export const TrustObservationSchema = v.object({
-    \\  type: v.literal('jelly.trust-observation'),
+    \\  type: v.literal('ball.trust-observation'),
     \\  'format-version': v.literal(2),
     \\  observer: Base58Schema,
     \\  about: Base58Schema,
@@ -550,7 +550,7 @@ const BODY =
     \\});
     \\
     \\export const InscriptionSchema = v.object({
-    \\  type: v.literal('jelly.inscription'),
+    \\  type: v.literal('ball.inscription'),
     \\  'format-version': v.literal(2),
     \\  surface: v.string(),
     \\  placement: v.string(),
@@ -558,7 +558,7 @@ const BODY =
     \\});
     \\
     \\export const MythosSchema = v.object({
-    \\  type: v.literal('jelly.mythos'),
+    \\  type: v.literal('ball.mythos'),
     \\  'format-version': v.literal(2),
     \\  'is-genesis': v.boolean(),
     \\  predecessor: v.optional(Base58Schema),
@@ -574,7 +574,7 @@ const BODY =
     \\});
     \\
     \\export const ArchiformSchema = v.object({
-    \\  type: v.literal('jelly.archiform'),
+    \\  type: v.literal('ball.archiform'),
     \\  'format-version': v.literal(2),
     \\  form: v.string(),
     \\  tradition: v.optional(v.string()),

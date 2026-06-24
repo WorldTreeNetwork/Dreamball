@@ -20,7 +20,7 @@ const envelope = @import("envelope.zig");
 const Fingerprint = @import("fingerprint.zig").Fingerprint;
 
 // ============================================================================
-// jelly.guild (§12.1.6) — a typed DreamBall envelope with a guild payload
+// ball.guild (§12.1.6) — a typed DreamBall envelope with a guild payload
 // attached as auxiliary attributes.
 // ============================================================================
 
@@ -54,7 +54,7 @@ pub fn encodeGuild(
     // dCBOR canonical ordering: sort keys by (len, lex)
     // "type"(4) < "identity"(8) < "genesis-hash"(12) < "format-version"(14)
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.dreamball.guild");
+    try zbor.builder.writeTextString(w, "ball.dreamball.guild");
     try zbor.builder.writeTextString(w, "identity");
     try zbor.builder.writeByteString(w, &identity);
     try zbor.builder.writeTextString(w, "genesis-hash");
@@ -111,7 +111,7 @@ fn writePolicy(w: *std.Io.Writer, p: v2.GuildPolicy) !void {
     try zbor.builder.writeTag(w, dcbor.Tag.leaf);
     try zbor.builder.writeMap(w, 5); // type, format-version, public, admin-only, guild-only
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.guild-policy");
+    try zbor.builder.writeTextString(w, "ball.guild-policy");
     try zbor.builder.writeTextString(w, "public");
     try zbor.builder.writeArray(w, p.public.len);
     for (p.public) |s| try zbor.builder.writeTextString(w, s);
@@ -126,7 +126,7 @@ fn writePolicy(w: *std.Io.Writer, p: v2.GuildPolicy) !void {
 }
 
 // ============================================================================
-// jelly.dreamball.relic (§12.1.4) — a typed DreamBall that wraps a sealed
+// ball.dreamball.relic (§12.1.4) — a typed DreamBall that wraps a sealed
 // inner node. Core carries `sealed-payload-hash` + `unlock-guild`.
 // ============================================================================
 
@@ -164,7 +164,7 @@ pub fn encodeRelic(
         protocol.FORMAT_VERSION_V2;
     try zbor.builder.writeMap(w, core_len);
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.dreamball.relic");
+    try zbor.builder.writeTextString(w, "ball.dreamball.relic");
     try zbor.builder.writeTextString(w, "identity");
     try zbor.builder.writeByteString(w, &identity);
     if (identity_pq) |pq| {
@@ -204,7 +204,7 @@ pub fn encodeRelic(
 }
 
 // ============================================================================
-// jelly.transmission (§12.9) — receipt of a Tool transfer.
+// ball.transmission (§12.9) — receipt of a Tool transfer.
 // ============================================================================
 
 pub fn encodeTransmission(
@@ -240,7 +240,7 @@ pub fn encodeTransmission(
         protocol.FORMAT_VERSION_V2;
     try zbor.builder.writeMap(w, core_len);
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.transmission");
+    try zbor.builder.writeTextString(w, "ball.transmission");
     try zbor.builder.writeTextString(w, "tool-fp");
     try zbor.builder.writeByteString(w, &t.tool_fp.bytes);
     try zbor.builder.writeTextString(w, "target-fp");
@@ -304,7 +304,7 @@ pub fn encodeMemory(allocator: Allocator, m: v2.Memory) ![]u8 {
     try zbor.builder.writeTag(w, dcbor.Tag.leaf);
     try zbor.builder.writeMap(w, 2);
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.memory");
+    try zbor.builder.writeTextString(w, "ball.memory");
     try zbor.builder.writeTextString(w, "format-version");
     try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
@@ -341,7 +341,7 @@ fn writeMemoryNode(w: *std.Io.Writer, n: v2.MemoryNode) !void {
     try zbor.builder.writeTextString(w, "id");
     try zbor.builder.writeInt(w, @intCast(n.id));
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.memory-node");
+    try zbor.builder.writeTextString(w, "ball.memory-node");
     try zbor.builder.writeTextString(w, "format-version");
     try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
@@ -391,7 +391,7 @@ fn writeMemoryConnection(w: *std.Io.Writer, e: v2.MemoryConnection) !void {
     try zbor.builder.writeTextString(w, "kind");
     try zbor.builder.writeTextString(w, e.kind.toWireString());
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.memory-connection");
+    try zbor.builder.writeTextString(w, "ball.memory-connection");
     try zbor.builder.writeTextString(w, "format-version");
     try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
@@ -418,7 +418,7 @@ pub fn encodeKnowledgeGraph(allocator: Allocator, kg: v2.KnowledgeGraph) ![]u8 {
     try zbor.builder.writeTag(w, dcbor.Tag.leaf);
     try zbor.builder.writeMap(w, 2);
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.knowledge-graph");
+    try zbor.builder.writeTextString(w, "ball.knowledge-graph");
     try zbor.builder.writeTextString(w, "format-version");
     try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
@@ -451,7 +451,7 @@ pub fn encodeEmotionalRegister(allocator: Allocator, er: v2.EmotionalRegister) !
     try zbor.builder.writeTag(w, dcbor.Tag.leaf);
     try zbor.builder.writeMap(w, 2);
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.emotional-register");
+    try zbor.builder.writeTextString(w, "ball.emotional-register");
     try zbor.builder.writeTextString(w, "format-version");
     try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
 
@@ -478,7 +478,7 @@ pub fn encodeEmotionalRegister(allocator: Allocator, er: v2.EmotionalRegister) !
 }
 
 // ============================================================================
-// §13.2 jelly.layout — encoder + decoder
+// §13.2 ball.layout — encoder + decoder
 // ============================================================================
 
 pub fn encodeLayout(allocator: Allocator, l: v2.Layout) ![]u8 {
@@ -677,7 +677,7 @@ pub fn decodeLayout(allocator: Allocator, bytes: []const u8) !struct {
 }
 
 // ============================================================================
-// §13.3 jelly.timeline — encoder + decoder
+// §13.3 ball.timeline — encoder + decoder
 // ============================================================================
 
 pub fn encodeTimeline(allocator: Allocator, t: v2.Timeline) ![]u8 {
@@ -778,7 +778,7 @@ pub fn decodeTimeline(allocator: Allocator, bytes: []const u8) !struct {
 }
 
 // ============================================================================
-// §13.3 jelly.action — encoder + decoder
+// §13.3 ball.action — encoder + decoder
 // ============================================================================
 
 pub fn encodeAction(allocator: Allocator, a: v2.Action) ![]u8 {
@@ -953,7 +953,7 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
 }
 
 // ============================================================================
-// §13.4 jelly.aqueduct — encoder + decoder
+// §13.4 ball.aqueduct — encoder + decoder
 // ============================================================================
 
 pub fn encodeAqueduct(allocator: Allocator, aq: v2.Aqueduct) ![]u8 {
@@ -1112,7 +1112,7 @@ pub fn decodeAqueduct(allocator: Allocator, bytes: []const u8) !v2.Aqueduct {
 }
 
 // ============================================================================
-// §13.5 jelly.element-tag — encoder + decoder
+// §13.5 ball.element-tag — encoder + decoder
 // ============================================================================
 
 pub fn encodeElementTag(allocator: Allocator, et: v2.ElementTag) ![]u8 {
@@ -1184,7 +1184,7 @@ pub fn decodeElementTag(bytes: []const u8) !v2.ElementTag {
 }
 
 // ============================================================================
-// §13.6 jelly.trust-observation — encoder + decoder
+// §13.6 ball.trust-observation — encoder + decoder
 // ============================================================================
 
 pub fn encodeTrustObservation(allocator: Allocator, to: v2.TrustObservation) ![]u8 {
@@ -1346,7 +1346,7 @@ pub fn decodeTrustObservation(allocator: Allocator, bytes: []const u8) !struct {
 }
 
 // ============================================================================
-// §13.7 jelly.inscription — encoder + decoder
+// §13.7 ball.inscription — encoder + decoder
 // ============================================================================
 
 pub fn encodeInscription(allocator: Allocator, ins: v2.Inscription) ![]u8 {
@@ -1415,7 +1415,7 @@ pub fn decodeInscription(bytes: []const u8) !v2.Inscription {
 }
 
 // ============================================================================
-// §13.8 jelly.mythos — encoder + decoder
+// §13.8 ball.mythos — encoder + decoder
 // ============================================================================
 
 pub fn encodeMythos(allocator: Allocator, m: v2.Mythos) ![]u8 {
@@ -1623,7 +1623,7 @@ pub fn decodeMythos(allocator: Allocator, bytes: []const u8) !struct {
 }
 
 // ============================================================================
-// §13.9 jelly.archiform — encoder + decoder
+// §13.9 ball.archiform — encoder + decoder
 // ============================================================================
 
 pub fn encodeArchiform(allocator: Allocator, ar: v2.Archiform) ![]u8 {
@@ -1736,7 +1736,7 @@ test "encodeLayout round-trip" {
     try std.testing.expectEqual(@as(u8, 0xC8), bytes[1]);
 
     // Type string present in bytes
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.layout") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.layout") != null);
     // Both child fingerprints present
     try std.testing.expect(std.mem.indexOfScalar(u8, bytes, 0x11) != null);
     try std.testing.expect(std.mem.indexOfScalar(u8, bytes, 0x22) != null);
@@ -1772,7 +1772,7 @@ test "encodeTimeline round-trip" {
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
     try std.testing.expectEqual(@as(u8, 0xC8), bytes[1]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.timeline") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.timeline") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "head-hashes") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "genesis") != null);
 
@@ -1834,7 +1834,7 @@ test "encodeAction round-trip" {
     defer allocator.free(bytes);
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.action") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.action") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "true-naming") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "action-kind") != null);
 
@@ -1904,7 +1904,7 @@ test "encodeAqueduct round-trip" {
     defer allocator.free(bytes);
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.aqueduct") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.aqueduct") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "gaze") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "resistance") != null);
 
@@ -1985,7 +1985,7 @@ test "encodeElementTag round-trip" {
     defer allocator.free(bytes);
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.element-tag") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.element-tag") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "wood") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "nourishing") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "growth energy") != null);
@@ -2024,7 +2024,7 @@ test "encodeTrustObservation round-trip" {
     defer allocator.free(bytes);
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.trust-observation") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.trust-observation") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "careful") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "generous") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "pair-programming") != null);
@@ -2051,7 +2051,7 @@ test "encodeInscription round-trip" {
     defer allocator.free(bytes);
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.inscription") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.inscription") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "scroll") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "curator") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "east wall") != null);
@@ -2087,7 +2087,7 @@ test "encodeMythos round-trip genesis" {
     defer allocator.free(bytes);
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.mythos") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.mythos") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "Audhumla") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "invocation") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "is-genesis") != null);
@@ -2140,7 +2140,7 @@ test "encodeArchiform round-trip" {
     defer allocator.free(bytes);
 
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "jelly.archiform") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.archiform") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "library") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "hermetic") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "atrium") != null);
@@ -2363,7 +2363,7 @@ test "encodeEmotionalRegister emits axis names" {
 // ============================================================================
 
 test "HIGH-1: decodeAction rejects non-canonical map-key ordering" {
-    // Build a jelly.action envelope whose CORE MAP has two equal-length keys
+    // Build a ball.action envelope whose CORE MAP has two equal-length keys
     // emitted in lex-reversed order ("type"=4 < "actor"=5 is fine; the
     // violation is at len 5 where we swap "actor" and a fake same-length key).
     // We actually violate by emitting "format-version"(14) BEFORE
@@ -2380,7 +2380,7 @@ test "HIGH-1: decodeAction rejects non-canonical map-key ordering" {
     // parent-hashes(13), format-version(14). We emit format-version BEFORE
     // parent-hashes — a length-14 before a length-13 key.
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.action");
+    try zbor.builder.writeTextString(w, "ball.action");
     try zbor.builder.writeTextString(w, "actor");
     try zbor.builder.writeByteString(w, &([_]u8{0} ** 32));
     try zbor.builder.writeTextString(w, "action-kind");

@@ -30,7 +30,7 @@ export interface Relic {
 }
 
 export interface DreamBall {
-  type: 'jelly.dreamball' | `jelly.dreamball.${DreamBallType}`;
+  type: 'ball.dreamball' | `ball.dreamball.${DreamBallType}`;
   'format-version': 1 | 2;
   stage: Stage;
   identity: Fingerprint;       // the Ed25519 pubkey in b58

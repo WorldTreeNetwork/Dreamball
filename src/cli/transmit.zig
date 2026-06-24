@@ -1,6 +1,6 @@
 //! `jelly transmit <tool.jelly> --to=<target-fp-b58> --via-guild=<guild-fp-b58> --sender-key=<keyfile> --out=<transmission.jelly>`
 //!
-//! Produces a signed `jelly.transmission` receipt recording the transfer of
+//! Produces a signed `ball.transmission` receipt recording the transfer of
 //! a Tool DreamBall to a target Agent via a shared Guild. Crypto is mocked
 //! per A2 (Ed25519 signing is real; no proxy-recryption).
 
