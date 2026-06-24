@@ -93,27 +93,27 @@ bytes. See [`docs/VISION.md §14`](docs/VISION.md) and
 ```
               ┌──────────────────────────────┐
               │  src/*.zig  (protocol core)  │ ← authority
-              └────────────┬─────────────────┘
-                           │
-           zig build   ┌───┴───┐   zig build wasm
-                       ▼       ▼
-              ┌───────────┐  ┌─────────────────────┐
-              │ dreamball CLI │  │  dreamball.wasm (109KB) │
-              └─────┬─────┘  └───┬──────────┬──────┘
-                    │            │          │
-                    ▼            ▼          ▼
-            ┌──────────────┐ ┌─────────┐ ┌──────────────┐
-            │  dev shell / │ │dreamball│ │  Svelte lib  │
-            │  MCP stdio   │ │ -server │ │  (browser)   │
-            │  server      │ │(Bun+Elysia│└──────────────┘
-            └──────────────┘ │ +Eden)  │
-                             └────┬────┘
-                                  │
-                                  ▼
-                         ┌────────────────┐
-                         │ recrypt-server │ ← ML-DSA-87 signing,
-                         │ (Rust + liboqs)│   Guild keyspaces (Phase D)
-                         └────────────────┘
+              └───────────────┬──────────────┘
+                              │
+              zig build   ┌───┴───┐   zig build wasm
+                          ▼       ▼
+                ┌─────────────────┐   ┌──────────────────────────┐
+                │  dreamball CLI  │   │  dreamball.wasm (109 KB) │
+                └────────┬────────┘   └────┬────────────────┬────┘
+                         │                 │                │
+                         ▼                 ▼                ▼
+              ┌──────────────────┐ ┌──────────────────┐ ┌──────────────┐
+              │  dev shell /     │ │  dreamball-      │ │  Svelte lib  │
+              │  MCP stdio       │ │  server          │ │  (browser)   │
+              │  server          │ │  (Bun+Elysia     │ └──────────────┘
+              └──────────────────┘ │   +Eden)         │
+                                   └────────┬─────────┘
+                                            │
+                                            ▼
+                                   ┌────────────────┐
+                                   │ recrypt-server │ ← ML-DSA-87 signing,
+                                   │ (Rust + liboqs)│   Guild keyspaces (Phase D)
+                                   └────────────────┘
 ```
 
 ---
