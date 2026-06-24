@@ -26,7 +26,7 @@ Sibling docs: [`PROTOCOL.md`](PROTOCOL.md) · [`VISION.md`](VISION.md) ·
      │  Store API / Domain verbs (D-007)            │  getPalace, roomContents, recordTraversal …
      │  — platform-neutral; adapter-swappable       │
      ├──────────────────────────────────────────────┤
-     │  Envelope layer (PROTOCOL.md)                │  jelly.dreamball.field, .palace, .room,
+     │  Envelope layer (PROTOCOL.md)                │  ball.dreamball.field, .palace, .room,
      │  — CBOR bytes; dual-signed; CAS-addressed    │   .inscription, .mythos, .aqueduct, .layout, …
      └──────────────────────────────────────────────┘
 ```
@@ -53,21 +53,21 @@ Sibling docs: [`PROTOCOL.md`](PROTOCOL.md) · [`VISION.md`](VISION.md) ·
 
 ## 2. The field / dreamfield / world-shader
 
-The outermost layer of a scene is `jelly.dreamball.field` (§12.1.5 in
+The outermost layer of a scene is `ball.dreamball.field` (§12.1.5 in
 PROTOCOL.md). Today it carries `omnispherical-grid`, `ambient-palette`,
 `dream-field-id`. **This envelope IS the world-shader layer** — the
 HDRI-equivalent for Dreamball scenes.
 
 ### 2.1 What a field declares
 
-- **Topology** — `jelly.omnispherical-grid` (polar: pole-north, pole-south,
+- **Topology** — `ball.omnispherical-grid` (polar: pole-north, pole-south,
   camera-ring {radius, tilt, fov}, layer-depth onion shells, resolution).
   Field-level space is *polar* because at the outermost layer the natural
   description is "distance from origin + angle" — nested dreamballs are
   reference frames inside the shell.
 - **Ambience** — `ambient-palette` (hex colors or asset refs). The
   Blender-HDRI analogue: sets the environmental light + sky + horizon tint.
-  Extensible: a future `hdri-source: <jelly.asset media-type=image/hdr>`
+  Extensible: a future `hdri-source: <ball.asset media-type=image/hdr>`
   attribute could carry a captured environment map without a breaking
   protocol change (new attribute, old readers ignore).
 - **Identity** — `dream-field-id` groups related fields (e.g. variants of
@@ -76,7 +76,7 @@ HDRI-equivalent for Dreamball scenes.
 ### 2.2 Extensions (follow-up sprints, reserved now)
 
 - **`splat-scene` attribute**: a field MAY carry a 3D Gaussian splat asset
-  (`jelly.asset` with media-type `application/splat+sog` or `+spz`) as its
+  (`ball.asset` with media-type `application/splat+sog` or `+spz`) as its
   environmental geometry. The splat sits as the shell; inscriptions and
   rooms live inside it in local cartesian frames. Authoring tooling for
   importing splat captures into a Dreamball field is a future concern
@@ -100,7 +100,7 @@ is the Blender analogy, used only as a communication shortcut.
 
 ## 3. Content modalities — how a "thing" gets its pixels
 
-A Dreamball object's visual body is carried as a `jelly.asset` (Blake3-
+A Dreamball object's visual body is carried as a `ball.asset` (Blake3-
 addressed bytes + media-type). The lens picks a renderer path based on the
 media-type of the asset AND the inscription/object's `surface` hint:
 
@@ -162,7 +162,7 @@ pragmatic hybrid.
   generation, cinematic renders of a palace for presentation, authoring
   tooling.
 - Blender consumes the same envelopes via a Python add-on that calls into
-  `jelly.wasm` for decode, then builds a Blender scene graph: field →
+  `dreamball.wasm` for decode, then builds a Blender scene graph: field →
   World Shader node-graph (ambient-palette + HDRI); rooms → collections;
   inscriptions → text objects + materials; splat-scene → the `io_scene_gsplat`
   extension ecosystem (multiple shipping 2025).
@@ -181,13 +181,13 @@ pragmatic hybrid.
 
 **Dreamball's protocol operates in two coordinate regimes:**
 
-1. **Outermost / field layer — polar.** The `jelly.omnispherical-grid`
+1. **Outermost / field layer — polar.** The `ball.omnispherical-grid`
    defines pole-north, pole-south, camera-ring (radius/tilt/fov), and
    onion-shell layer depth. Positions on the shell are implicitly (r, θ, φ)
    by the grid's resolution. The dreamfield is a polar shell, not a box.
 
 2. **Inner / placement layer — cartesian, local to parent.**
-   `jelly.layout.placement.position: [x, y, z]` is a cartesian offset
+   `ball.layout.placement.position: [x, y, z]` is a cartesian offset
    from the parent dreamball's origin. No global coords exist. Nested
    dreamballs compose as nested reference frames.
 
@@ -212,7 +212,7 @@ boundary.
 - Cartesian-to-polar is lossy at the origin (undefined φ at r=0) —
   protocol bugs hide in that edge case.
 - The *semantic* polar-ness of dreamballs is already captured at the
-  outer layer by `jelly.omnispherical-grid` — inner placements don't
+  outer layer by `ball.omnispherical-grid` — inner placements don't
   need to re-litigate it.
 - Nested reference frames give you the polar-ness for free: a room at
   radius 3, angle (30°, 60°) on the palace shell translates to a
@@ -267,13 +267,13 @@ See [ADR 2026-04-24-surface-registry.md](decisions/2026-04-24-surface-registry.m
 
 | Point | Where | Purpose |
 |---|---|---|
-| `jelly.dreamball.field.splat-scene` | PROTOCOL.md §12.1.5 | Environmental splat capture |
-| `jelly.dreamball.field.hdri-cubemap` | PROTOCOL.md §12.1.5 | Captured environment probe |
-| `jelly.dreamball.field.worldshader-program` | PROTOCOL.md §12.1.5 | Parametric shader DSL |
-| `jelly.inscription.fallback` | PROTOCOL.md §13.7 | Cross-engine surface degradation |
-| `application/splat+sog` / `+spz` / `+ply` media-types | `jelly.asset` | Splat content modality |
-| `application/worldshader+v1` media-type | `jelly.asset` | Procedural shader DSL |
-| Real-space import pipeline | Tooling (not protocol) | Convert captured spaces (photogrammetry / LiDAR / splat) into `jelly.dreamball.field` bundles with splat-scene + layout | Offline tool; no wire change |
+| `ball.dreamball.field.splat-scene` | PROTOCOL.md §12.1.5 | Environmental splat capture |
+| `ball.dreamball.field.hdri-cubemap` | PROTOCOL.md §12.1.5 | Captured environment probe |
+| `ball.dreamball.field.worldshader-program` | PROTOCOL.md §12.1.5 | Parametric shader DSL |
+| `ball.inscription.fallback` | PROTOCOL.md §13.7 | Cross-engine surface degradation |
+| `application/splat+sog` / `+spz` / `+ply` media-types | `ball.asset` | Splat content modality |
+| `application/worldshader+v1` media-type | `ball.asset` | Procedural shader DSL |
+| Real-space import pipeline | Tooling (not protocol) | Convert captured spaces (photogrammetry / LiDAR / splat) into `ball.dreamball.field` bundles with splat-scene + layout | Offline tool; no wire change |
 
 None of the wire-level entries require a format-version bump to land
 (all optional attributes or new media-types on existing envelope

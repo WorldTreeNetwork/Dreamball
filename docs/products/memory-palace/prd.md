@@ -135,20 +135,20 @@ small set of new envelope types that describe the topology honestly.
 
 | Palace concept | DreamBall v2 home |
 |---|---|
-| The palace itself | `jelly.dreamball.field` with a `palace` subtype marker |
-| Rooms | nested `jelly.dreamball.field` children via `contains` (fractal §3 of VISION) |
-| Items on shelves / in chests | `jelly.dreamball.avatar` or `jelly.dreamball.tool` children |
-| The oracle at the zero point | `jelly.dreamball.agent` at the palace's core |
-| Locked doors / keys / passwords | Existing IdentiKey + `jelly.dreamball.relic` unlocked via Guild membership |
-| Library inscriptions (markdown) | `jelly.asset` (media-type `text/markdown`) attached to avatar-typed DreamBalls whose `look` encodes inscription geometry |
-| Guilds of palace-dwellers | `jelly.dreamball.guild` (v2) with per-slot policy |
-| Timeline / rewind | **New**: `jelly.timeline` (DAG of signed actions; §5.3) |
-| Aqueducts between rooms | **New**: `jelly.aqueduct` (typed connection with Vril flow properties — resistance, capacitance, conductance; §5.4) |
+| The palace itself | `ball.dreamball.field` with a `palace` subtype marker |
+| Rooms | nested `ball.dreamball.field` children via `contains` (fractal §3 of VISION) |
+| Items on shelves / in chests | `ball.dreamball.avatar` or `ball.dreamball.tool` children |
+| The oracle at the zero point | `ball.dreamball.agent` at the palace's core |
+| Locked doors / keys / passwords | Existing IdentiKey + `ball.dreamball.relic` unlocked via Guild membership |
+| Library inscriptions (markdown) | `ball.asset` (media-type `text/markdown`) attached to avatar-typed DreamBalls whose `look` encodes inscription geometry |
+| Guilds of palace-dwellers | `ball.dreamball.guild` (v2) with per-slot policy |
+| Timeline / rewind | **New**: `ball.timeline` (DAG of signed actions; §5.3) |
+| Aqueducts between rooms | **New**: `ball.aqueduct` (typed connection with Vril flow properties — resistance, capacitance, conductance; §5.4) |
 | Vril (life-force substance) | No new envelope — measured from timeline traversals, carried on aqueducts as flow properties (§5.4), rendered as ambient liveliness |
-| Archiform (temple / forge / library / …) | **New**: `jelly.archiform` (archetypal form classification — different axis from the six v2 types; §5.9) |
-| Elemental taxonomy | **New**: `jelly.element-tag` (open set of element-IDs on any DreamBall; §5.5) |
-| Decentralized reputation | **New**: `jelly.trust-observation` (local, signed, non-aggregating; §5.6) |
-| Keystone mythos | **New**: `jelly.mythos` chain — condensed poetic seed present from DreamSeed onward, evolving through signed true-namings; §5.8 |
+| Archiform (temple / forge / library / …) | **New**: `ball.archiform` (archetypal form classification — different axis from the six v2 types; §5.9) |
+| Elemental taxonomy | **New**: `ball.element-tag` (open set of element-IDs on any DreamBall; §5.5) |
+| Decentralized reputation | **New**: `ball.trust-observation` (local, signed, non-aggregating; §5.6) |
+| Keystone mythos | **New**: `ball.mythos` chain — condensed poetic seed present from DreamSeed onward, evolving through signed true-namings; §5.8 |
 | Resonant / half-remembered recall | Not on the wire — a **runtime kernel** (§6.3) that sits between the vector store and the LLM context window |
 
 Containment is fractal and symmetric in v1/v2 already. The palace just
@@ -188,17 +188,17 @@ public surface (facade, maybe a courtyard), never interior.
 ## 4. User Journeys
 
 **J1 — Activate the fountain.**
-A new wayfarer runs `jelly mint --type=palace --name "my-palace"`. The
+A new wayfarer runs `dreamball mint --type=palace --name "my-palace"`. The
 CLI produces a Field DreamBall with one child Agent (the oracle,
 default name "Murmuring Well") sitting at the palace's zero point. The
 oracle's `personality-master-prompt` is seeded from a template the
-wayfarer selects. On first `jelly palace open`, the browser renders
+wayfarer selects. On first `dreamball palace open`, the browser renders
 the palace via the `omnispherical` lens with a single lit room
 (the courtyard containing the fountain). Every other room is a dark
 silhouette, loadable on demand.
 
 **J2 — Inscribe a document into the library.**
-The wayfarer runs `jelly palace inscribe --room library docs/PROTOCOL.md`.
+The wayfarer runs `dreamball palace inscribe --room library docs/PROTOCOL.md`.
 A new Avatar DreamBall is minted whose `look` carries the document as
 both a `text/markdown` asset *and* a geometric inscription spec (text
 wrapped onto a low-poly scroll or tablet mesh). The DreamBall is
@@ -220,7 +220,7 @@ added to the timeline.
 
 **J4 — Receive a shared room.**
 A guild-scribe peer publishes a shared library room as a Relic and
-transmits the unlock capability via `jelly transmit`. The wayfarer's
+transmits the unlock capability via `dreamball transmit`. The wayfarer's
 palace now shows a new door that wasn't there before. Walking through
 it enters the shared room; the local palace's containment connection points
 to the remote room by fingerprint, and the remote room's policy
@@ -253,7 +253,7 @@ breaking it.
 ### 5.1 The `field-kind` marker (attribute)
 
 The palace is a Field DreamBall. v2 already defines
-`jelly.dreamball.field` (`docs/PROTOCOL.md §12.1.5`). We add a single
+`ball.dreamball.field` (`docs/PROTOCOL.md §12.1.5`). We add a single
 optional **attribute** to distinguish a palace-flavoured field:
 
 ```
@@ -272,7 +272,7 @@ through the palace view (§6.1). Present with `"room"`, the field is
 treated as a palace's contained child and renders only when the
 parent palace is the current active Field.
 
-### 5.2 `jelly.layout`
+### 5.2 `ball.layout`
 
 A Room/Palace Field carries a `layout` attribute that records where
 its children sit in its local coordinate frame. The layout itself is
@@ -282,7 +282,7 @@ the Room-of-Requirement behaviour wants.
 
 ```
 200(
-  201({ "type": "jelly.layout", "format-version": 2 })
+  201({ "type": "ball.layout", "format-version": 2 })
 ) [
   "placement":  { "child-fp": h'…32…', "position": [x, y, z], "facing": [qx, qy, qz, qw] },
   "placement":  { … },                                              ; repeatable
@@ -291,10 +291,10 @@ the Room-of-Requirement behaviour wants.
 ```
 
 Coordinates use the dCBOR float exception already carved out for
-`jelly.omnispherical-grid` (see PROTOCOL §12.2). Layouts are cheap to
+`ball.omnispherical-grid` (see PROTOCOL §12.2). Layouts are cheap to
 re-sign; the palace renderer may keep several and pick contextually.
 
-### 5.3 `jelly.timeline`
+### 5.3 `ball.timeline`
 
 The timeline is a signed DAG of actions taken inside the palace.
 It is **append-only** per keypair and **Merkle-rooted** so that any
@@ -303,12 +303,12 @@ detection) can be derived without a central authority.
 
 ```
 200(
-  201({ "type": "jelly.timeline", "format-version": 2,
+  201({ "type": "ball.timeline", "format-version": 2,
         "palace-fp":  h'…32…'                   ; identity anchor — which palace this timeline belongs to
   })
 ) [
   "head-hash":       h'…32…',                   ; Blake3 of the latest action envelope (attribute, updated on every append)
-  "action":          <jelly.action envelope>,   ; repeatable, ordered by parent-hash chain
+  "action":          <ball.action envelope>,   ; repeatable, ordered by parent-hash chain
   [salted] "note":   "v2.0 genesis timeline"
 ]
 ```
@@ -321,7 +321,7 @@ the timeline on every append still happens (the revision bumps), but
 the core digest doesn't churn — making the chain cheaper to
 verify and easier to hash-cache.
 
-`jelly.action` core: `{ type, format-version, action-kind: "inscribe"|"move"|"unlock"|…, parent-hashes: [h'…', h'…'] }`.
+`ball.action` core: `{ type, format-version, action-kind: "inscribe"|"move"|"unlock"|…, parent-hashes: [h'…', h'…'] }`.
 Multiple parent hashes allow merge semantics; the common case is a
 single parent (linear history). Signatures cover the core digest
 plus the attribute digests; verifying the chain verifies every
@@ -333,7 +333,7 @@ be reconciled at read time by ordering-commutative merge of disjoint
 action sets. Conflict resolution (who "wins" when two actors move the
 same item) is out of scope for v1 of this spec — §8 open question.
 
-### 5.4 `jelly.aqueduct`
+### 5.4 `ball.aqueduct`
 
 An aqueduct is a typed, directed connection between two Rooms (or more
 generally, between two DreamBalls in the palace) carrying **Vril**,
@@ -343,7 +343,7 @@ electrical-style properties:
 
 ```
 200(
-  201({ "type": "jelly.aqueduct", "format-version": 2,
+  201({ "type": "ball.aqueduct", "format-version": 2,
         "from": h'…32…', "to": h'…32…',
         "kind": "gaze"|"visit"|"transmit"|"inscribe"|"resource"|"ley-line"|…
   })
@@ -377,7 +377,7 @@ the basement is where a wayfarer *holds* something but doesn't yet
 *release* it. This is a debuggable property, not a vibe.
 
 Traversal updates aqueduct `strength` (and by extension the cached
-`conductance`); the update is emitted as a `jelly.action` on the
+`conductance`); the update is emitted as a `ball.action` on the
 timeline so it can be replayed and attributed. Vril itself is not a
 declared quantity — it is *computed* by the runtime from the signed
 action history (§6.2), and a full rebuild of Vril state from CAS is
@@ -413,7 +413,7 @@ Consequences the protocol accepts:
 - Think of the number as a neural-pathway multiplier, updated
   lazily, always re-derivable.
 
-### 5.5 `jelly.element-tag`
+### 5.5 `ball.element-tag`
 
 Elemental taxonomy (5-element destruction/nourishment, 9-element
 phase, yin/yang) is an *optional* classification every DreamBall in
@@ -421,7 +421,7 @@ the palace may carry. It's a tag, not a type:
 
 ```
 200(
-  201({ "type": "jelly.element-tag", "format-version": 2 })
+  201({ "type": "ball.element-tag", "format-version": 2 })
 ) [
   "element":    "wood",                             ; repeatable; open enum
   "phase":      "nourishing",                       ; optional qualifier
@@ -436,7 +436,7 @@ associative reasoning. The tag has **no privileged meaning at the
 protocol level** — it is decoration that downstream systems can
 elect to honour.
 
-### 5.6 `jelly.trust-observation`
+### 5.6 `ball.trust-observation`
 
 Reputation in the palace is **decentralised by construction**. It is
 never a single scalar; it is a signed, local observation that each
@@ -445,7 +445,7 @@ own palace* with the observer's own priors.
 
 ```
 200(
-  201({ "type": "jelly.trust-observation", "format-version": 2,
+  201({ "type": "ball.trust-observation", "format-version": 2,
         "observer": h'…32…',      ; who is making the claim
         "about":    h'…32…'       ; about whom (fingerprint of the party being observed)
   })
@@ -466,7 +466,7 @@ Critical constraints:
   social-graph distance (shared Guilds, direct interactions,
   transitive-recryption-depth).
 - Observations **do not propagate automatically**. Transport is an
-  explicit `jelly transmit` act scoped to a Guild, exactly like Tool
+  explicit `dreamball transmit` act scoped to a Guild, exactly like Tool
   transmission.
 - Observations are **slot-level private** by default — the guild
   policy's `guild-only` bucket covers them unless the observer
@@ -475,18 +475,18 @@ Critical constraints:
 This is the minimum wire shape that makes §1's "information can be
 derived from the network without a central truth" realisable.
 
-### 5.7 `jelly.inscription`
+### 5.7 `ball.inscription`
 
 The library concept requires a specific Avatar subtype: a DreamBall
 whose `look` geometry is *text arranged in space*. We don't need a
-new top-level type — an Avatar DreamBall with a `jelly.inscription`
+new top-level type — an Avatar DreamBall with a `ball.inscription`
 attribute is sufficient:
 
 ```
 200(
-  201({ "type": "jelly.inscription", "format-version": 2 })
+  201({ "type": "ball.inscription", "format-version": 2 })
 ) [
-  "source":      <jelly.asset envelope>,            ; media-type: text/markdown (or text/plain, text/asciidoc…)
+  "source":      <ball.asset envelope>,            ; media-type: text/markdown (or text/plain, text/asciidoc…)
   "surface":     "scroll"|"tablet"|"book-spread"|"etched-wall"|"floating-glyph"|…,
   "placement":   "auto"|"curator",                  ; auto → renderer chooses; curator → manual layout in parent room
   [salted] 'note': "lives on the east wall"
@@ -500,11 +500,11 @@ asset, the markdown file on disk and the inscription in the palace
 share a Blake3 identity — edits to the file on disk propagate to the
 palace via the oracle's file-watcher skill.
 
-### 5.8 `jelly.mythos`
+### 5.8 `ball.mythos`
 
-The keystone. A `jelly.mythos` attribute MAY appear on any DreamBall
+The keystone. A `ball.mythos` attribute MAY appear on any DreamBall
 and MUST appear on every DreamBall whose core type is
-`jelly.dreamball.field` where `field-kind == "palace"`. The mythos
+`ball.dreamball.field` where `field-kind == "palace"`. The mythos
 is the **shortest coherent statement of what this DreamBall is** —
 closer to a blurb, a totem, or an opening line of cosmology than to
 a description. It is present from DreamSeed onward; a seed without a
@@ -513,17 +513,17 @@ composition.
 
 ```
 200(
-  201({ "type": "jelly.mythos", "format-version": 2,
+  201({ "type": "ball.mythos", "format-version": 2,
         "is-genesis": false,                        ; true only on the first-ever mythos of this chain (canonical or poetic)
-        "predecessor": h'…32…'                     ; Blake3 of the previous jelly.mythos envelope; absent iff is-genesis
+        "predecessor": h'…32…'                     ; Blake3 of the previous ball.mythos envelope; absent iff is-genesis
   })
 ) [
   "about":        h'…32…',                                           ; present on poetic chains — fingerprint of the palace this is about; absent on canonical (embedded)
   "form":         "blurb"|"invocation"|"image"|"utterance"|"glyph"|"true-name"|…,
   "body":         "There is a giant cow beside the chaos abyss.",   ; the mythos in its full poetic form
   "true-name":    "Audhumla",                                        ; optional — the condensed totem name, if one has surfaced
-  "source":       <jelly.asset envelope>,                            ; optional longer form (essay, recorded reading)
-  "discovered-in":<jelly.action-ref>,                                ; canonical only — the 'true-naming' action that surfaced this mythos
+  "source":       <ball.asset envelope>,                            ; optional longer form (essay, recorded reading)
+  "discovered-in":<ball.action-ref>,                                ; canonical only — the 'true-naming' action that surfaced this mythos
   "inspired-by":  [h'…32…', h'…32…'],                               ; poetic only — other mythoi this author was thinking with
   "synthesizes":  [h'…32…', h'…32…'],                               ; canonical only — poetic mythoi that informed this renaming
   [salted] "author":       h'…32…',
@@ -543,7 +543,7 @@ only on poetic links. Mixing these is a protocol error and is
 rejected at verify time.
 
 **The chain of mythoi.** A palace's mythos is a **linked chain**,
-not a single value. The first `jelly.mythos` carries
+not a single value. The first `ball.mythos` carries
 `is-genesis: true` and no `predecessor`; every subsequent mythos
 carries `is-genesis: false` and a `predecessor` hash pointing at its
 immediate ancestor. The chain is verifiable end-to-end exactly the
@@ -572,11 +572,11 @@ author's own predecessor chain of self-renamings.
 The canonical chain and the poetic chains are **different objects**:
 
 - **Canonical chain** — signed by the palace's custodian(s) (solo
-  wayfarer, or Guild admin). Embedded as a `jelly.mythos` attribute
+  wayfarer, or Guild admin). Embedded as a `ball.mythos` attribute
   on the palace DreamBall. Appears on the fountain's ring of
   lanterns (FR60f). Load-bearing on the palace's identity.
 - **Poetic chain** — signed by a visitor. A standalone
-  `jelly.mythos`-shaped envelope carrying an `about: <palace-fp>`
+  `ball.mythos`-shaped envelope carrying an `about: <palace-fp>`
   attribute. Discoverable via the archiform/mythos registry at
   `aspects.sh` (§5.9) or a palace's local query endpoint.
   Decorative on the palace's identity; load-bearing on the
@@ -586,7 +586,7 @@ The canonical chain and the poetic chains are **different objects**:
 **Rules the palace imposes:**
 
 - The **genesis canonical mythos is immutable**. Only the first
-  custodian-signed `jelly.mythos` is load-bearing on the palace's
+  custodian-signed `ball.mythos` is load-bearing on the palace's
   identity; attempting to alter it after publication is rejected.
 - **The canonical chain is append-only** and extended only by
   custodian(s). Non-custodian chains pointing at the palace are
@@ -596,7 +596,7 @@ The canonical chain and the poetic chains are **different objects**:
   palace) and grows as their experience of the palace grows. A
   visitor may have poetic chains for many palaces; each is rooted
   at its own `about` fingerprint.
-- **Every canonical true-naming is paired with a `jelly.action` of
+- **Every canonical true-naming is paired with a `ball.action` of
   kind `"true-naming"`** on the palace timeline. The action carries
   the discovery context — the conversation with the oracle, the
   aqueducts that surfaced it, a short human reflection — and its
@@ -610,7 +610,7 @@ The canonical chain and the poetic chains are **different objects**:
   a personal act, not a palace-state change.
 - **Synthesis: how a canonical renaming acknowledges poetic input.**
   When a custodian extends the canonical chain after a
-  `jelly palace reflect` session (FR60e), the new canonical mythos
+  `dreamball palace reflect` session (FR60e), the new canonical mythos
   MAY carry a `synthesizes: [<poetic-mythos-fp>, …]` attribute
   citing which poetic chains the oracle drew from. This turns the
   canonical chain into a record not only of what the palace has
@@ -619,7 +619,7 @@ The canonical chain and the poetic chains are **different objects**:
 - **Fork: when poetic mythoi diverge beyond synthesis.** If a
   visitor's poetic chain has drifted so far from the palace's
   canonical chain that no synthesis can bridge them, the visitor
-  may mint a new palace (`jelly mint --type=palace --derived-from
+  may mint a new palace (`dreamball mint --type=palace --derived-from
   <source-palace-fp>`) with a fresh genesis mythos of their own
   choosing. The `derived-from` connection (v1 primitive) records the
   lineage without claiming shared identity; the new palace begins
@@ -659,22 +659,22 @@ nearest enclosing mythos as the rendering context's mythos — the one
 used to tint ambient audio, select default palettes, and seed the
 resonance kernel's bias toward related vocabulary.
 
-### 5.9 `jelly.archiform`
+### 5.9 `ball.archiform`
 
 An **archiform** is the archetypal form a space (or being) takes —
 a class in the OOP sense and a Platonic form in the mythic sense.
 Archiform is a *classification axis orthogonal to the six v2 types*:
-a Room (type = `jelly.dreamball.field`, `field-kind: "room"`) may
+a Room (type = `ball.dreamball.field`, `field-kind: "room"`) may
 be archiform `library`, `forge`, `throne-room`, `lab`, `cell`,
 `portal`, `garden`, `crypt`, `courtyard`, …. An item (type =
-`jelly.dreamball.avatar`) may be archiform `scroll`, `lantern`,
+`ball.dreamball.avatar`) may be archiform `scroll`, `lantern`,
 `vessel`, `compass`, `seed`. An oracle (type =
-`jelly.dreamball.agent`) may be archiform `muse`, `judge`,
+`ball.dreamball.agent`) may be archiform `muse`, `judge`,
 `midwife`, `trickster`.
 
 ```
 200(
-  201({ "type": "jelly.archiform", "format-version": 2 })
+  201({ "type": "ball.archiform", "format-version": 2 })
 ) [
   "form":        "library",                        ; the archiform id (open enum)
   "tradition":   "hermetic"|"shinto"|"vedic"|"computational"|"none"|…,  ; optional lineage
@@ -717,7 +717,7 @@ time; the authoritative registry lives at
 registry that handles archiforms alongside other schema kinds. A
 palace resolves archiform identifiers via aspects.sh at load time
 and caches results locally; a palace published offline or into an
-isolated network MAY snapshot the registry into a local `jelly.asset`
+isolated network MAY snapshot the registry into a local `ball.asset`
 of media-type `application/vnd.palace.archiform-registry+json` for
 air-gapped use. Poetic mythoi (§5.8) use the same registry pattern
 and live in aspects.sh alongside archiforms.
@@ -725,17 +725,17 @@ and live in aspects.sh alongside archiforms.
 ### 5.10 Type additions summary
 
 The palace composition introduces **no new top-level DreamBall
-type**. It adds **nine auxiliary envelope types** (`jelly.layout`,
-`jelly.timeline`, `jelly.action`, `jelly.aqueduct`,
-`jelly.element-tag`, `jelly.trust-observation`, `jelly.inscription`,
-`jelly.mythos`, `jelly.archiform`) and one **optional core field**
-(`field-kind` on `jelly.dreamball.field`). Two of the new envelopes
+type**. It adds **nine auxiliary envelope types** (`ball.layout`,
+`ball.timeline`, `ball.action`, `ball.aqueduct`,
+`ball.element-tag`, `ball.trust-observation`, `ball.inscription`,
+`ball.mythos`, `ball.archiform`) and one **optional core field**
+(`field-kind` on `ball.dreamball.field`). Two of the new envelopes
 form *chains* linked by hash-predecessors —
-`jelly.timeline`/`jelly.action` (the record of doings) and
-`jelly.mythos` (the record of becomings). Vril (the life-force
+`ball.timeline`/`ball.action` (the record of doings) and
+`ball.mythos` (the record of becomings). Vril (the life-force
 substance; §1) is not itself an envelope — it is *measured* from
 timeline traversals and carried as flow properties on
-`jelly.aqueduct` (§5.4), staying faithful to the protocol's rule
+`ball.aqueduct` (§5.4), staying faithful to the protocol's rule
 that every load-bearing claim is signed. All additions are additive;
 v2 parsers without palace support see them as unknown attributes and
 skip.
@@ -750,9 +750,9 @@ The renderer gains three palace-specific lenses (added to v2's eight):
 
 | Lens | What it shows | Primary for |
 |---|---|---|
-| `palace` | omnispherical view of a palace Field, navigable by walking between rooms | `jelly.dreamball.field` where `field-kind == "palace"` |
-| `room` | interior view of a single Room Field with its layout applied | `jelly.dreamball.field` where `field-kind == "room"` |
-| `inscription` | text-in-3D rendering of an Avatar bearing a `jelly.inscription` attribute | Any Avatar with an inscription |
+| `palace` | omnispherical view of a palace Field, navigable by walking between rooms | `ball.dreamball.field` where `field-kind == "palace"` |
+| `room` | interior view of a single Room Field with its layout applied | `ball.dreamball.field` where `field-kind == "room"` |
+| `inscription` | text-in-3D rendering of an Avatar bearing a `ball.inscription` attribute | Any Avatar with an inscription |
 
 Every other v2 lens (thumbnail, avatar, splat, knowledge-graph,
 emotional-state, omnispherical, flat, phone) remains usable inside
@@ -767,7 +767,7 @@ colour and motion encode the oracle's emotional register).
 |---|---|---|
 | **LadybugDB** (`@ladybugdb/core`, Rust crate `lbug`, storage files `.lbug`) | Primary graph store — containment, aqueducts, timeline connections, knowledge-graph triples; also carries the vector index (see below) | Active MIT-licensed Kuzu fork; property graph with Cypher; embeddable; native disk-HNSW vector index via the bundled `vector` extension — one store, two roles |
 | **Vector index** — *bundled into LadybugDB via its `vector` extension* | Semantic prefetch and ambient resonance (§6.3); cosine / L2 / L2sq / dot-product over `ARRAY(FLOAT, N)` node properties | HNSW on-disk, SIMD-accelerated via `simsimd`, pre-loaded since Kuzu v0.11.3 and actively maintained in `ladybugdb/extensions`; graph-join with Cypher is first-class, which a sidecar store would lose |
-| **DreamBall CAS** | Canonical storage of every `.jelly` envelope and attachment | Content-addressed by Blake3; LadybugDB nodes reference this by fingerprint; swappable with recrypt's blob store |
+| **DreamBall CAS** | Canonical storage of every `.ball` envelope and attachment | Content-addressed by Blake3; LadybugDB nodes reference this by fingerprint; swappable with recrypt's blob store |
 
 Graph and vectors are coupled only by fingerprint. LadybugDB never
 holds CBOR; the CAS never holds queryable structure. Drop the vector
@@ -801,7 +801,7 @@ encryption, per-commit Ed25519 author signatures, CBOR envelopes,
 parent-hash-referenced commit DAGs, and local-first semantics with
 CRDT-friendly sync. Where Dreamball diverges: ML-DSA-87
 post-quantum signatures (NextGraph has none), pure-computation
-`jelly.wasm` vs NextGraph's full-application-runtime WASM bundle,
+`dreamball.wasm` vs NextGraph's full-application-runtime WASM bundle,
 and a labelled property graph vs NextGraph's RDF/SPARQL data model.
 
 NextGraph is **not** a candidate for the Memory Palace graph store:
@@ -859,7 +859,7 @@ wayfarers' palaces *at once*, with divergent local layouts but a
 shared semantic identity. The protocol handles this directly — a
 Room DreamBall is addressed by its fingerprint; two palaces both
 carry a `contains` connection to the same fingerprint; each palace's
-`jelly.layout` attribute places the room differently in its own
+`ball.layout` attribute places the room differently in its own
 coordinate frame.
 
 The *holographic* / *interference-pattern* quality described in §1
@@ -878,30 +878,30 @@ continue the v2 range for readability.
 
 ### Palace composition (FR60–FR68)
 
-FR60. [MVP] The system shall accept `--type=palace` on `jelly mint`,
+FR60. [MVP] The system shall accept `--type=palace` on `dreamball mint`,
 minting a Field DreamBall with `field-kind: "palace"`, a default
-Agent child (the oracle), an empty `jelly.timeline` rooted on the
-mint action, **and a required `jelly.mythos` attribute** captured
+Agent child (the oracle), an empty `ball.timeline` rooted on the
+mint action, **and a required `ball.mythos` attribute** captured
 interactively (or provided via `--mythos <string>`). A palace
 cannot be minted without a mythos; the CLI refuses with a helpful
 prompt.
 
 FR60a. [MVP] The system shall treat the palace mythos as an
-**append-only chain**. The first `jelly.mythos` published against a
+**append-only chain**. The first `ball.mythos` published against a
 palace carries `is-genesis: true` and is immutable thereafter. Every
 subsequent mythos carries `predecessor` = Blake3 of the prior
 mythos and extends the chain. Verification walks the chain to
 genesis; a broken chain is a hard failure.
 
-FR60b. [MVP] The system shall provide `jelly palace rename-mythos
+FR60b. [MVP] The system shall provide `dreamball palace rename-mythos
 <palace> --body <text> [--true-name <word>] [--form <form>]` that
-appends a new mythos to the chain, emits a paired `jelly.action` of
+appends a new mythos to the chain, emits a paired `ball.action` of
 kind `"true-naming"` on the timeline capturing the discovery
 context, and re-signs the palace.
 
 FR60c. [MVP] The system shall accept an optional `--mythos <string>`
-or `--mythos-file <path>` on `jelly palace add-room` and
-`jelly palace inscribe`, attaching a (genesis) `jelly.mythos` to the
+or `--mythos-file <path>` on `dreamball palace add-room` and
+`dreamball palace inscribe`, attaching a (genesis) `ball.mythos` to the
 minted envelope. Absent, children inherit the nearest enclosing
 mythos at render time — the attribute itself remains unset. Rooms
 and inscriptions MAY extend their own mythos chains via
@@ -915,7 +915,7 @@ oracle's knowledge-graph shall mirror the chain via triples
 `(mythos-fp, predecessor, prior-mythos-fp)` so the chain is
 traversable from within the oracle's own reasoning.
 
-FR60e. [Growth] The system shall provide `jelly palace reflect
+FR60e. [Growth] The system shall provide `dreamball palace reflect
 <palace>` which opens an introspective dialogue with the oracle.
 The oracle draws on the timeline since the last true-naming, the
 aqueducts whose strength has grown most, the inscriptions most
@@ -928,7 +928,7 @@ FR60f. [Growth] The renderer shall visualise the mythos chain as a
 **ring of lanterns** near the fountain — each past mythos a dimly
 lit lantern, the current head glowing brightest, the genesis with a
 permanent small flame at its base. Reading a lantern opens the
-full `jelly.mythos` envelope and its paired true-naming action.
+full `ball.mythos` envelope and its paired true-naming action.
 
 FR60g. [Vision] The system shall support **mythos divergence
 resolution**: if two custodians of a shared palace publish
@@ -936,38 +936,38 @@ conflicting successor mythoi against the same predecessor, the
 renderer surfaces both as a branch in the lantern ring and the
 Guild's conflict-resolution policy (default: quorum of admins) picks
 the canonical successor — the losing branch is preserved as a
-`jelly.action` of kind `"shadow-naming"` so the thread is not lost.
+`ball.action` of kind `"shadow-naming"` so the thread is not lost.
 
-FR61. [MVP] The system shall provide `jelly palace add-room <palace>
+FR61. [MVP] The system shall provide `dreamball palace add-room <palace>
 --name <room-name>` that mints a Field DreamBall with
 `field-kind: "room"` and appends it to the palace via `contains`.
 
-FR62. [MVP] The system shall provide `jelly palace inscribe <palace>
+FR62. [MVP] The system shall provide `dreamball palace inscribe <palace>
 --room <room-fp> <file>` that mints an Avatar DreamBall with a
-`jelly.inscription` attribute pointing at the file as an asset and
+`ball.inscription` attribute pointing at the file as an asset and
 places it in the named room.
 
-FR63. [MVP] The system shall provide `jelly palace open <palace>` that
+FR63. [MVP] The system shall provide `dreamball palace open <palace>` that
 launches the showcase app focused on the given palace.
 
 FR64. [MVP] The system shall emit every state-changing palace action
-(mint-room, inscribe, move, unlock) as a signed `jelly.action`
-appended to the palace's `jelly.timeline`.
+(mint-room, inscribe, move, unlock) as a signed `ball.action`
+appended to the palace's `ball.timeline`.
 
 FR65. [MVP] The system shall enforce the v2 containment-cycle rule on
 palace topology: rooms contain items, palaces contain rooms, but no
 cycles.
 
-FR66. [Growth] The system shall support `jelly palace share --room
+FR66. [Growth] The system shall support `dreamball palace share --room
 <room-fp> --guild <guild-fp>` that seals a room as a Relic and
 transmits unlock capability to guild members, enabling J4.
 
-FR67. [Growth] The system shall support `jelly palace rewind <palace>
+FR67. [Growth] The system shall support `dreamball palace rewind <palace>
 --to <timestamp>` read-only traversal of the timeline DAG, J5.
 
 FR68. [Vision] The system shall support multi-writer concurrent edits
 on a shared room with CRDT-style deterministic merge of
-non-conflicting `jelly.action` DAGs.
+non-conflicting `ball.action` DAGs.
 
 ### Oracle behaviour (FR69–FR73)
 
@@ -985,7 +985,7 @@ triples in the oracle's knowledge-graph (`(doc-fp, lives-in,
 room-fp)`).
 
 FR72. [Growth] The oracle shall have a file-watcher skill that
-updates an inscription's `jelly.asset` hash when the underlying file
+updates an inscription's `ball.asset` hash when the underlying file
 changes on disk, and bumps the Avatar's revision with a re-sign.
 
 FR73. [Vision] The oracle shall use the resonance kernel's biasing
@@ -998,13 +998,13 @@ FR74. [MVP] The renderer shall add the `palace` lens: omnispherical
 navigable view of rooms.
 
 FR75. [MVP] The renderer shall add the `room` lens: interior layout
-honouring the room's `jelly.layout` attribute.
+honouring the room's `ball.layout` attribute.
 
 FR76. [MVP] The renderer shall add the `inscription` lens: text
 arranged in 3D per the inscription's `surface` field.
 
 FR77. [MVP] The renderer shall route aqueduct traversal events to the
-runtime, which emits a `jelly.action` of kind `move` and updates the
+runtime, which emits a `ball.action` of kind `move` and updates the
 aqueduct's `strength`.
 
 FR78. [Growth] The renderer shall display "shimmering ghosts" in the
@@ -1042,14 +1042,14 @@ vector alongside the full vector; quantised vectors drive the
 ambient-resonance biasing pass without full recall.
 
 FR84. [Vision] The system shall support rebuild-from-CAS: given only
-the set of `.jelly` files, LadybugDB (including the vector index)
+the set of `.ball` files, LadybugDB (including the vector index)
 can be reconstructed from scratch with no loss of queryable state.
 
 ### Reputation & trust (FR85–FR87)
 
-FR85. [Growth] The system shall accept `jelly observe <observed-fp>
+FR85. [Growth] The system shall accept `dreamball observe <observed-fp>
 --axis <name>=<value>` which emits a signed
-`jelly.trust-observation` attribute on the observer's palace.
+`ball.trust-observation` attribute on the observer's palace.
 
 FR86. [Growth] The system shall expose a reader-side aggregation
 query that computes *observer-local* trust scores weighted by social
@@ -1057,30 +1057,30 @@ graph distance (shared Guild membership + transmission depth). No
 global aggregation anywhere.
 
 FR87. [Vision] The system shall allow trust observations to be
-transmitted between palaces via Guild-scoped `jelly transmit`, with
+transmitted between palaces via Guild-scoped `dreamball transmit`, with
 the receiver's aggregation query incorporating them according to the
 receiver's own priors.
 
 ### CLI (FR88–FR92)
 
 FR88. [MVP] The system shall ship all palace commands under a single
-`jelly palace` verb group: `mint`, `add-room`, `inscribe`, `open`,
+`dreamball palace` verb group: `mint`, `add-room`, `inscribe`, `open`,
 `layout`, `share`, `rewind`, `observe`.
 
-FR89. [MVP] The system shall extend `jelly show` with a
+FR89. [MVP] The system shall extend `dreamball show` with a
 `--as-palace` mode that pretty-prints a palace's topology (room tree,
 item counts, timeline head, oracle fingerprint).
 
-FR90. [MVP] The system shall extend `jelly verify` to validate
+FR90. [MVP] The system shall extend `dreamball verify` to validate
 palace-specific invariants: at least one room exists, the oracle is
 the only Agent directly contained, every timeline action's parent
 hash resolves to an ancestor action.
 
-FR91. [Growth] The system shall provide `jelly palace trace
+FR91. [Growth] The system shall provide `dreamball palace trace
 <palace> --from <action-fp>` that walks the timeline backward and
 prints a human-readable activity log.
 
-FR92. [Growth] The system shall provide `jelly palace gc <palace>`
+FR92. [Growth] The system shall provide `dreamball palace gc <palace>`
 that garbage-collects orphaned inscriptions (not referenced from any
 room) to an `archive/` subdirectory — non-destructive quarantine, not
 deletion.
@@ -1088,15 +1088,15 @@ deletion.
 ### Vril & archiforms (FR93–FR98)
 
 FR93. [MVP] The system shall accept `--archiform <form>` on
-`jelly palace add-room`, `jelly palace inscribe`, and `jelly mint
+`dreamball palace add-room`, `dreamball palace inscribe`, and `dreamball mint
 --type=agent` (for the oracle). The archiform is attached as a
-`jelly.archiform` attribute on the minted envelope. Absent, the
+`ball.archiform` attribute on the minted envelope. Absent, the
 renderer applies the default archiform per type (`room` → `chamber`,
 `inscription` → `scroll`, `agent` → `muse`).
 
 FR94. [MVP] The system shall compute aqueduct electrical properties
 (`strength`, `conductance`, `phase`) from the timeline action log on
-every palace load, persist them into `jelly.aqueduct` attributes,
+every palace load, persist them into `ball.aqueduct` attributes,
 and re-sign the aqueduct envelope. `resistance` and `capacitance`
 are author-declared priors that the runtime does not overwrite.
 
@@ -1104,8 +1104,8 @@ FR95. [MVP] The system shall ship a seed archiform registry
 (`library`, `forge`, `throne-room`, `garden`, `courtyard`, `lab`,
 `crypt`, `portal`, `atrium`, `cell`, `scroll`, `lantern`, `vessel`,
 `compass`, `seed`, `muse`, `judge`, `midwife`, `trickster`) as a
-`jelly.asset` attached to every freshly minted palace, discoverable
-via `jelly palace show --archiforms`.
+`ball.asset` attached to every freshly minted palace, discoverable
+via `dreamball palace show --archiforms`.
 
 FR96. [Growth] The renderer shall draw Vril flow on every aqueduct
 — animated particles whose speed reflects `conductance`, whose
@@ -1134,10 +1134,10 @@ each shall render the first lit room in <2 s on a mid-range laptop.
 
 NFR11. [offline] Every palace operation except Guild transmission and
 ML-DSA signing shall work fully offline. LadybugDB (graph + vector
-index) and `jelly.wasm` are all local.
+index) and `dreamball.wasm` are all local.
 
-NFR12. [authorship] Every `jelly.action` and every
-`jelly.trust-observation` shall carry dual signatures (Ed25519 + ML-
+NFR12. [authorship] Every `ball.action` and every
+`ball.trust-observation` shall carry dual signatures (Ed25519 + ML-
 DSA-87) following the v2 signature rule. No unsigned timeline writes.
 
 NFR13. [privacy] No palace state shall be emitted over the network
@@ -1220,7 +1220,7 @@ discipline.
   morphing, forking, and "the dream that finds you" all happen
   *within* the dream field, mediated by its substrate rather than by
   a DreamBall being promoted to one. No wire-format change for MVP; a
-  `jelly.dream-field` envelope for named archetypal field states is
+  `ball.dream-field` envelope for named archetypal field states is
   reserved for Vision tier. Full decision: ADR
   `docs/decisions/2026-04-21-dream-field-embedding.md`.
 - ~~**Vril conservation.**~~ **Resolved (2026-04-21).** Plenum
@@ -1255,27 +1255,27 @@ discipline.
   CRDT candidate survey in `docs/research/crdt-options/findings.md`.
   Headline findings:
   - Three pre-FR68 protocol tweaks recommended: pluralize
-    `jelly.timeline.head-hash` → `head-hashes` (set); add optional
-    `deps` and `nacks` attributes on `jelly.action` (the NextGraph
+    `ball.timeline.head-hash` → `head-hashes` (set); add optional
+    `deps` and `nacks` attributes on `ball.action` (the NextGraph
     DEPS/ACKS split, adapted); specify FR60g quorum wire shape as
     stacked `'signed'` attributes (Option A) with a `quorum-policy`
-    attribute on `jelly.guild`.
-  - Three of four merge problems (`jelly.action`, `jelly.layout`,
-    `jelly.mythos`) are already Merkle-CRDT-shaped by the existing
+    attribute on `ball.guild`.
+  - Three of four merge problems (`ball.action`, `ball.layout`,
+    `ball.mythos`) are already Merkle-CRDT-shaped by the existing
     protocol; bespoke DAG walkers handle them. No external CRDT
     library is needed for MVP.
   - For the fourth (oracle memory-graph triples), OR-Set +
     LWW-Map-per-edge composes from primitives; Loro (`loro-crdt`,
     pure WASM, no napi) is the fallback if concurrent property
     edits become a hotspot.
-  - The `jelly.layout` concurrent-move default moves from
+  - The `ball.layout` concurrent-move default moves from
     LWW-per-item to MV-Register-per-item, matching the "rejected-
     action ghost" UX elsewhere in this section.
 
 - ~~**Wire-format code sync to match the terminology rename.**~~
   **Complete (2026-04-21).** Commit `7b0fec8` landed the
-  wire-format bulk (`jelly.memory-edge` →
-  `jelly.memory-connection`, CBOR key `"edge"` → `"connection"`,
+  wire-format bulk (`ball.memory-edge` →
+  `ball.memory-connection`, CBOR key `"edge"` → `"connection"`,
   triple field names `{from, label, to}`, golden fixture
   rebaseline, regenerated TypeScript). The 2026-04-21 follow-up
   swept the residue: `assertion_count` → `attribute_count` in the
@@ -1304,7 +1304,7 @@ discipline.
 - LadybugDB integration including its bundled `vector` extension
   (MVP features only — no quantised resonance biasing).
 - Three new lenses; every v2 lens remains available.
-- CLI `jelly palace` verb group covering the MVP FR set.
+- CLI `dreamball palace` verb group covering the MVP FR set.
 - Updates to `docs/PROTOCOL.md §13` (new section) and `docs/VISION.md
   §15` (new section) describing the wire additions and the mythos.
 
@@ -1331,7 +1331,7 @@ command, tag rooms and items with archiforms, see aqueducts carry
 computed Vril-flow properties, and have the whole state persist +
 replay.
 
-**Growth:** FR60e (`jelly palace reflect` — the oracle-guided
+**Growth:** FR60e (`dreamball palace reflect` — the oracle-guided
 discovery ritual), FR60f (mythos lantern-ring visualisation),
 FR66–67, FR73 (scaffold), FR78, FR83, FR85–86, FR91–92, FR96–97.
 Shared rooms, rewind, ambient resonance, local trust, inspection
@@ -1358,7 +1358,7 @@ own circulation.
   additive and fits the dCBOR conventions already documented in
   `docs/PROTOCOL.md §2`.
 - **LadybugDB (with its bundled vector index) is embedded, not
-  service-oriented.** The palace is local-first. A `jelly-server` is
+  service-oriented.** The palace is local-first. A `dreamball-server` is
   an optional accelerator exactly as in v2.
 - **Mythos is load-bearing.** The renderer is allowed (and required)
   to prefer aesthetic coherence over geometric minimalism. See
@@ -1375,7 +1375,7 @@ own circulation.
 - `docs/products/dreamball-v2/prd.md` — the v2 PRD this composition
   depends on. No v2 requirement is altered by this spec.
 - `src/lib/lenses/` — v2 lens pack; palace lenses land alongside.
-- `src/lib/backend/` — JellyBackend interface. Palace state is
+- `src/lib/backend/` — DreamballBackend interface. Palace state is
   an additional backend concern (LadybugDB including its bundled
   vector index) behind the same interface.
 - `docs/known-gaps.md §3, §6` — trust transmission and keyspace
@@ -1446,7 +1446,7 @@ own circulation.
   mount; sync multithreaded can't resolve pthread worker URLs
   under Vite. The PRD's "browser runs LadybugDB directly" model
   (FR74–79) is not available today; MVP will use
-  server-authoritative persistence (`jelly-server` owns the real
+  server-authoritative persistence (`dreamball-server` owns the real
   `.lbug`, browser carries an in-memory seed per page load) — an
   upstream ask for a build with IDBFS or a larger pthread pool is
   the long-term fix. Full analysis + reproducer + three

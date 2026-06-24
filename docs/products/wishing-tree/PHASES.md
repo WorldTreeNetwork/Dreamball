@@ -40,15 +40,15 @@ The Tree grows phase-by-phase. Do not skip a phase to chase a later one — each
 
 ## 1. The North Star — what we are actually building
 
-The Wishing Tree is a **`jelly.dreamball.field`** envelope whose primary `look` is an omnispherical-grid sphere, whose `act` slot hosts an LLM agent (the Tree itself), and whose `contains` graph accumulates every DreamBall the user births inside it. It is:
+The Wishing Tree is a **`ball.dreamball.field`** envelope whose primary `look` is an omnispherical-grid sphere, whose `act` slot hosts an LLM agent (the Tree itself), and whose `contains` graph accumulates every DreamBall the user births inside it. It is:
 
 - A **composer web app** — SvelteKit + Threlte + PlayCanvas, Svelte 5 runes, WebGL baseline with opt-in WebGPU.
 - A **spherical node editor** — nodes live on the surface of a sphere; edges are geodesic arcs; zooming in flies the camera through the skin.
-- An **identity vault** — API keys and Ed25519 / ML-DSA-87 material live in the "root zone" (south pole region) behind the existing `jelly.secret-ref` indirection.
-- A **self-evolving artefact** — revision bumps are visualised as concentric rings; interactions absorb into memory + knowledge-graph + emotional-register; the Tree can export itself as a `.jelly` and be re-planted elsewhere.
+- An **identity vault** — API keys and Ed25519 / ML-DSA-87 material live in the "root zone" (south pole region) behind the existing `ball.secret-ref` indirection.
+- A **self-evolving artefact** — revision bumps are visualised as concentric rings; interactions absorb into memory + knowledge-graph + emotional-register; the Tree can export itself as a `.ball` and be re-planted elsewhere.
 - A **retro-sci-fi 80s 8-bit video-game instrument** — CRT scanlines, chromatic aberration, limited palette, chunky 8×8 sprite glyphs, synthwave lightwells. Fun is load-bearing.
 
-The Tree is adaptable because every part of the UI is itself a DreamBall the Tree is editing. The composer edits the composer. *This is why the Tree can be sealed and sent to GitHub as a `.jelly` — the artefact you receive is the tool that built it.*
+The Tree is adaptable because every part of the UI is itself a DreamBall the Tree is editing. The composer edits the composer. *This is why the Tree can be sealed and sent to GitHub as a `.ball` — the artefact you receive is the tool that built it.*
 
 ---
 
@@ -69,7 +69,7 @@ Three interaction primitives govern every surface in the Tree. They are orthogon
 - Every panel has a **fold chevron** (`▾` expanded / `▸` collapsed).
 - Folding never unmounts — state persists, component sleeps.
 - Folded panels become **1ch-wide spines** so peripheral state is still readable.
-- Folds persist in the Tree's own `jelly.interaction-set` so the UI remembers its shape across sessions.
+- Folds persist in the Tree's own `ball.interaction-set` so the UI remembers its shape across sessions.
 
 ### 2.2 PEEL — reveal the interior
 
@@ -99,7 +99,7 @@ Three interaction primitives govern every surface in the Tree. They are orthogon
 
 - A HUDDLE is a named collection of FOLDs that move together.
 - Drag-reparent is first-class: any HUDDLE can be dragged into another (nesting), onto empty space (detach), or onto the sphere (attach as an orbiting satellite panel).
-- HUDDLEs serialise to a `jelly.interaction-set` entry per session — they literally *are* remembered interactions with the interface.
+- HUDDLEs serialise to a `ball.interaction-set` entry per session — they literally *are* remembered interactions with the interface.
 
 > FOLD hides, PEEL reveals, HUDDLE groups. Nothing else. When a designer proposes a fourth primitive, they are proposing a fork of the Tree.
 
@@ -134,14 +134,14 @@ All of this lives under `src/lib/tree/style/` as a single exported theme object 
 ```
                                  ┌───────────────────────────────┐
                                  │   docs/PROTOCOL.md (v1 + v2)  │
-                                 │   jelly CLI (Zig)             │
+                                 │   dreamball CLI (Zig)             │
                                  │   envelope_v2.zig / golden.zig│
                                  └──────────────┬────────────────┘
                                                 │  CBOR envelopes
                                                 ▼
   ┌─────────────────────────┐    ┌──────────────────────────────────┐
   │  tools/mcp-server       │    │  src/lib/ (Svelte 5 + Threlte)   │
-  │  (authoring surface)    │◄──►│  JellyBackend → HttpBackend      │
+  │  (authoring surface)    │◄──►│  DreamballBackend → HttpBackend      │
   │  + wish→seed skills     │    │  Lenses ×8                       │
   └─────────────────────────┘    │  ──────────────────────────────  │
                                  │  NEW: src/lib/tree/              │
@@ -152,15 +152,15 @@ All of this lives under `src/lib/tree/style/` as a single exported theme object 
                                  │    ├ RootZone.svelte  (keys)     │
                                  │    ├ RevisionRings.svelte        │
                                  │    ├ FoldPanel / Peel / Huddle   │
-                                 │    └ TreeBackend extends JellyBk │
+                                 │    └ TreeBackend extends DreamballBk │
                                  └──────────────────────────────────┘
 ```
 
-The Tree **reuses** every piece already in the repo — the v2 typed DreamBalls, the `SplatLens`, the `OmnisphericalLens`, the `MockBackend` permission resolution, the `jelly.secret-ref` indirection. It **adds** a new top-level compound lens (the sphere composer) and a new backend specialisation (`TreeBackend`) that knows how to create, mutate, and emit DreamBalls — not just render them.
+The Tree **reuses** every piece already in the repo — the v2 typed DreamBalls, the `SplatLens`, the `OmnisphericalLens`, the `MockBackend` permission resolution, the `ball.secret-ref` indirection. It **adds** a new top-level compound lens (the sphere composer) and a new backend specialisation (`TreeBackend`) that knows how to create, mutate, and emit DreamBalls — not just render them.
 
 ### 4.1 The Tree itself is a DreamBall
 
-The Tree's own envelope (`wishing-tree.jelly`) is typed as `jelly.dreamball.field` with:
+The Tree's own envelope (`wishing-tree.ball`) is typed as `ball.dreamball.field` with:
 
 - `omnispherical-grid` — defines the sphere's pole axis, camera ring, resolution, layer depth.
 - `look.asset[0]` — the base icosphere GLB (polar UV-unwrapped, seam at the prime meridian).
@@ -170,9 +170,9 @@ The Tree's own envelope (`wishing-tree.jelly`) is typed as `jelly.dreamball.fiel
 - `act.system-prompt` — the Tree Invocation (§9).
 - `contains[]` — every DreamBall ever birthed by this Tree.
 - `guild[]` — the Tree's custodian Guild; members can author, admins can reseat the root zone.
-- `secret[]` — API keys, each a `jelly.secret-ref` whose locator resolves via the backend.
+- `secret[]` — API keys, each a `ball.secret-ref` whose locator resolves via the backend.
 
-This means **the Tree can publish itself**. When you run `jelly seal wishing-tree.jelly` you get a DragonBall anyone can open, re-plant, and fork via `derived-from`.
+This means **the Tree can publish itself**. When you run `dreamball seal wishing-tree.ball` you get a DragonBall anyone can open, re-plant, and fork via `derived-from`.
 
 ---
 
@@ -228,7 +228,7 @@ This means **the Tree can publish itself**. When you run `jelly seal wishing-tre
 - The Tree's *own* agent (its `act.model`) germinates seeds in the background — buds visibly ripen into fruit over 10–60s, synthesising `look`/`feel`/`act` slots.
 - New HUDDLE "Root Zone" appears at the south pole when the user holds Shift — a locked chest grid for API keys, each key rendered as a glowing tendril.
 - PEEL a fruit → interior node graph shows the generated material shader and script references; user can edit inline.
-- First "Pluck" action — user signs and exports `fruit-01.jelly`.
+- First "Pluck" action — user signs and exports `fruit-01.ball`.
 
 ### 6.3 Mechanism
 - `src/lib/tree/agent/TreeAgent.ts` — a small driver that:
@@ -236,21 +236,21 @@ This means **the Tree can publish itself**. When you run `jelly seal wishing-tre
   - Calls the configured LLM (via MCP or direct Anthropic SDK with prompt caching);
   - Emits partial DreamBall envelopes that the `TreeBackend` stitches into the contains graph;
   - Advances `stage` `seed → dreamball` when all three slots are populated.
-- `src/lib/tree/rootzone/` — `RootZone.svelte`, `KeyTendril.svelte`, `ApiKeyForm.svelte`. Keys are never stored in LocalStorage; the UI holds them only for the duration of a click, hands them to the backend which wraps them as `jelly.secret-ref` envelopes with `locator` pointing at an IndexedDB-backed encrypted blob. `TODO-CRYPTO` tags mark every mock hop.
+- `src/lib/tree/rootzone/` — `RootZone.svelte`, `KeyTendril.svelte`, `ApiKeyForm.svelte`. Keys are never stored in LocalStorage; the UI holds them only for the duration of a click, hands them to the backend which wraps them as `ball.secret-ref` envelopes with `locator` pointing at an IndexedDB-backed encrypted blob. `TODO-CRYPTO` tags mark every mock hop.
 - `src/lib/tree/wishes/WishRibbon.svelte` — the ribbon animation: wish text rises out of the input, wraps the sphere as an animated strip, then anchors to a branch coordinate computed from an `OmnisphericalGrid` address.
 - `src/lib/tree/nodes/` — first real node types (DreamSeed, MaterialShader, MeshReference, PythonScript, ApiKey, LLMModel). Each renders as a sprite glyph on the sphere surface.
-- `src/lib/tree/backend/TreeBackend.ts` — extends `JellyBackend` with `birthSeed()`, `germinate()`, `pluck()`, `graft()`, `prune()`.
-- **CLI surface** — extend the Zig `jelly` CLI with a new command `jelly wish` (see `src/cli/wish.zig`) that appends a wish entry to a Tree's interaction-set from the terminal.
+- `src/lib/tree/backend/TreeBackend.ts` — extends `DreamballBackend` with `birthSeed()`, `germinate()`, `pluck()`, `graft()`, `prune()`.
+- **CLI surface** — extend the Zig `dreamball` CLI with a new command `dreamball wish` (see `src/cli/wish.zig`) that appends a wish entry to a Tree's interaction-set from the terminal.
 - **MCP** — extend `tools/mcp-server/server.ts` with `tree.tie_wish`, `tree.germinate`, `tree.pluck` so external agents can author through the Tree.
 
 ### 6.4 Acceptance
 ```
   [ ] Tie a wish → bud appears within 200ms, wish recorded in interaction-set
   [ ] Germinate produces a DreamBall with all three slots; `revision` == 1
-  [ ] Pluck exports `.jelly` that `jelly verify` accepts (dev policy: placeholder ML-DSA)
+  [ ] Pluck exports `.ball` that `dreamball verify` accepts (dev policy: placeholder ML-DSA)
   [ ] Grep `TODO-CRYPTO` returns ≥ the Phase-0 count + the new keyring hops
   [ ] Root Zone never appears in the DOM without Shift pressed
-  [ ] Wishing via `jelly wish --tree <path> --content "…" --branch east` produces the same shape as the UI path (round-trip)
+  [ ] Wishing via `dreamball wish --tree <path> --content "…" --branch east` produces the same shape as the UI path (round-trip)
   [ ] `mcp://tree.tie_wish` from an external MCP client reaches the same code path
 ```
 
@@ -268,14 +268,14 @@ This means **the Tree can publish itself**. When you run `jelly seal wishing-tre
 
 ### 7.2 Surface
 - HUDDLE "Horizon" appears beside Canopy — lists connected Trees (by Guild fingerprint).
-- Drag a fruit onto the Horizon panel → the fruit is transmitted via `jelly.transmission` to every Tree whose Guild overlaps.
+- Drag a fruit onto the Horizon panel → the fruit is transmitted via `ball.transmission` to every Tree whose Guild overlaps.
 - Receiving Trees show an incoming "seed from the wind" animation; custodian can accept / reject / quarantine.
 - Revision rings from remote trees appear as faint concentric halos around the sphere; clicking a halo scrubs to that revision.
 
 ### 7.3 Mechanism
 - `src/lib/tree/forest/` — `Horizon.svelte`, `SeedCarrier.ts`, `TransmissionInbox.svelte`.
 - CRDT-like revision merge: use a Lamport-style `(revision, identity)` ordering where `revision` is already in the subject and `identity` is the tie-breaker — the existing "pick the highest-revision signed envelope" rule becomes a distributed `argmax`.
-- Signed transmissions flow through `jelly transmit` — already implemented in the Zig CLI; Phase 2 exposes it to the web UI via MCP.
+- Signed transmissions flow through `dreamball transmit` — already implemented in the Zig CLI; Phase 2 exposes it to the web UI via MCP.
 - Policy gate: guild membership must be resolvable client-side for the wind to blow. `TreeBackend.resolveGuild(fp)` walks the guild graph with a cycle guard.
 
 ### 7.4 Acceptance
@@ -284,7 +284,7 @@ This means **the Tree can publish itself**. When you run `jelly seal wishing-tre
   [ ] Guild-policy slot filtering verified end-to-end: observer Tree sees only `public` slots
   [ ] Revision halo shows remote revisions in timestamp order
   [ ] Cycle in the guild graph is detected and logged; no infinite resolve loop
-  [ ] CLI: `jelly transmit` + `jelly join-guild` drive the same state the UI does
+  [ ] CLI: `dreamball transmit` + `dreamball join-guild` drive the same state the UI does
 ```
 
 ### 7.5 Risk & hedge
@@ -302,7 +302,7 @@ This means **the Tree can publish itself**. When you run `jelly seal wishing-tre
 - Trees form a DAG (`contains` + `derived-from` spanning instances). Switcher UI is a literal 3D constellation of Trees; pan to travel.
 - Real recrypt-backed relics — sealed DreamBalls that can only be unlocked by Guild members holding a keyspace credential. All `TODO-CRYPTO` markers deleted from the repo.
 - Blender ↔ Tree ↔ Unreal sync via a WebSocket bridge. Push a mesh from Blender, the sphere's inner layer updates live; pull the Soulskin material graph into Blender shader nodes; Unreal's material editor observes changes.
-- The Tree can seal *itself* — `jelly seal wishing-tree.jelly --out wishing-tree.dragon.jelly` — and the resulting DragonBall is a complete, forkable composer.
+- The Tree can seal *itself* — `dreamball seal wishing-tree.ball --out wishing-tree.dragon.ball` — and the resulting DragonBall is a complete, forkable composer.
 
 ### 8.3 Mechanism
 - `src/lib/tree/forest/WorldMap.svelte` — Three.js / Threlte scene of orbiting Trees; each Tree is a low-poly sphere + name glyph.
@@ -314,10 +314,10 @@ This means **the Tree can publish itself**. When you run `jelly seal wishing-tre
 ### 8.4 Acceptance
 ```
   [ ] `grep -R 'TODO-CRYPTO' src/` returns zero results
-  [ ] `jelly verify wishing-tree.jelly` succeeds under `.strict` policy
+  [ ] `dreamball verify wishing-tree.ball` succeeds under `.strict` policy
   [ ] Two Trees on different hosts round-trip a sealed Relic via recrypt
   [ ] Blender add-on pushes a mesh and the sphere rebakes within 500ms
-  [ ] `jelly seal wishing-tree.jelly` emits a DragonBall that a fresh clone can `jelly unseal` and boot
+  [ ] `dreamball seal wishing-tree.ball` emits a DragonBall that a fresh clone can `dreamball unseal` and boot
   [ ] Golden fixture set covers every v2 envelope type (14 fixtures per §12.11)
 ```
 
@@ -333,27 +333,27 @@ This means **the Tree can publish itself**. When you run `jelly seal wishing-tre
 > *The gardener becomes the garden. The tool that built the tool is the tool. The wish that started it all is now the wish a stranger will tie to a branch they've never seen.*
 
 ### 9.2 Surface
-- "Publish" button in the top HUDDLE → the current Wishing Tree serialises itself as a `.jelly`, signs, and pushes to a configurable GitHub repo as a release asset.
-- The companion `README.md` (auto-generated) contains the Tree Invocation, the phase progression (this doc), and a one-line `npx` invocation that reconstitutes a new Tree from the `.jelly`.
-- The Tree's DreamBall is typed `jelly.dreamball.field` and carries its own source as an attachment — `.jelly` file size is the tree's own weight.
-- Anyone who clones the repo can `jelly unseal` + `npm run tree:plant` and have a living Tree locally within a minute.
+- "Publish" button in the top HUDDLE → the current Wishing Tree serialises itself as a `.ball`, signs, and pushes to a configurable GitHub repo as a release asset.
+- The companion `README.md` (auto-generated) contains the Tree Invocation, the phase progression (this doc), and a one-line `npx` invocation that reconstitutes a new Tree from the `.ball`.
+- The Tree's DreamBall is typed `ball.dreamball.field` and carries its own source as an attachment — `.ball` file size is the tree's own weight.
+- Anyone who clones the repo can `dreamball unseal` + `npm run tree:plant` and have a living Tree locally within a minute.
 
 ### 9.3 Mechanism
-- `scripts/publish-tree.ts` — invokes the `jelly` CLI, computes attachment hashes, generates the companion README from a Handlebars-lite template, opens a PR via `gh` CLI.
-- `jelly plant` — new CLI command that takes a DragonBall and scaffolds a fresh web project from it (unseals attachments, writes `package.json` dev-deps, starts the dev server).
+- `scripts/publish-tree.ts` — invokes the `dreamball` CLI, computes attachment hashes, generates the companion README from a Handlebars-lite template, opens a PR via `gh` CLI.
+- `dreamball plant` — new CLI command that takes a DragonBall and scaffolds a fresh web project from it (unseals attachments, writes `package.json` dev-deps, starts the dev server).
 - `src/lib/tree/meta/SelfMirror.svelte` — a diagnostic lens that renders the Tree's *own* DreamBall using the existing lens stack; the Tree editing the Tree.
 
 ### 9.4 Acceptance
 ```
-  [ ] `npm run publish:tree` emits a signed `.jelly` and a matching README on a throwaway GitHub fork
-  [ ] Fresh clone → `jelly plant wishing-tree.jelly` → `npm run dev` → sphere breathes
-  [ ] Diff between the published `.jelly` contents and the live repo is zero modulo commit SHA + timestamp
+  [ ] `npm run publish:tree` emits a signed `.ball` and a matching README on a throwaway GitHub fork
+  [ ] Fresh clone → `dreamball plant wishing-tree.ball` → `npm run dev` → sphere breathes
+  [ ] Diff between the published `.ball` contents and the live repo is zero modulo commit SHA + timestamp
   [ ] The Tree's own `revision` is bumped on publish; the release notes cite the bump reason
 ```
 
 ### 9.5 Risk & hedge
 - **Risk:** Publishing loops — the publish action edits the repo, which could trigger re-publish. **Hedge:** publish is manual; CI verifies but never publishes.
-- **Risk:** Recipients' environments differ. **Hedge:** `jelly plant` prints a `bun doctor` report and refuses to start if Node/Zig/Bun versions drift outside a declared range.
+- **Risk:** Recipients' environments differ. **Hedge:** `dreamball plant` prints a `bun doctor` report and refuses to start if Node/Zig/Bun versions drift outside a declared range.
 
 ---
 
@@ -392,7 +392,7 @@ Store the Invocation in `src/lib/tree/agent/invocation.txt`. Import it as a raw 
 | --------------------- | ------------------------------------------------------------------------------------------------- |
 | **Accessibility**     | Every sphere has an ASCII-text fallback lens; `prefers-reduced-motion` kills CRT + breath.        |
 | **Privacy**           | Private slots (memory, KG, emotion, act, secret) never cross the `<viewer=null>` boundary.        |
-| **Open protocol**     | Every Tree artefact is inspectable via `jelly show --format=json`. No hidden formats.             |
+| **Open protocol**     | Every Tree artefact is inspectable via `dreamball show --format=json`. No hidden formats.             |
 | **Retro aesthetic**   | Palette is a const, font is pixel-first, motion is stepped. Drift triggers a style-lint warning.  |
 | **Self-publishability** | No Phase ships without a path to Phase 4 — i.e., new features must survive seal/unseal round-trip. |
 | **Document the why**  | Every new envelope type under `src/lib/tree/` gets a one-paragraph rationale in this doc or a sibling. |
@@ -405,20 +405,20 @@ Store the Invocation in `src/lib/tree/agent/invocation.txt`. Import it as a raw 
 2. Should HUDDLEs persist across devices or per-device? Leaning: per-Tree, so you get the same workbench wherever you plant it — but privacy-sensitive HUDDLEs (root zone) are per-device.
 3. What's the minimum viable shader graph format for Phase 1? Leaning: glTF PBR extension JSON, with a Blender-compatible subset.
 4. Is the Tree a **singleton** per browser tab or can N coexist? Leaning: N, because the constellation view in Phase 3 needs it — but Phase 0 ships singleton-only for simplicity.
-5. Do wishes support attachments (images, sketches, voice)? Leaning: yes, via the existing `jelly.asset` envelope, so the wish graph is multimodal from Phase 1.
+5. Do wishes support attachments (images, sketches, voice)? Leaning: yes, via the existing `ball.asset` envelope, so the wish graph is multimodal from Phase 1.
 
 ---
 
 ## 13. Glossary (so future readers don't reinvent vocabulary)
 
-- **Bud** — a `jelly.dreamball` in `stage: seed` attached to a Tree branch.
-- **Fruit** — a `jelly.dreamball` in `stage: dreamball`, fully populated, not yet plucked.
-- **Pluck** — the sign-and-export action that turns a fruit into a portable `.jelly`.
-- **Grafting** — transmitting a Tool onto an Agent (see `jelly.transmission`).
+- **Bud** — a `ball.dreamball` in `stage: seed` attached to a Tree branch.
+- **Fruit** — a `ball.dreamball` in `stage: dreamball`, fully populated, not yet plucked.
+- **Pluck** — the sign-and-export action that turns a fruit into a portable `.ball`.
+- **Grafting** — transmitting a Tool onto an Agent (see `ball.transmission`).
 - **Soulskin** — the 4-layer shader that animates the sphere's material.
 - **Root Zone** — south-pole UI region hosting key tendrils (secret-refs).
 - **Horizon** — UI listing of sibling Trees accessible through the same Guild sky.
-- **Wind** — slang for a `jelly.transmission` carrying a seed between Trees.
+- **Wind** — slang for a `ball.transmission` carrying a seed between Trees.
 - **Ring** — a revision marker on the sphere; rings accumulate like tree rings.
 
 ---
