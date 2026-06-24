@@ -249,11 +249,11 @@ describe('Story 4.2 — MCP elicitation spike (AC3, AC4)', () => {
 
       // Stub DREAMBALL_CLI to a no-op script so the post-confirmation dispatch
       // succeeds (we just need to verify the elicit→dispatch flow happens).
-      const tmp = mkdtempSync(join(tmpdir(), 'jelly-stub-'));
-      const stubPath = join(tmp, 'jelly');
+      const tmp = mkdtempSync(join(tmpdir(), 'dreamball-stub-'));
+      const stubPath = join(tmp, 'dreamball');
       writeFileSync(stubPath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
       chmodSync(stubPath, 0o755);
-      const prevJelly = process.env.DREAMBALL_CLI;
+      const prevCli = process.env.DREAMBALL_CLI;
       process.env.DREAMBALL_CLI = stubPath;
 
       try {
@@ -262,14 +262,14 @@ describe('Story 4.2 — MCP elicitation spike (AC3, AC4)', () => {
           { elicit },
         );
         // Should have round-tripped the elicitation, gotten an accept, and
-        // dispatched to renameMythos (which calls the stub jelly = exit 0).
+        // dispatched to renameMythos (which calls the stub dreamball = exit 0).
         expect(result.elicited).toBe(false);
         expect(result.confirmed).toBe(true);
       } finally {
-        if (prevJelly === undefined) {
+        if (prevCli === undefined) {
           delete process.env.DREAMBALL_CLI;
         } else {
-          process.env.DREAMBALL_CLI = prevJelly;
+          process.env.DREAMBALL_CLI = prevCli;
         }
       }
     });

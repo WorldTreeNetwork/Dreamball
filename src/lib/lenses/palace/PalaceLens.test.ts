@@ -79,11 +79,11 @@ describe('AC1 — cross-runtime invariant: lens file imports nothing forbidden',
     }
   });
 
-  it('PalaceLens.svelte imports safeParseJelly from wasm/loader (TC6)', () => {
+  it('PalaceLens.svelte imports safeParseBall from wasm/loader (TC6)', () => {
     const src = readFileSync(LENS_SRC, 'utf-8');
     // Must use the wasm loader, not hand-written CBOR decode.
     expect(src).toMatch(/from ['"].*wasm\/loader\.js['"]/);
-    expect(src).toMatch(/\bsafeParseJelly\b/);
+    expect(src).toMatch(/\bsafeParseBall\b/);
   });
 
   it('PalaceLens.svelte uses Valibot schema from generated/schemas (AC1)', () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * jelly MCP server — stdio transport, JSON-RPC 2.0.
+ * dreamball MCP server — stdio transport, JSON-RPC 2.0.
  *
  * Exposes the Zig `dreamball` CLI as a set of MCP tools so AI agents +
  * scripting workflows can compose DreamBalls interactively. Every tool
@@ -10,7 +10,7 @@
  * Usage — add to ~/.claude/.mcp.json or project-local:
  * {
  *   "mcpServers": {
- *     "jelly": {
+ *     "dreamball": {
  *       "command": "bun",
  *       "args": ["run", "/path/to/Dreamball/tools/mcp-server/server.ts"]
  *     }
@@ -43,18 +43,18 @@ import { existsSync, readdirSync, statSync } from 'fs';
 // ---------------------------------------------------------------------------
 
 const REPO_ROOT = resolve(import.meta.dir, '..', '..');
-const DEFAULT_JELLY = resolve(REPO_ROOT, 'zig-out', 'bin', 'dreamball');
-const JELLY = process.env.DREAMBALL_CLI ?? DEFAULT_JELLY;
+const DEFAULT_DREAMBALL = resolve(REPO_ROOT, 'zig-out', 'bin', 'dreamball');
+const CLI = process.env.DREAMBALL_CLI ?? DEFAULT_DREAMBALL;
 
-function runJelly(args: string[]): { stdout: string; stderr: string; code: number } {
-	if (!existsSync(JELLY)) {
+function runDreamball(args: string[]): { stdout: string; stderr: string; code: number } {
+	if (!existsSync(CLI)) {
 		return {
 			stdout: '',
-			stderr: `dreamball CLI not found at ${JELLY}; run \`zig build\` first or set DREAMBALL_CLI`,
+			stderr: `dreamball CLI not found at ${CLI}; run \`zig build\` first or set DREAMBALL_CLI`,
 			code: 127
 		};
 	}
-	const res = spawnSync(JELLY, args, { encoding: 'utf-8' });
+	const res = spawnSync(CLI, args, { encoding: 'utf-8' });
 	return { stdout: res.stdout ?? '', stderr: res.stderr ?? '', code: res.status ?? -1 };
 }
 
@@ -102,7 +102,7 @@ const tools: ToolSpec[] = [
 			const cliArgs = ['mint', '--out', strArg(a, 'out'), '--type', strArg(a, 'type')];
 			const n = optStr(a, 'name');
 			if (n) cliArgs.push('--name', n);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
@@ -121,7 +121,7 @@ const tools: ToolSpec[] = [
 			const cliArgs = ['show', strArg(a, 'path')];
 			const f = optStr(a, 'format');
 			if (f) cliArgs.push('--format=' + f);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
@@ -135,7 +135,7 @@ const tools: ToolSpec[] = [
 			},
 			required: ['path']
 		},
-		handler: async (a) => runJelly(['verify', strArg(a, 'path')])
+		handler: async (a) => runDreamball(['verify', strArg(a, 'path')])
 	},
 	{
 		name: 'join_guild',
@@ -162,7 +162,7 @@ const tools: ToolSpec[] = [
 			];
 			const out = optStr(a, 'out');
 			if (out) cliArgs.push('--out', out);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
@@ -181,7 +181,7 @@ const tools: ToolSpec[] = [
 			required: ['tool', 'to', 'viaGuild', 'senderKey', 'out']
 		},
 		handler: async (a) =>
-			runJelly([
+			runDreamball([
 				'transmit',
 				strArg(a, 'tool'),
 				'--to',
@@ -219,7 +219,7 @@ const tools: ToolSpec[] = [
 			];
 			const hint = optStr(a, 'hint');
 			if (hint) cliArgs.push('--hint', hint);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
@@ -235,7 +235,7 @@ const tools: ToolSpec[] = [
 			required: ['relic', 'out']
 		},
 		handler: async (a) =>
-			runJelly(['unlock', strArg(a, 'relic'), '--out', strArg(a, 'out')])
+			runDreamball(['unlock', strArg(a, 'relic'), '--out', strArg(a, 'out')])
 	},
 	{
 		name: 'list_dreamballs',
@@ -256,7 +256,7 @@ const tools: ToolSpec[] = [
 				.filter((f) => f.endsWith('.ball'))
 				.map((f) => {
 					const full = resolve(dir, f);
-					const show = runJelly(['show', full]);
+					const show = runDreamball(['show', full]);
 					return { path: full, text: show.stdout.trim() };
 				});
 			return { count: entries.length, entries };
@@ -337,7 +337,7 @@ async function handle(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
 		return respond(req.id, {
 			protocolVersion: '2024-11-05',
 			capabilities: { tools: { listChanged: false } },
-			serverInfo: { name: 'jelly', version: '0.2.0' }
+			serverInfo: { name: 'dreamball', version: '0.2.0' }
 		});
 	}
 

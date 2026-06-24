@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 const WASM_PATH = join(REPO_ROOT, 'src', 'lib', 'wasm', 'dreamball.wasm');
 
-interface JellyExports {
+interface BallExports {
 	memory: WebAssembly.Memory;
 	alloc(n: number): number;
 	free(ptr: number, n: number): void;
@@ -33,7 +33,7 @@ interface JellyExports {
 	hashBlake3(inPtr: number, inLen: number, outPtr: number): void;
 }
 
-async function loadWasm(): Promise<JellyExports> {
+async function loadWasm(): Promise<BallExports> {
 	if (!existsSync(WASM_PATH)) {
 		throw new Error(
 			`dreamball.wasm not found at ${WASM_PATH}; run \`zig build wasm\` first.`,
@@ -51,7 +51,7 @@ async function loadWasm(): Promise<JellyExports> {
 	};
 	const result = await WebAssembly.instantiate(bytes, { env });
 	inst = result.instance;
-	return inst.exports as unknown as JellyExports;
+	return inst.exports as unknown as BallExports;
 }
 
 async function blake3Hex(bytes: Uint8Array): Promise<string> {

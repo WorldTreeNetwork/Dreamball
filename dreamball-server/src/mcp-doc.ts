@@ -214,8 +214,8 @@ const routes: RouteDoc[] = [
 const wasmExports = [
   { name: 'alloc', signature: '(size: u32) -> u32', description: 'Allocate bytes in the linear memory scratch arena. Returns 0 on OOM.' },
   { name: 'reset', signature: '() -> void', description: 'Reset the scratch arena. Must be called before each operation.' },
-  { name: 'parseJelly', signature: '(ptr: u32, len: u32) -> u64', description: 'Parse a .ball CBOR/JSON envelope. Returns packed (resultPtr << 32 | resultLen). Returns 0 on error.' },
-  { name: 'verifyJelly', signature: '(ptr: u32, len: u32) -> i32', description: 'Verify Ed25519 signatures. Returns 2=ok+signed, 1=ok+unsigned, 0=fail, -1=parse error.' },
+  { name: 'parseBall', signature: '(ptr: u32, len: u32) -> u64', description: 'Parse a .ball CBOR/JSON envelope. Returns packed (resultPtr << 32 | resultLen). Returns 0 on error.' },
+  { name: 'verifyBall', signature: '(ptr: u32, len: u32) -> i32', description: 'Verify Ed25519 signatures. Returns 2=ok+signed, 1=ok+unsigned, 0=fail, -1=parse error.' },
   { name: 'mintDreamBall', signature: '(typeId: u32, namePtr: u32, nameLen: u32, nowSecs: u64) -> u64', description: 'Mint a new DreamBall. Returns packed JSON result containing dreamball_json + secret_key_b58.' },
   { name: 'growDreamBall', signature: '(ptr: u32, len: u32) -> u64', description: 'Apply updates to a DreamBall and re-sign. Input: { dreamball_json, secret_key_b58, updates }.' },
   { name: 'joinGuildWasm', signature: '(ptr: u32, len: u32) -> u64', description: 'Add guild membership to a DreamBall. Input: { dreamball_json, guild_json, secret_key_b58 }.' },

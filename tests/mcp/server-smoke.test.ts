@@ -179,13 +179,13 @@ describe('Story 4.3 — MCP server smoke test', () => {
 
   it('AC2: palace.mint with valid inputs routes through handler (DREAMBALL_CLI stub)', async () => {
     // Stub the dreamball CLI so the underlying spawn succeeds without a real build.
-    const tmp = mkdtempSync(join(tmpdir(), 'jelly-stub-smoke-'));
-    const stubPath = join(tmp, 'jelly');
+    const tmp = mkdtempSync(join(tmpdir(), 'dreamball-stub-smoke-'));
+    const stubPath = join(tmp, 'dreamball');
     // The stub emits a JSON line on stdout (the palace-client reads stdout).
     writeFileSync(stubPath, '#!/bin/sh\necho \'{"palaceFp":"aabbcc"}\'\nexit 0\n');
     chmodSync(stubPath, 0o755);
 
-    const prevJelly = process.env.DREAMBALL_CLI;
+    const prevCli = process.env.DREAMBALL_CLI;
     process.env.DREAMBALL_CLI = stubPath;
 
     try {
@@ -200,10 +200,10 @@ describe('Story 4.3 — MCP server smoke test', () => {
       expect((result.content as unknown[]).length).toBeGreaterThan(0);
       expect((result.content as Array<{ type: string }>)[0].type).toBe('text');
     } finally {
-      if (prevJelly === undefined) {
+      if (prevCli === undefined) {
         delete process.env.DREAMBALL_CLI;
       } else {
-        process.env.DREAMBALL_CLI = prevJelly;
+        process.env.DREAMBALL_CLI = prevCli;
       }
     }
   });
@@ -227,12 +227,12 @@ describe('Story 4.3 — MCP server smoke test', () => {
 
   it('AC3: palace.rename-mythos proceeds after elicitation grant (DREAMBALL_CLI stub)', async () => {
     // Set up a dreamball CLI stub for the post-confirmation dispatch.
-    const tmp = mkdtempSync(join(tmpdir(), 'jelly-stub-rename-'));
-    const stubPath = join(tmp, 'jelly');
+    const tmp = mkdtempSync(join(tmpdir(), 'dreamball-stub-rename-'));
+    const stubPath = join(tmp, 'dreamball');
     writeFileSync(stubPath, '#!/bin/sh\necho \'{"trueName":"new-name"}\'\nexit 0\n');
     chmodSync(stubPath, 0o755);
 
-    const prevJelly = process.env.DREAMBALL_CLI;
+    const prevCli = process.env.DREAMBALL_CLI;
     process.env.DREAMBALL_CLI = stubPath;
 
     // Override the client elicitation handler to accept this time.
@@ -252,10 +252,10 @@ describe('Story 4.3 — MCP server smoke test', () => {
       };
       expect(payload.confirmed).toBe(true);
     } finally {
-      if (prevJelly === undefined) {
+      if (prevCli === undefined) {
         delete process.env.DREAMBALL_CLI;
       } else {
-        process.env.DREAMBALL_CLI = prevJelly;
+        process.env.DREAMBALL_CLI = prevCli;
       }
       // Restore the default decline handler for subsequent tests.
       client.setRequestHandler(ElicitRequestSchema, async () => {

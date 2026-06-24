@@ -15,8 +15,8 @@ export interface WasmExports {
   memory: WebAssembly.Memory;
   alloc: (size: number) => number;
   reset: () => void;
-  parseJelly: (ptr: number, len: number) => bigint;
-  verifyJelly: (ptr: number, len: number) => number;
+  parseBall: (ptr: number, len: number) => bigint;
+  verifyBall: (ptr: number, len: number) => number;
   mintDreamBall: (typeId: number, namePtr: number, nameLen: number, created: bigint) => bigint;
   growDreamBall: (
     envPtr: number,
@@ -159,9 +159,9 @@ export function base58Decode(s: string): Uint8Array {
 /** Parse envelope bytes through the WASM parser, returning the DreamBall JSON. */
 export function parseEnvelopeToJson(exp: WasmExports, envelopeBytes: Uint8Array): Record<string, unknown> {
   const envPtr = exp.alloc(envelopeBytes.length);
-  if (envPtr === 0) throw new Error('parseJelly: alloc failed');
+  if (envPtr === 0) throw new Error('parseBall: alloc failed');
   new Uint8Array(exp.memory.buffer, envPtr, envelopeBytes.length).set(envelopeBytes);
-  const packed = exp.parseJelly(envPtr, envelopeBytes.length);
+  const packed = exp.parseBall(envPtr, envelopeBytes.length);
   return JSON.parse(readPackedString(exp, packed)) as Record<string, unknown>;
 }
 

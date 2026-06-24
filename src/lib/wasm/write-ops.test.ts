@@ -12,8 +12,8 @@ interface WasmAPI {
 	memory: WebAssembly.Memory;
 	alloc: (n: number) => number;
 	reset: () => void;
-	parseJelly: (ptr: number, len: number) => bigint;
-	verifyJelly: (ptr: number, len: number) => number;
+	parseBall: (ptr: number, len: number) => bigint;
+	verifyBall: (ptr: number, len: number) => number;
 	mintDreamBall: (
 		typeId: number,
 		namePtr: number,
@@ -109,7 +109,7 @@ describe('WASM write-ops', () => {
 		// Envelope should parse cleanly.
 		wasm.reset();
 		const envPtr = copyBytes(wasm, envelope);
-		const parsedPacked = wasm.parseJelly(envPtr, envelope.length);
+		const parsedPacked = wasm.parseBall(envPtr, envelope.length);
 		const parsedBytes = readPacked(wasm, parsedPacked);
 		const parsed = JSON.parse(new TextDecoder().decode(parsedBytes));
 		expect(parsed.type).toBe('ball.dreamball.avatar');
@@ -119,7 +119,7 @@ describe('WASM write-ops', () => {
 		// And verify the Ed25519 signature.
 		wasm.reset();
 		const vPtr = copyBytes(wasm, envelope);
-		const vCode = wasm.verifyJelly(vPtr, envelope.length);
+		const vCode = wasm.verifyBall(vPtr, envelope.length);
 		expect(vCode).toBe(2); // verified with Ed25519
 	});
 
@@ -146,7 +146,7 @@ describe('WASM write-ops', () => {
 			const env = readPacked(wasm, packed);
 			wasm.reset();
 			const envPtr = copyBytes(wasm, env);
-			const parsedPacked = wasm.parseJelly(envPtr, env.length);
+			const parsedPacked = wasm.parseBall(envPtr, env.length);
 			const parsed = JSON.parse(new TextDecoder().decode(readPacked(wasm, parsedPacked)));
 			expect(parsed.type).toBe(expectedType);
 		}
@@ -186,7 +186,7 @@ describe('WASM write-ops', () => {
 		wasm.reset();
 		const p2 = copyBytes(wasm, env2);
 		const parsed = JSON.parse(
-			new TextDecoder().decode(readPacked(wasm, wasm.parseJelly(p2, env2.length)))
+			new TextDecoder().decode(readPacked(wasm, wasm.parseBall(p2, env2.length)))
 		);
 		expect(parsed.revision).toBe(1);
 		expect(parsed.stage).toBe('dreamball');
@@ -194,7 +194,7 @@ describe('WASM write-ops', () => {
 
 		wasm.reset();
 		const v2 = copyBytes(wasm, env2);
-		expect(wasm.verifyJelly(v2, env2.length)).toBe(2);
+		expect(wasm.verifyBall(v2, env2.length)).toBe(2);
 	});
 
 	it('joinGuildWasm adds a guild attribute + re-verifies', () => {
@@ -236,7 +236,7 @@ describe('WASM write-ops', () => {
 		wasm.reset();
 		const jPtr = copyBytes(wasm, joinedEnv);
 		const parsed = JSON.parse(
-			new TextDecoder().decode(readPacked(wasm, wasm.parseJelly(jPtr, joinedEnv.length)))
+			new TextDecoder().decode(readPacked(wasm, wasm.parseBall(jPtr, joinedEnv.length)))
 		);
 		expect(parsed.revision).toBe(1);
 		expect(parsed.guild).toBeDefined();
@@ -244,7 +244,7 @@ describe('WASM write-ops', () => {
 
 		wasm.reset();
 		const vPtr = copyBytes(wasm, joinedEnv);
-		expect(wasm.verifyJelly(vPtr, joinedEnv.length)).toBe(2);
+		expect(wasm.verifyBall(vPtr, joinedEnv.length)).toBe(2);
 	});
 
 	it('rejects bad type_id', () => {

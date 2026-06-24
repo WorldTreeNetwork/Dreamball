@@ -3,10 +3,10 @@
 //! the CLI uses, so web + CLI can never drift.
 //!
 //! Contract with the JS loader:
-//!   - The WASM module exposes `alloc`, `reset`, and `parseJelly`.
+//!   - The WASM module exposes `alloc`, `reset`, and `parseBall`.
 //!   - `alloc(size)` returns a pointer in linear memory; JS copies input
 //!     bytes there.
-//!   - `parseJelly(ptr, len)` consumes those bytes and writes a JSON
+//!   - `parseBall(ptr, len)` consumes those bytes and writes a JSON
 //!     result elsewhere in linear memory, returning a packed
 //!     (result_ptr << 32) | result_len. 0 means parse failure — JS can
 //!     call `resultErr` for a short diagnostic string.
@@ -91,7 +91,7 @@ export fn reset() void {
 /// returns a packed u64 = (result_ptr << 32) | result_len pointing at
 /// the JSON rendering of the DreamBall. On failure, returns 0 and sets
 /// the last-error buffer (readable via `resultErrPtr`/`resultErrLen`).
-export fn parseJelly(input_ptr: u32, input_len: u32) u64 {
+export fn parseBall(input_ptr: u32, input_len: u32) u64 {
     const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
     const alloc_ = fba_state.allocator();
 
@@ -170,7 +170,7 @@ export fn lastSecretLen() u32 {
 
 /// Legacy zero-filled ML-DSA-87 signature detector. Earlier browser-mint
 /// envelopes attached a 4627-byte zero buffer as a placeholder; we now
-/// emit Ed25519-only instead, but `verifyJelly` keeps this around to
+/// emit Ed25519-only instead, but `verifyBall` keeps this around to
 /// tolerate any on-disk envelope still carrying the legacy placeholder.
 fn isPlaceholderMldsa(sig: []const u8) bool {
     if (sig.len != protocol.ML_DSA_87_SIGNATURE_LEN) return false;
@@ -453,7 +453,7 @@ export fn resultErrLen() u32 {
 ///   1  — envelope parsed but no Ed25519 signature present (draft)
 ///   0  — verification failed (signature mismatch, tampered bytes, etc.)
 ///   -1 / 0xFFFFFFFF — parse error (use resultErr for diagnostic)
-export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
+export fn verifyBall(input_ptr: u32, input_len: u32) i32 {
     const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
     const alloc_ = fba_state.allocator();
 

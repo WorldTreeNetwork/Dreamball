@@ -31,13 +31,13 @@ async function loadWasm() {
 		memory: WebAssembly.Memory;
 		alloc: (n: number) => number;
 		reset: () => void;
-		verifyJelly: (ptr: number, len: number) => number;
+		verifyBall: (ptr: number, len: number) => number;
 		resultErrPtr: () => number;
 		resultErrLen: () => number;
 	};
 }
 
-describe('WASM verifyJelly', () => {
+describe('WASM verifyBall', () => {
 	let wasm: Awaited<ReturnType<typeof loadWasm>>;
 	let pristineBytes: Uint8Array;
 	let tamperedBytes: Uint8Array;
@@ -45,12 +45,12 @@ describe('WASM verifyJelly', () => {
 	beforeAll(async () => {
 		wasm = await loadWasm();
 
-		const workdir = mkdtempSync(join(tmpdir(), 'jelly-verify-'));
-		const jellyPath = join(workdir, 'test.ball');
+		const workdir = mkdtempSync(join(tmpdir(), 'dreamball-verify-'));
+		const ballPath = join(workdir, 'test.ball');
 
 		// Mint a real DreamBall via the Zig CLI.
-		execSync(`${DREAMBALL_CLI} mint --out ${jellyPath} --type avatar --name test`, { stdio: 'pipe' });
-		pristineBytes = new Uint8Array(readFileSync(jellyPath));
+		execSync(`${DREAMBALL_CLI} mint --out ${ballPath} --type avatar --name test`, { stdio: 'pipe' });
+		pristineBytes = new Uint8Array(readFileSync(ballPath));
 
 		// Tamper: flip a byte inside the signed region.
 		const copy = new Uint8Array(pristineBytes);
@@ -62,7 +62,7 @@ describe('WASM verifyJelly', () => {
 		wasm.reset();
 		const ptr = wasm.alloc(bytes.length);
 		new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
-		const code = wasm.verifyJelly(ptr, bytes.length);
+		const code = wasm.verifyBall(ptr, bytes.length);
 		const ep = wasm.resultErrPtr();
 		const el = wasm.resultErrLen();
 		const reason = new TextDecoder().decode(new Uint8Array(wasm.memory.buffer, ep, el));

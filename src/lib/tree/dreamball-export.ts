@@ -7,7 +7,7 @@
 
 import type { SynthesisedFruit } from './agent/MockAgent.js';
 
-export function fruitToJellyJson(fruit: SynthesisedFruit): unknown {
+export function fruitToBallJson(fruit: SynthesisedFruit): unknown {
 	return {
 		_warning: 'mock — not real dCBOR, not signed. Phase 0/1 placeholder.',
 		type: `ball.dreamball.${fruit.type}`,
@@ -43,7 +43,7 @@ export function fruitToJellyJson(fruit: SynthesisedFruit): unknown {
 }
 
 export function downloadFruit(fruit: SynthesisedFruit): void {
-	const json = fruitToJellyJson(fruit);
+	const json = fruitToBallJson(fruit);
 	const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/ball+json' });
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');

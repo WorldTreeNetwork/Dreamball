@@ -40,7 +40,7 @@
   import { OrbitControls } from '@threlte/extras';
   import * as THREE from 'three';
   import { onMount } from 'svelte';
-  import { safeParseJelly } from '../../wasm/loader.js';
+  import { safeParseBall } from '../../wasm/loader.js';
   import { DreamBallFieldSchema } from '../../generated/schemas.js';
   import * as v from 'valibot';
   import type { StoreAPI, RoomData } from '../../../memory-palace/store-types.js';
@@ -135,7 +135,7 @@
    * fallback (AC3 path).
    */
   async function decodePalaceEnvelope(bytes: Uint8Array): Promise<void> {
-    const result = await safeParseJelly(bytes);
+    const result = await safeParseBall(bytes);
     if (!result.success) {
       decodeError = `dreamball.wasm parse failed: ${result.issues?.[0]?.message ?? 'unknown error'}`;
       return;
@@ -163,7 +163,7 @@
     // whatever the WASM surfaces. This is intentional — the Zig side is the
     // authority; TS never hand-parses.
     const raw = result.data as Record<string, unknown>;
-    const jellyLayout = raw['ball.layout'] as {
+    const ballLayout = raw['ball.layout'] as {
       placements?: Array<{
         'child-fp': string;
         position: [number, number, number];
@@ -171,9 +171,9 @@
       }>;
     } | undefined;
 
-    if (jellyLayout?.placements) {
+    if (ballLayout?.placements) {
       const newMap = new Map<string, { position: [number, number, number]; facing: [number, number, number, number] }>();
-      for (const p of jellyLayout.placements) {
+      for (const p of ballLayout.placements) {
         newMap.set(p['child-fp'], { position: p.position, facing: p.facing });
       }
       layoutByChildFp = newMap;

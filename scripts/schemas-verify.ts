@@ -21,7 +21,7 @@ const SCHEMAS_DIR = join(REPO_ROOT, 'schemas');
 const PINS_DIR = join(SCHEMAS_DIR, '.pins');
 const WASM_PATH = join(REPO_ROOT, 'src', 'lib', 'wasm', 'dreamball.wasm');
 
-interface JellyExports {
+interface BallExports {
 	memory: WebAssembly.Memory;
 	alloc(n: number): number;
 	free(ptr: number, n: number): void;
@@ -29,9 +29,9 @@ interface JellyExports {
 	hashBlake3(inPtr: number, inLen: number, outPtr: number): void;
 }
 
-let cachedExports: JellyExports | null = null;
+let cachedExports: BallExports | null = null;
 
-async function getExports(): Promise<JellyExports> {
+async function getExports(): Promise<BallExports> {
 	if (cachedExports) return cachedExports;
 	if (!existsSync(WASM_PATH)) {
 		throw new Error(
@@ -48,7 +48,7 @@ async function getExports(): Promise<JellyExports> {
 	};
 	const result = await WebAssembly.instantiate(bytes, { env });
 	inst = result.instance;
-	cachedExports = inst.exports as unknown as JellyExports;
+	cachedExports = inst.exports as unknown as BallExports;
 	return cachedExports;
 }
 

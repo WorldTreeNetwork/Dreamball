@@ -25,7 +25,7 @@ export const verifyRoute = new Elysia().get(
     }
     new Uint8Array(wasm.memory.buffer, ptr, jsonBytes.length).set(jsonBytes);
 
-    const result = wasm.verifyJelly(ptr, jsonBytes.length);
+    const result = wasm.verifyBall(ptr, jsonBytes.length);
 
     if (result === 2) return { ok: true, hadEd25519: true };
     if (result === 1) return { ok: true, hadEd25519: false };

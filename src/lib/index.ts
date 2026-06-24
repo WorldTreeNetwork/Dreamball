@@ -27,11 +27,11 @@ export {
 } from './splat/media-types.js';
 
 export {
-	parseJelly,
-	parseJellyToJson,
-	parseJellyUnvalidated,
-	safeParseJelly,
-	verifyJelly,
+	parseBall,
+	parseBallToJson,
+	parseBallUnvalidated,
+	safeParseBall,
+	verifyBall,
 	VERIFY_OK,
 	VERIFY_NO_ED25519,
 	VERIFY_FAILED,

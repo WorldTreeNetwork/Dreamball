@@ -33,7 +33,7 @@
 			name: 'WS',
 			role: 'browser ↔ tree daemon',
 			status: 'offline',
-			hint: 'ws://localhost:8080/jelly · phase 1+'
+			hint: 'ws://localhost:8080/ball · phase 1+'
 		},
 		{
 			id: 'mcp',

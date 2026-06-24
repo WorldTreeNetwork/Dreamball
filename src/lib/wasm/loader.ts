@@ -1,5 +1,5 @@
 /**
- * Jelly WASM loader — single source of truth for `.ball` parsing,
+ * DreamBall WASM loader — single source of truth for `.ball` parsing,
  * Ed25519 verification, and ML-DSA-87 verification in the browser.
  * Compiles from `src/wasm_main.zig` via `zig build wasm`.
  *
@@ -29,8 +29,8 @@ interface WasmExports {
 	memory: WebAssembly.Memory;
 	alloc: (size: number) => number;
 	reset: () => void;
-	parseJelly: (ptr: number, len: number) => bigint;
-	verifyJelly: (ptr: number, len: number) => number;
+	parseBall: (ptr: number, len: number) => bigint;
+	verifyBall: (ptr: number, len: number) => number;
 	verifyMlDsa: (
 		sigPtr: number,
 		sigLen: number,
@@ -76,13 +76,13 @@ export type VerifyResult =
  * - `{ ok: false, code: 0, ... }` — one or more signatures failed.
  * - `{ ok: false, code: -1, ... }` — parse failure.
  */
-export async function verifyJelly(bytes: Uint8Array): Promise<VerifyResult> {
+export async function verifyBall(bytes: Uint8Array): Promise<VerifyResult> {
 	const exp = await getInstance();
 	exp.reset();
 	const ptr = exp.alloc(bytes.length);
 	if (ptr === 0) return { ok: false, code: -1, reason: 'alloc failed (input too large?)' };
 	new Uint8Array(exp.memory.buffer, ptr, bytes.length).set(bytes);
-	const result = exp.verifyJelly(ptr, bytes.length);
+	const result = exp.verifyBall(ptr, bytes.length);
 	if (result === 2) return { ok: true, hadEd25519: true, code: 2 };
 	if (result === 1) return { ok: true, hadEd25519: false, code: 1 };
 	const ep = exp.resultErrPtr();
@@ -254,20 +254,20 @@ async function getInstance(): Promise<WasmExports> {
  * the shape against `DreamBallSchema`. Throws `ValiError` on schema
  * mismatch, `Error` on parse failure.
  *
- * For a non-throwing variant, use `safeParseJelly`.
+ * For a non-throwing variant, use `safeParseBall`.
  */
-export async function parseJelly(bytes: Uint8Array): Promise<DreamBallValidated> {
-	const jsonText = await parseJellyToJsonRaw(bytes);
+export async function parseBall(bytes: Uint8Array): Promise<DreamBallValidated> {
+	const jsonText = await parseBallToJsonRaw(bytes);
 	return v.parse(DreamBallSchema, JSON.parse(jsonText));
 }
 
 /**
  * Parse + validate, returning a tagged result instead of throwing.
  */
-export async function safeParseJelly(bytes: Uint8Array): Promise<ParseResult<DreamBallValidated>> {
+export async function safeParseBall(bytes: Uint8Array): Promise<ParseResult<DreamBallValidated>> {
 	let jsonText: string;
 	try {
-		jsonText = await parseJellyToJsonRaw(bytes);
+		jsonText = await parseBallToJsonRaw(bytes);
 	} catch (e) {
 		return {
 			success: false,
@@ -284,16 +284,16 @@ export async function safeParseJelly(bytes: Uint8Array): Promise<ParseResult<Dre
 }
 
 /**
- * Like `parseJelly` but returns the validated JSON string (not a parsed
+ * Like `parseBall` but returns the validated JSON string (not a parsed
  * object). Useful for piping into other systems.
  */
-export async function parseJellyToJson(bytes: Uint8Array): Promise<string> {
-	const db = await parseJelly(bytes);
+export async function parseBallToJson(bytes: Uint8Array): Promise<string> {
+	const db = await parseBall(bytes);
 	return JSON.stringify(db);
 }
 
 /** Internal — bytes → WASM → JSON string, no schema validation. */
-async function parseJellyToJsonRaw(bytes: Uint8Array): Promise<string> {
+async function parseBallToJsonRaw(bytes: Uint8Array): Promise<string> {
 	const exp = await getInstance();
 
 	exp.reset();
@@ -302,7 +302,7 @@ async function parseJellyToJsonRaw(bytes: Uint8Array): Promise<string> {
 	if (inPtr === 0) throw new Error('dreamball-wasm: alloc failed (input too large?)');
 	new Uint8Array(exp.memory.buffer, inPtr, bytes.length).set(bytes);
 
-	const packed = exp.parseJelly(inPtr, bytes.length);
+	const packed = exp.parseBall(inPtr, bytes.length);
 
 	if (packed === 0n) {
 		const ep = exp.resultErrPtr();
@@ -317,7 +317,7 @@ async function parseJellyToJsonRaw(bytes: Uint8Array): Promise<string> {
 }
 
 /** Retained export for back-compat with any callers that want the unvalidated shape. */
-export async function parseJellyUnvalidated(bytes: Uint8Array): Promise<DreamBall> {
-	const jsonText = await parseJellyToJsonRaw(bytes);
+export async function parseBallUnvalidated(bytes: Uint8Array): Promise<DreamBall> {
+	const jsonText = await parseBallToJsonRaw(bytes);
 	return JSON.parse(jsonText) as DreamBall;
 }

@@ -31,7 +31,7 @@ import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
  * Resolve the `dreamball` CLI path. Defaults to `zig-out/bin/dreamball` (the local
  * build output); overridable via DREAMBALL_CLI env var for test/CI environments.
  */
-function resolveJelly(): string {
+function resolveDreamball(): string {
   return process.env.DREAMBALL_CLI ?? 'zig-out/bin/dreamball';
 }
 
@@ -41,7 +41,7 @@ function resolveJelly(): string {
  */
 function invokeVerb(verb: string, flags: string[], opts: SpawnSyncOptions = {}): string {
   const argv = ['palace', verb, ...flags];
-  const res = spawnSync(resolveJelly(), argv, {
+  const res = spawnSync(resolveDreamball(), argv, {
     encoding: 'utf-8',
     ...opts,
   });

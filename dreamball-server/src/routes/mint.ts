@@ -11,7 +11,7 @@
  *   - The 64-byte Ed25519 secret lands in a separate buffer readable via
  *     `lastSecretPtr()` / `lastSecretLen()`.
  *   - To produce a JSON view of the envelope, we feed the CBOR bytes back
- *     through `parseJelly`.
+ *     through `parseBall`.
  */
 
 import Elysia, { t } from 'elysia';

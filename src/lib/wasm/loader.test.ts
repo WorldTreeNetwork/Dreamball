@@ -22,7 +22,7 @@ async function buildInstance() {
 		memory: WebAssembly.Memory;
 		alloc: (n: number) => number;
 		reset: () => void;
-		parseJelly: (ptr: number, len: number) => bigint;
+		parseBall: (ptr: number, len: number) => bigint;
 		resultErrPtr: () => number;
 		resultErrLen: () => number;
 	};
@@ -84,7 +84,7 @@ describe('dreamball-wasm loader', () => {
 		expect(ptr).toBeGreaterThan(0);
 		new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
 
-		const packed = wasm.parseJelly(ptr, bytes.length);
+		const packed = wasm.parseBall(ptr, bytes.length);
 		expect(packed).not.toBe(0n);
 
 		const resultPtr = Number(packed >> 32n);
@@ -107,7 +107,7 @@ describe('dreamball-wasm loader', () => {
 		wasm.reset();
 		const ptr = wasm.alloc(bytes.length);
 		new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
-		const packed = wasm.parseJelly(ptr, bytes.length);
+		const packed = wasm.parseBall(ptr, bytes.length);
 		expect(packed).toBe(0n);
 		const ep = wasm.resultErrPtr();
 		const el = wasm.resultErrLen();
@@ -121,7 +121,7 @@ describe('dreamball-wasm loader', () => {
 		wasm.reset();
 		const ptr = wasm.alloc(bytes.length);
 		new Uint8Array(wasm.memory.buffer, ptr, bytes.length).set(bytes);
-		const packed = wasm.parseJelly(ptr, bytes.length);
+		const packed = wasm.parseBall(ptr, bytes.length);
 		expect(packed).not.toBe(0n);
 		const resultPtr = Number(packed >> 32n);
 		const resultLen = Number(packed & 0xffffffffn);
