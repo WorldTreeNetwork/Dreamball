@@ -31,6 +31,18 @@ jobs:
           echo "dreamball.wasm is ${raw} bytes raw, ${gz} bytes gzipped"
           test "$raw" -le 204800
           test "$gz" -le 65536
+      - name: Vendor bundle consistency (no drift from committed wasm)
+        # The depend-able release/dreamball-wasm/ bundle must stay in lockstep
+        # with the committed source binary. Platform-independent: we compare
+        # the COMMITTED src wasm (not the just-rebuilt one) so this does not
+        # rely on cross-host build reproducibility. If it fails, run
+        # scripts/build-vendor-wasm.sh and commit release/dreamball-wasm/.
+        run: |
+          # 1) checksum file is valid for the vendored binary
+          (cd release/dreamball-wasm && sha256sum -c dreamball.wasm.sha256)
+          # 2) vendored binary == the committed source binary
+          git cat-file blob HEAD:src/lib/wasm/dreamball.wasm > /tmp/committed-src.wasm
+          cmp /tmp/committed-src.wasm release/dreamball-wasm/dreamball.wasm
       - name: zig build smoke
         run: zig build smoke
       - name: wasm-spike (Story 5.1 — AC3 linux parity, AC6 perf publish)

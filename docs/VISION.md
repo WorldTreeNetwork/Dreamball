@@ -181,7 +181,7 @@ be rendered against a mesh surface, a gaussian splat cloud, an SDF field,
 or a volumetric neural field — because the graticule speaks in the language
 of *space distribution*, not of *triangle positions*.
 
-Wire representation: `jelly.omnispherical-grid` (see `docs/PROTOCOL.md
+Wire representation: `ball.omnispherical-grid` (see `docs/PROTOCOL.md
 §12.2`). It carries floats for coordinates — the one documented exception
 to v1's no-floats dCBOR rule — because spatial coordinates without floats
 would be absurd. The exception is confined to this envelope type.
@@ -192,7 +192,7 @@ The user's sketch: **the DreamBall is the container, the DragonBall is the
 skin (Fortnite-style), the jelly bean is the form** — an optional inner slot
 that carries topology and addresses.
 
-Concretely, inside `jelly.look`, we reserve space for:
+Concretely, inside `ball.look`, we reserve space for:
 
 - `shader` — material/shader graph (glTF PBR, OSL, or a neutral graph spec)
 - `base-mesh` — optional, with named regions and addressable topology
@@ -296,7 +296,7 @@ To keep this doc honest:
 
 > Added 2026-04-18 with the v2 protocol work.
 
-v1 treated `jelly.dreamball` as a monolith. That worked for a protocol
+v1 treated `ball.dreamball` as a monolith. That worked for a protocol
 spec but collapsed the moment we tried to render one — because different
 DreamBalls do **categorically different things**, not just different
 variants of the same thing. Magic: The Gathering's category system is the
@@ -362,14 +362,14 @@ app.
 
 ### 10.3 The zip-file insight
 
-Deep down, a DreamBall is a **well-specified zip file**. The `.jelly`
+Deep down, a DreamBall is a **well-specified zip file**. The `.ball`
 bundle is dCBOR plus optional sidecar attachments plus a canonical
 header. Zip-like semantics:
 
 - It's a compressed container.
 - It has internal structure you can inspect without unpacking everything.
 - It travels as a single opaque file that any compatible tool can open.
-- It can be nested (a Relic contains a sealed inner `.jelly`).
+- It can be nested (a Relic contains a sealed inner `.ball`).
 
 That's the mental model we keep reaching for when describing the
 protocol to someone new: "it's a zip file with a signature and a
@@ -393,7 +393,7 @@ DreamBalls need this split at the protocol level because the Agent's
 memory, knowledge graph, emotional register, and interaction history are
 **private to its custodian and guild**, while the Avatar's visual
 aspect — and any Field it's embedded in — is **public to observers**.
-The `jelly.guild-policy` envelope (see `docs/PROTOCOL.md §12.7`) makes
+The `ball.guild-policy` envelope (see `docs/PROTOCOL.md §12.7`) makes
 this policy explicit: slot-level read/write permissions keyed to Guild
 membership.
 
@@ -437,7 +437,7 @@ closest existing consumer-web rendering tech comes to the
 a splat carries spatial distribution without committing to any
 particular topology, exactly as the graticule metaphor asks. When a
 DreamBall's primary `look.asset` carries a splat media-type (see
-[`docs/PROTOCOL.md §4.5`](PROTOCOL.md#45-jellyasset)), the viewer
+[`docs/PROTOCOL.md §4.5`](PROTOCOL.md#45-ballasset)), the viewer
 auto-routes to this lens. The reference implementation embeds
 PlayCanvas's native GSplat engine because at the time of v2 it is the
 most production-ready splat pipeline on the web, handling the ordered
@@ -470,12 +470,12 @@ A Tool-type DreamBall is a **skill you can give someone**. The
 transmission protocol is the hyperdimensional interface that moves it
 from one owner to another target:
 
-1. Sender has a Tool DreamBall (`tool.jelly`) that declares what it does
+1. Sender has a Tool DreamBall (`tool.ball`) that declares what it does
    (a skill envelope: trigger, body, requires).
 2. Sender and receiver both belong to a shared Guild `G`.
-3. Sender invokes `jelly transmit tool.jelly --to=<receiver-fp>
+3. Sender invokes `dreamball transmit tool.ball --to=<receiver-fp>
    --via-guild=<G-fp>`.
-4. A `jelly.transmission` receipt is produced — a signed, auditable
+4. A `ball.transmission` receipt is produced — a signed, auditable
    record of the transfer — and lodged against the receiver's Agent
    DreamBall.
 5. Receiver's Agent custodian re-fetches the Agent; the Agent's
@@ -496,10 +496,10 @@ that hop stubbed; the transmission envelope's shape already supports it.
 
 ## 14. One binary, two runtimes — the WASM core
 
-> Added 2026-04-19 with the v2.1 jelly-server + browser-verify work.
+> Added 2026-04-19 with the v2.1 dreamball-server + browser-verify work.
 
 A design principle that emerged from shipping v2.1: **the Zig protocol
-core is compiled once to `jelly.wasm` and executed identically in
+core is compiled once to `dreamball.wasm` and executed identically in
 Bun-server and in the browser**. Host-provided randomness flows through
 a single `env.getRandomBytes` import; nothing else is host-specific.
 
@@ -517,11 +517,11 @@ What this buys us:
   fall out of sync.
 - **Offline-first by default.** Any operation that doesn't need the
   network (mint, parse, verify with Ed25519, grow, join-guild) works in
-  a browser with no server. `jelly-server` is an accelerator, not a
+  a browser with no server. `dreamball-server` is an accelerator, not a
   requirement.
 - **Trust symmetry.** The server's cryptographic guarantees are *the same*
   as the browser's — they run the same Ed25519 verifier on the same
-  envelope bytes. When `jelly-server` claims "this envelope verifies,"
+  envelope bytes. When `dreamball-server` claims "this envelope verifies,"
   the browser can independently re-verify without trusting the server.
   This is unusual; most systems require trusting the server's claims.
 - **Minimal host seam.** One imported function (`getRandomBytes`). Swap
@@ -563,7 +563,7 @@ from Bun tests and the Svelte lib's loader.
 A **composition** is a DreamBall whose shape arises from how it *uses*
 the v2 primitives together, not from any single primitive alone. The
 Memory Palace is the first — six typed balls, eight lenses, guild
-policy, onion-layer fractal containment, and the `jelly.wasm` crypto
+policy, onion-layer fractal containment, and the `dreamball.wasm` crypto
 core happen to add up to a thing a person can walk around *inside*.
 That outcome is not mechanical; it has to be felt for the composition
 to be legible. This section records what that feel is, so future
@@ -641,7 +641,7 @@ room. Vril is a unifying abstraction behind four otherwise-separate
 metaphors the palace kept reaching for before it had a shared word:
 
 - **The jelly itself.** The DreamBall family is bioplasmatic in its
-  naming (jelly, gel, membrane, wobble). Vril is the substance the
+  naming (dreamball, gel, membrane, wobble). Vril is the substance the
   name has been pointing at all along.
 - **Electron flow through a computer.** Capacitance, resistance,
   conductance, the difference between a passive trace and a live
@@ -696,7 +696,7 @@ Archiforms form a DAG via `parent-form`; a `temple` may parent
 `chapel`, `sanctum`, `ziggurat`. The protocol ships a small seed
 set and leaves the tree community-extensible via a registry asset
 on each palace. Archiform is intentionally parallel to (and
-independent of) `jelly.element-tag` — two tag dimensions for two
+independent of) `ball.element-tag` — two tag dimensions for two
 different questions. See PROTOCOL §13.9.
 
 ### 15.5 Aqueducts are warm; containment is cold
@@ -748,7 +748,7 @@ the emotional register's trajectory.
 Rooms rearrange themselves based on what's being used. A Room of
 Requirement behaviour is default, not exceptional. Two viewers of
 the same palace may see different layouts simultaneously — the
-`jelly.layout` attribute is a rendering hint, not a security claim,
+`ball.layout` attribute is a rendering hint, not a security claim,
 and multiple layouts can coexist. Spatial relationships are
 metaphor; the palace is not bound by physics.
 
@@ -763,11 +763,11 @@ lived in.
 
 The palace introduces two parallel append-only signed chains:
 
-- `jelly.timeline` + `jelly.action` — the record of *doings*. Every
+- `ball.timeline` + `ball.action` — the record of *doings*. Every
   state-changing palace action is signed and linked to its parent
   by Blake3 hash. The chain is CRDT-compatible at the wire level
   (merge semantics are explicitly deferred to Vision tier).
-- `jelly.mythos` — the record of *becomings*. Every true-naming
+- `ball.mythos` — the record of *becomings*. Every true-naming
   extends this chain; the genesis terminates it on the far side.
 
 The symmetry is deliberate. The protocol's sister system (recrypt)
@@ -811,7 +811,7 @@ code that implements it.
 Sections currently in motion:
 
 - §4 (form-independence in `look`) — active rework triggered by the shader /
-  graticule / base-mesh insight. Expect v2 of the protocol's `jelly.look`
+  graticule / base-mesh insight. Expect v2 of the protocol's `ball.look`
   envelope to formalise this.
 - §5 (composition) — the `contains` / `derived-from` graph semantics need
   worked examples. The new §15 (Memory Palace) is the first such example.
@@ -835,7 +835,7 @@ Sections currently in motion:
 Most protocols treat the authoring tool as outside the protocol: a
 word processor is not a `.docx`, Blender is not a `.blend`. The
 Wishing Tree takes the opposite stance — **the composer is itself a
-DreamBall**, typed `jelly.dreamball.field`, whose `contains` graph
+DreamBall**, typed `ball.dreamball.field`, whose `contains` graph
 accumulates every other DreamBall authored inside it.
 
 This matters for three reasons:
@@ -848,10 +848,10 @@ This matters for three reasons:
    graph, authored by another DreamBall.
 
 2. **The tool is shareable by the same mechanism as its output.**
-   Because the Tree is a DreamBall, `jelly seal wishing-tree.jelly`
+   Because the Tree is a DreamBall, `dreamball seal wishing-tree.ball`
    produces a DragonBall — the composer ships to anyone via the same
    wire format its own output uses. No vendor runtime, no special
-   installer, no "download our app." Plant the `.jelly` and the Tree
+   installer, no "download our app." Plant the `.ball` and the Tree
    grows a new Tree.
 
 3. **Self-similarity all the way down.** The Tree's UI surfaces
@@ -863,7 +863,7 @@ This matters for three reasons:
    open.
 
 The south pole of the Tree is the Root Zone — API keys and signing
-material wrapped as `jelly.secret-ref` envelopes, never persisted in
+material wrapped as `ball.secret-ref` envelopes, never persisted in
 plaintext client-side. The outer surface is the Soulskin: a 4-layer
 shader whose animation states (breathing, thinking, wishing,
 granting, sealing) map to the Tree agent's live activity. Nodes

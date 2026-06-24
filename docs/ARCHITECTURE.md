@@ -25,13 +25,13 @@
                                ▼                  ▼
                     ┌──────────────────┐    ┌───────────────────────┐
                     │  zig-out/bin/    │    │  src/lib/wasm/        │
-                    │    jelly (CLI)   │    │    jelly.wasm         │
+                    │ dreamball (CLI)  │    │    dreamball.wasm         │
                     └──────┬───────────┘    └──────┬────────────────┘
                            │                       │
                            │          ┌────────────┴─────────┐
                            │          │                      │
                            │       ┌──▼──────────────┐   ┌───▼──────────────┐
-                           │       │  jelly-server   │   │  src/lib/        │
+                           │       │  dreamball-server   │   │  src/lib/        │
                            │       │  (Bun + Elysia) │   │   (Svelte lib,   │
                            │       │  Routes + Eden  │   │    browser)      │
                            │       └──────┬──────────┘   └──────────────────┘
@@ -48,7 +48,7 @@
                               │   (Rust)              │     proxy-recryption
                               └───────────────────────┘
                               (ML-DSA-87 is vendored liboqs inside the
-                               jelly CLI + jelly.wasm — no HTTP hop.)
+                               dreamball CLI + dreamball.wasm — no HTTP hop.)
 ```
 
 ---
@@ -80,8 +80,8 @@ regenerate via `bun run codegen`.
 ### Single shared host code (D-032)
 
 The wasm host that brokers the `dreamball.*` import surface is one Zig
-codebase compiled to two targets: `jelly` CLI (Zig + WASI) and
-`jelly.wasm` (browser, sprint-003+). Host behavior is identical across
+codebase compiled to two targets: `dreamball` CLI (Zig + WASI) and
+`dreamball.wasm` (browser, sprint-003+). Host behavior is identical across
 targets; only the platform-shim layer (file I/O, network) differs.
 
 The concrete rules that fall out of this invariant:
@@ -91,7 +91,7 @@ The concrete rules that fall out of this invariant:
 2. No hand-maintained schemas exist anywhere. TypeScript interfaces +
    Valibot schemas are generated from JSON Schema source via
    `bun run codegen`.
-3. The browser and server load **the same `jelly.wasm` binary**. No
+3. The browser and server load **the same `dreamball.wasm` binary**. No
    platform-specific build, no conditional code paths. A bug in the
    wire format is fixed in one place.
 4. Host-supplied randomness flows through one `env.getRandomBytes`
@@ -108,11 +108,11 @@ WASM over FFI and over subprocess.
 
 | Runtime | Consumes | Produces | Role |
 |---|---|---|---|
-| **Zig CLI** (`zig-out/bin/jelly`) | argv, `~/.config/jelly` | `.jelly` files, `.jelly.json`, signed envelopes, sealed relics | The authoring tool. First-class test surface. |
-| **Browser** (Svelte + Threlte) | `.jelly` bytes via `fetch`, user input | Rendered views, user interactions, signed commits | The consumer surface. Runs `jelly.wasm` for parse + verify + validate. |
-| **`jelly-server`** (Bun + Elysia) | HTTP requests, filesystem `.jelly` store, `recrypt-server` | HTTP JSON responses, Eden-typed client calls | The authoring service + API. Runs the same `jelly.wasm` for write ops. |
-| **`jelly` MCP server** (Bun, stdio) | JSON-RPC over stdio from Claude Code / any MCP client | MCP tool responses wrapping CLI commands | The scripting surface for AI agents. |
-| **`recrypt-server`** (Rust) | HTTP requests for Guild keyspace proxy-recryption | Recrypted keys for sealed-relic unlock and guild-scoped transmission | The Guild proxy-recryption anchor. Shared across the IdentiKey family. (ML-DSA-87 signing + verify are vendored into the jelly CLI and jelly.wasm — no HTTP hop.) |
+| **Zig CLI** (`zig-out/bin/dreamball`) | argv, `~/.config/dreamball` | `.ball` files, `.ball.json`, signed envelopes, sealed relics | The authoring tool. First-class test surface. |
+| **Browser** (Svelte + Threlte) | `.ball` bytes via `fetch`, user input | Rendered views, user interactions, signed commits | The consumer surface. Runs `dreamball.wasm` for parse + verify + validate. |
+| **`dreamball-server`** (Bun + Elysia) | HTTP requests, filesystem `.ball` store, `recrypt-server` | HTTP JSON responses, Eden-typed client calls | The authoring service + API. Runs the same `dreamball.wasm` for write ops. |
+| **`dreamball` MCP server** (Bun, stdio) | JSON-RPC over stdio from Claude Code / any MCP client | MCP tool responses wrapping CLI commands | The scripting surface for AI agents. |
+| **`recrypt-server`** (Rust) | HTTP requests for Guild keyspace proxy-recryption | Recrypted keys for sealed-relic unlock and guild-scoped transmission | The Guild proxy-recryption anchor. Shared across the IdentiKey family. (ML-DSA-87 signing + verify are vendored into the dreamball CLI and dreamball.wasm — no HTTP hop.) |
 
 Each runtime holds different capabilities but shares the same wire format.
 
@@ -132,14 +132,14 @@ three tiers; runtimes pick which applies:
 ### Tier 2 — Ed25519 + ML-DSA-87 (hybrid, production-grade)
 
 - Ed25519 as in Tier 1, plus real post-quantum signatures via the
-  vendored liboqs subset linked directly into the `jelly` CLI (see
+  vendored liboqs subset linked directly into the `dreamball` CLI (see
   `src/ml_dsa.zig`). No HTTP hop, no `recrypt-server` dependency for
   signing — the native binary holds ML-DSA-87 locally.
 - Required by the `DreamBall.isFullySigned(.strict)` policy.
-- Signing flow on the server: `jelly-server` subprocesses the native
-  `jelly` binary, which signs with both Ed25519 + ML-DSA-87 in one
+- Signing flow on the server: `dreamball-server` subprocesses the native
+  `dreamball` binary, which signs with both Ed25519 + ML-DSA-87 in one
   pass using the hybrid key file format (see `src/key_file.zig`).
-- **Browser verification runs locally.** `jelly.wasm` ships the
+- **Browser verification runs locally.** `dreamball.wasm` ships the
   ML-DSA-87 verify path too (same vendored liboqs subset, compiled
   for wasm32-freestanding via shim headers in
   `vendor/liboqs/wasm_shims/`). Both sigs check against the
@@ -169,15 +169,15 @@ from the runtime.
 ```
   1.  client → POST /dreamballs { type: 'agent', name: 'Curious' }
                        │
-  2.  jelly-server subprocesses `jelly mint --type agent --name ...`
+  2.  dreamball-server subprocesses `dreamball mint --type agent --name ...`
                        │
                        ▼
   3.  Native CLI generates a hybrid Ed25519 + ML-DSA-87 keypair,
-       signs the envelope with both, writes <fp>.jelly + <fp>.jelly.key
+       signs the envelope with both, writes <fp>.ball + <fp>.ball.key
        (key file = raw recrypt.identity envelope, CBOR tag 200)
                        │
-  4.  jelly-server reads the envelope + key file, moves them to
-       data/dreamballs/<fp>.jelly, data/keys/<fp>.key (0600)
+  4.  dreamball-server reads the envelope + key file, moves them to
+       data/dreamballs/<fp>.ball, data/keys/<fp>.key (0600)
                        │
   5.  client ← 200 { fingerprint, dreamball, secret_key_b58 }
 ```
@@ -199,16 +199,16 @@ again. The client holds the secret; server-side it stays on-disk at
 ```
   1.  browser → GET /dreamballs/:fp
                        │
-  2.  jelly-server reads data/dreamballs/<fp>.jelly, returns CBOR bytes
+  2.  dreamball-server reads data/dreamballs/<fp>.ball, returns CBOR bytes
                        │
-  3.  browser → parseJelly(bytes)  (via jelly.wasm, same binary as server)
+  3.  browser → parseBall(bytes)  (via dreamball.wasm, same binary as server)
                        │
   4.  browser → valibot.parse(DreamBallSchema, result)
                        │  ↳ schema drives runtime validation
                        ▼
   5.  renderer receives typed DreamBall → picks lens → renders
                        │
-  6.  (optional) browser → verifyJelly(bytes)
+  6.  (optional) browser → verifyBall(bytes)
                        │  ↳ both Ed25519 AND ML-DSA-87 verified locally
                        │    (no network hop; see ADR-3 below)
 ```
@@ -220,10 +220,10 @@ again. The client holds the secret; server-side it stays on-disk at
                        │
   2.  client → POST /relics/:id/unlock { guild_member_key_b58 }
                        │
-  3.  jelly-server loads sealed bundle (DragonBall), extracts the
+  3.  dreamball-server loads sealed bundle (DragonBall), extracts the
        recrypt-wrapped payload from the first attachment slot
                        │
-  4.  jelly-server → recrypt-server POST /recrypt
+  4.  dreamball-server → recrypt-server POST /recrypt
                        { wrapped, from_guild_fp, to_member_fp }
                        │
                        ▼
@@ -233,14 +233,14 @@ again. The client holds the secret; server-side it stays on-disk at
                        │  (the plaintext is the inner DreamBall envelope
                        │   bytes; server never sees it)
                        ▼
-  7.  browser → parseJelly(inner) → render via OmnisphericalLens reveal
+  7.  browser → parseBall(inner) → render via OmnisphericalLens reveal
 ```
 
 ---
 
 ## 6. The MCP documentation layer
 
-Every AI agent that meets a `jelly-server` can discover its full API
+Every AI agent that meets a `dreamball-server` can discover its full API
 surface by hitting one well-known endpoint:
 
 ```
@@ -254,7 +254,7 @@ Returns a **generated** JSON document containing:
 - The DreamBall type taxonomy (six v2 types + untyped v1) with each
   type's populated attribute surface.
 - Every WASM export signature (`mintDreamBall`, `growDreamBall`,
-  `joinGuildWasm`, `parseJelly`, `verifyJelly`, ...) with their
+  `joinGuildWasm`, `parseBall`, `verifyBall`, ...) with their
   parameter + return shape.
 - MCP tool descriptors matching `tools/mcp-server/server.ts`'s format so
   an agent can choose between HTTP and stdio MCP interchangeably.
@@ -305,8 +305,8 @@ Dreamball/
 │   ├── golden.zig               # Canonical-byte lock
 │   ├── io.zig                   # Zig 0.16 std.Io helpers
 │   ├── root.zig                 # Library module
-│   ├── main.zig                 # `jelly` CLI entry
-│   ├── wasm_main.zig            # `jelly.wasm` entry
+│   ├── main.zig                 # `dreamball` CLI entry
+│   ├── wasm_main.zig            # `dreamball.wasm` entry
 │   ├── cli/                     # CLI commands (mint/grow/seal/...)
 │   ├── wasm-host/               # Wasm action host (D-020, D-032)
 │   │   ├── main.zig             # CLI target driver (platform shims here)
@@ -319,10 +319,10 @@ Dreamball/
 │   │   ├── generated/           # AUTO — types.ts, schemas.ts, cbor.ts
 │   │   ├── components/          # DreamBallViewer, DreamBallCard, ...
 │   │   ├── lenses/              # 8 lenses
-│   │   ├── backend/             # JellyBackend, MockBackend, HttpBackend
+│   │   ├── backend/             # DreamballBackend, MockBackend, HttpBackend
 │   │   ├── playcanvas/          # Splat renderer setup
 │   │   ├── splat/               # Splat media-type routing
-│   │   └── wasm/                # jelly.wasm + loader.ts
+│   │   └── wasm/                # dreamball.wasm + loader.ts
 │   ├── routes/                  # SvelteKit showcase app
 │   └── stories/                 # Storybook stories
 ├── schemas/                     # Vendored JSON Schema sources (D-018, D-029)
@@ -340,11 +340,11 @@ Dreamball/
 │   │   └── …                    # + per-archiform projectors: gen_cli / gen_ts_client / gen_mcp_tools / gen_capabilities
 │   ├── graphstore-schema/       # gen_cypher.zig → src/memory-palace/schema.cypher (graph-store-owned; `zig build graphstore-schema`, Dreamball-9dq)
 │   └── mcp-server/              # stdio MCP server wrapping the CLI
-├── jelly-server/                # Bun + Elysia HTTP server
+├── dreamball-server/                # Bun + Elysia HTTP server
 │   └── src/                     # WASM loader, routes, store, MCP docs
 ├── scripts/
 │   ├── cli-smoke.sh             # CLI end-to-end test
-│   ├── server-smoke.sh          # jelly-server end-to-end test
+│   ├── server-smoke.sh          # dreamball-server end-to-end test
 │   └── spike-wasm-env.ts        # Proves WASM env-import plumbing
 └── tests/
     └── e2e-cryptography.sh      # Full real-crypto integration test
@@ -355,12 +355,12 @@ Dreamball/
 ## 8. Architectural decision records
 
 Short form. Full context in
-[`.omc/plans/2026-04-19-jelly-server-storybook-mldsa-recrypt.md`](../.omc/plans/2026-04-19-jelly-server-storybook-mldsa-recrypt.md)
+[`.omc/plans/2026-04-19-dreamball-server-storybook-mldsa-recrypt.md`](../.omc/plans/2026-04-19-dreamball-server-storybook-mldsa-recrypt.md)
 §6.
 
 ### ADR-1: WASM as the cross-runtime crypto core
 
-**Decision.** Compile the Zig protocol core to a single `jelly.wasm`.
+**Decision.** Compile the Zig protocol core to a single `dreamball.wasm`.
 Bun and the browser execute the exact same bytes. Host-provided
 randomness via a single `env.getRandomBytes` import.
 
@@ -375,7 +375,7 @@ host. ML-DSA-87 *signing* stays on the native CLI by design (user
 signing lives in the key-bearing extension/app path); ML-DSA-87
 *verify* runs in WASM locally (see ADR-3).
 
-### ADR-2: Elysia + Eden + Valibot for `jelly-server`
+### ADR-2: Elysia + Eden + Valibot for `dreamball-server`
 
 **Decision.** Bun-native HTTP via Elysia 1.x. Eden (`treaty<App>`) gives
 end-to-end type safety without codegen churn. Valibot schemas (from
@@ -396,10 +396,10 @@ route table.
 
 - **Native CLI** links the liboqs C sources directly — ~4500 LoC of
   dilithium ref impl + XKCP SHAKE. No HTTP hop, no
-  `recrypt-server` dependency for signing. `jelly mint` / `grow` /
+  `recrypt-server` dependency for signing. `dreamball mint` / `grow` /
   `transmit` / `seal-relic` all sign locally with Ed25519 +
   ML-DSA-87.
-- **WASM** (`jelly.wasm`) links the same C sources for wasm32-freestanding
+- **WASM** (`dreamball.wasm`) links the same C sources for wasm32-freestanding
   via four shim headers (`<string.h>`, `<stdlib.h>`, `<stdio.h>`,
   `<limits.h>` in `vendor/liboqs/wasm_shims/`) and a static-arena
   allocator (`vendor/liboqs/src/dreamball_stubs_wasm.c`). The linker's
@@ -462,9 +462,9 @@ writes to a per-invocation staging area; the host promotes after the action
 returns. New mutations follow this template — it is the only sanctioned
 write path.
 
-**D-023 — Dual-sig via `jelly.wasm` `signActionEnvelope` export**
+**D-023 — Dual-sig via `dreamball.wasm` `signActionEnvelope` export**
 Closes the sprint-001 silent-substitution debt (S4.4 / S5.5) where derived-fp
-sentinels were substituted for real signatures. `jelly.wasm` now exports
+sentinels were substituted for real signatures. `dreamball.wasm` now exports
 `signActionEnvelope(keypair_bytes, payload_bytes) → ed25519_sig_bytes` — the
 single seam through which all signatures are produced (Ed25519 for sprint-002;
 PQ dual-sig deferred to the security pass per SEC6). The wasm action host's
@@ -507,8 +507,8 @@ The wasm action host is the runtime that loads and executes archiform action
 modules. It is implemented as a single Zig codebase under `src/wasm-host/`
 that compiles to two targets:
 
-- **CLI target** — `jelly` binary (Zig + WASI). Ships in sprint-002.
-- **Browser target** — `jelly.wasm` host (WebAssembly without WASI).
+- **CLI target** — `dreamball` binary (Zig + WASI). Ships in sprint-002.
+- **Browser target** — `dreamball.wasm` host (WebAssembly without WASI).
   Sprint-003+ deliverable; the source is shared today, no new host code
   will be required when the browser target ships.
 
@@ -628,7 +628,7 @@ on mismatch.
 regenerate via `bun run codegen`.
 
 **CBOR semantics stay in Zig** (D-018): `gen_cbor.zig` emits TS shims that
-delegate to the Zig CBOR primitives exposed via `jelly.wasm`. It does not
+delegate to the Zig CBOR primitives exposed via `dreamball.wasm`. It does not
 re-implement CBOR semantics in TypeScript.
 
 ---
@@ -638,7 +638,7 @@ re-implement CBOR semantics in TypeScript.
 Sprint-002 (Stories 6.1 + 6.2) closed the silent-substitution debt from
 sprint-001 where derived-fp sentinel values were substituted for real Ed25519
 signatures at two call sites (`oracle.ts oracleSignAction` and
-`store.recordTraversal`). Both sites now call `jelly.wasm`'s
+`store.recordTraversal`). Both sites now call `dreamball.wasm`'s
 `signActionEnvelope` export (D-023), the single seam through which all
 action-envelope signatures are produced. FR13 and SEC3 are satisfied.
 

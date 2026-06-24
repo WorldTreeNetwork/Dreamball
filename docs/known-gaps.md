@@ -15,7 +15,7 @@ work to a later **cryptography/security pass**. Until that pass:
 - **Ed25519-only signing is acceptable.** The dual-sig (Ed25519 +
   ML-DSA-87) requirement that motivated NFR12 is relaxed in
   implementation. ML-DSA-87 verify continues to land where it already
-  has (jelly.wasm), but minting/signing call sites may use Ed25519
+  has (dreamball.wasm), but minting/signing call sites may use Ed25519
   alone without raising a blocker.
 - **Plaintext keys held with `0600` perms are acceptable.** D-011's
   custody choice stands; recrypt-wallet integration is not gating any
@@ -37,7 +37,7 @@ and `store.recordTraversal` introduced by S4.4 / S5.5.
 
 **When the security pass runs**, the work becomes: parameterise
 `signActionEnvelope(keypair, payload)` over arbitrary keypairs in
-`jelly.wasm`, swap Ed25519-only signing for dual-sig at all flagged
+`dreamball.wasm`, swap Ed25519-only signing for dual-sig at all flagged
 call sites, integrate recrypt-wallet for key custody, and challenge
 the oracle-fp spoofing surface. None of this gates further feature
 work.
@@ -50,7 +50,7 @@ work.
 
 **State — CLOSED 2026-04-22 by S1.1 completion. Remaining item below is polish only.**
 
-`verifyJelly` in `jelly.wasm` verifies Ed25519 locally and ML-DSA-87
+`verifyBall` in `dreamball.wasm` verifies Ed25519 locally and ML-DSA-87
 signatures against the envelope's `identity-pq` core field. The default
 `zig build wasm` ships with PQ-verify enabled (`-Dpq-wasm=true` is the
 default). A standalone `verifyMlDsa(sig, msg, pk)` export is fully tested
@@ -80,8 +80,8 @@ NTT/poly helpers:
 it assumed no DCE and the full OQS_KEM + OQS_SIG dispatch surface.
 
 **End-to-end confirmed.** Mint → hybrid-sign a tool DreamBall via
-the native CLI, load `jelly.wasm` in Bun, push bytes through
-`verifyJelly`, return code = 2 (Ed25519 + ML-DSA both OK). See
+the native CLI, load `dreamball.wasm` in Bun, push bytes through
+`verifyBall`, return code = 2 (Ed25519 + ML-DSA both OK). See
 `/tmp/pq-wasm-verify-smoke.ts` during the spike — not committed to
 the repo, reconstruct from this note if needed.
 
@@ -111,21 +111,21 @@ overhead of vendoring a C zstd and add a `--with-zstd` build flag.
 
 ### 3. Chained proxy-recryption (Guild A → Guild B → recipient)
 
-**State.** `jelly.transmission` receipts today reference one Guild.
+**State.** `ball.transmission` receipts today reference one Guild.
 Cross-Guild chained delegation is not implemented.
 
 **Why deferred.** FR52/Vision-tier from the original v2 PRD. Requires
 design work on multi-hop recryption semantics in `recrypt` itself.
 
 **Path forward.** Spike in `recrypt`'s issue tracker; when the Rust
-side has multi-hop support, wire it into `jelly-server`'s transmission
+side has multi-hop support, wire it into `dreamball-server`'s transmission
 flow.
 
 ### 4. Partial WASM write-ops: `sealRelic`, `unlockRelic`, `transmitSkill`
 
-**State.** `jelly.wasm` exports `mintDreamBall`, `growDreamBall`,
+**State.** `dreamball.wasm` exports `mintDreamBall`, `growDreamBall`,
 `joinGuildWasm`. The remaining CLI commands (`seal-relic`, `unlock`,
-`transmit`) are called via subprocess from `jelly-server` rather than
+`transmit`) are called via subprocess from `dreamball-server` rather than
 WASM exports.
 
 **Why deferred.** These operations involve DragonBall file wrapping +
@@ -175,8 +175,8 @@ links it at build time:
 Reversed architectural decision: the recrypt-server
 `POST /sign/ml-dsa` and `POST /verify/ml-dsa` endpoints exist and
 are tested on the recrypt side (`recrypt-server/src/routes/signing.rs`),
-but Dreamball never needs them. Dreamball's jelly-server subprocesses
-the native `jelly` binary, which has its own direct liboqs link. No
+but Dreamball never needs them. Dreamball's dreamball-server subprocesses
+the native `dreamball` binary, which has its own direct liboqs link. No
 network round-trip, no auth surface for a sign-with-secret endpoint,
 simpler deployment.
 
@@ -191,18 +191,18 @@ simpler deployment.
   200) carrying both Ed25519 and ML-DSA-87 keypairs. See
   `docs/decisions/2026-04-21-identity-envelope.md` for the adoption
   rationale. No legacy-format support — Dreamball is pre-release,
-  so any older `.key` files regenerate with a fresh `jelly mint`.
-- `jelly mint` generates a hybrid keypair, embeds `identity-pq`
+  so any older `.key` files regenerate with a fresh `dreamball mint`.
+- `dreamball mint` generates a hybrid keypair, embeds `identity-pq`
   in the core, and emits both signatures.
-- `jelly grow`, `jelly join-guild`, `jelly transmit` re-sign with
+- `dreamball grow`, `dreamball join-guild`, `dreamball transmit` re-sign with
   whichever algorithms the key file provides. Transmission
   nodes do not yet carry `identity-pq` (no core field; tracked
   separately — the sender's pubkey bundle flows out-of-band,
   matching recrypt's public-key-bundle pattern).
-- `jelly seal-relic` stays Ed25519-only on the relic wrapper. Per
+- `dreamball seal-relic` stays Ed25519-only on the relic wrapper. Per
   policy, ephemeral wrappers in lower-stakes contexts trust the
   inner DreamBall's own hybrid signature.
-- `jelly verify` checks each `'signed'` attribute against the
+- `dreamball verify` checks each `'signed'` attribute against the
   appropriate key. Policy: "all attached signatures must verify,"
   no minimum count. Ed25519-only nodes remain valid.
 
@@ -253,12 +253,12 @@ future work — `recrypt-server` already has keyspace endpoints
 
 **Required Dreamball wire-up (all scaffolded — flip on when recrypt ready).**
 
-- `jelly-server/src/mldsa-client.ts` — HTTP client hitting the two
+- `dreamball-server/src/mldsa-client.ts` — HTTP client hitting the two
   recrypt endpoints. Stub exists; wire real calls when `RECRYPT_SERVER_URL`
   is set at server boot.
-- `jelly-server` mint route — two-hop signing: WASM Ed25519, then HTTP
+- `dreamball-server` mint route — two-hop signing: WASM Ed25519, then HTTP
   ML-DSA. Stub exists; flip to real when the endpoint is available.
-- `jelly` CLI — gain `--ml-dsa-server <url>` flag. Not yet implemented
+- `dreamball` CLI — gain `--ml-dsa-server <url>` flag. Not yet implemented
   on the CLI; trivial once the HTTP contract is frozen.
 - `seal-relic --for-guild` — call `POST /recrypt` with the Guild's
   keyspace ID instead of storing plaintext. Stub exists with a
@@ -275,13 +275,13 @@ should become live once the recrypt endpoints exist.
 **Path forward.**
 1. Add `POST /sign/ml-dsa` to recrypt-server (1-2 hrs, Rust changes in
    sibling repo).
-2. Wire `jelly-server` two-hop signing (1 hr).
+2. Wire `dreamball-server` two-hop signing (1 hr).
 3. Add `--ml-dsa-server` flag to the Zig CLI (1 hr).
 4. Confirm `tests/e2e-cryptography.sh` passes in real mode.
 5. Keyspace-scoped seal/unlock is a separate mini-sprint after that.
 
 Tracked as **Phase D** of
-`.omc/plans/2026-04-19-jelly-server-storybook-mldsa-recrypt.md`.
+`.omc/plans/2026-04-19-dreamball-server-storybook-mldsa-recrypt.md`.
 
 ---
 
@@ -289,17 +289,17 @@ Tracked as **Phase D** of
 
 These gaps existed before v2.1 and have now closed:
 
-- ✅ **Real Ed25519 signatures in the browser.** `jelly.wasm` imports
+- ✅ **Real Ed25519 signatures in the browser.** `dreamball.wasm` imports
   `getRandomBytes` from the host; Ed25519 signing + verification run
   natively in WASM. Browser + server use the same binary.
 - ✅ **Real ML-DSA-87 signatures on minted envelopes.**
-  `jelly-server`'s mint route orchestrates the two-hop
+  `dreamball-server`'s mint route orchestrates the two-hop
   WASM-Ed25519 + HTTP-ML-DSA flow via `recrypt-server`.
 - ✅ **Guild keyspaces are real recrypt keyspaces.** `mint --type
   guild` creates a real keyspace in `recrypt-server`. `seal-relic` and
   `unlock` use real proxy-recryption.
 - ✅ **`HttpBackend` talks to a real server.** The `EdenBackend`
-  replacement hits `jelly-server` via typed `treaty<App>` calls.
+  replacement hits `dreamball-server` via typed `treaty<App>` calls.
 - ✅ **Identity envelope adopted.** Per-DreamBall key files now use the
   `recrypt.identity` Gordian Envelope (CBOR tag 200) instead of the
   hand-rolled `DJELLY\n` hybrid layout. Byte-identical interop with
@@ -355,7 +355,7 @@ This mirrors the D-008 signed-action-before-effect pattern applied to read paths
 a real 64-byte Ed25519 signature committed as `cborBytesBlake3 =
 hashBytesBlake3Hex(sigBytes)` on the action node.
 
-The `JELLY_ORACLE_ALLOW_UNSIGNED` env-var gate is removed. The
+The `DREAMBALL_ORACLE_ALLOW_UNSIGNED` env-var gate is removed. The
 `oracleActionStub` alias is gone.
 
 **Residual**: Per the 2026-04-25 deferral above, only Ed25519 single
@@ -376,7 +376,7 @@ real Ed25519 commitment, not a hash sentinel.
 
 **State — CLOSED 2026-04-24 by Sprint-1 code review HIGH-2.**
 
-`jelly.wasm` now exports `hashBlake3(input_ptr, input_len, out_ptr)` which
+`dreamball.wasm` now exports `hashBlake3(input_ptr, input_len, out_ptr)` which
 computes Blake3-256 using the same `std.crypto.hash.Blake3` the Zig CLI
 uses. The TS binding `blake3Hex(bytes)` in `src/lib/wasm/loader.ts` wraps
 the export. `cypher-utils.hashBytesBlake3Hex` (async) now falls through
@@ -403,12 +403,12 @@ lifecycle seam where the watcher can be started today.
 
 **Limitation**: Source-file edits outside the palace bridge path don't
 produce `inscription-updated` / `inscription-orphaned` ActionLog rows.
-Tests exercise the watcher API directly; interactive use (CLI + jelly-server)
+Tests exercise the watcher API directly; interactive use (CLI + dreamball-server)
 does not.
 
 **Marker**: this entry + the unused-but-tested `openPalaceWatcher` export.
 
-**Path forward**: Epic 6 / post-MVP. Wire the watcher from `jelly-server`
+**Path forward**: Epic 6 / post-MVP. Wire the watcher from `dreamball-server`
 (which already owns an open TS palace handle) alongside the WASM signer work
 in §8; the CLI picks it up when `palace_open.zig` returns a TS-wrapped
 handle as part of the same seam.
@@ -417,13 +417,13 @@ handle as part of the same seam.
 
 ### 11. Palace action-envelope signature verification deferred in MVP
 
-**State**: Open — `jelly verify <palace>` enforces structural invariants
+**State**: Open — `dreamball verify <palace>` enforces structural invariants
 only. Invariants (a)–(f) in `src/cli/palace_verify.zig` cover room presence,
 sole-oracle-agent, parent-hash resolvability, mythos walk-to-genesis,
 head-hash leaf-ness, and oracle actor-fp equality. **No cryptographic
 signature is checked over action envelopes.**
 
-**Why deferred**: The `jelly.action` struct in `src/protocol_v2.zig`
+**Why deferred**: The `ball.action` struct in `src/protocol_v2.zig`
 carries a `signatures: []Signature` field, but the verify-walk does
 not yet dispatch to `signer.verify` / `dreamball.ml_dsa.verify` per
 action. Wiring that requires (i) canonical-bytes construction per
@@ -449,7 +449,7 @@ sprint story (`docs/sprints/001-memory-palace-mvp/stories/epic-4.md`
 **Path forward**: next sprint — extend `palace_verify.zig` with a new
 invariant (g) "action signatures verify against actor public key",
 call `signer.verify` over canonical action bytes for every
-`jelly.action` in the bundle. Depends on §8 (parameterised WASM
+`ball.action` in the bundle. Depends on §8 (parameterised WASM
 signer export) so browser-side verify parity lands in the same
 sprint.
 
@@ -462,7 +462,7 @@ sprint.
 **Why**: kuzu-wasm@0.11.3 browser QUERY_VECTOR_INDEX returned fps not matching
 @ladybugdb/core server ground truth. D-015 set-equality contract violated.
 
-**NFR11 relaxation**: K-NN queries in the browser must route to jelly-server
+**NFR11 relaxation**: K-NN queries in the browser must route to dreamball-server
 HTTP /kNN endpoint. Offline K-NN is degraded for MVP. Epic 6 must add the
 /kNN route.
 
@@ -493,15 +493,15 @@ Model weights are NOT in the repository.
 ~600 MB fp32 / ~150 MB uint8 quantised. Bundling it in the repo is impractical.
 The download/provision step is a deployment concern, not a code concern.
 
-**Limitation**: `jelly-server` fails fast at boot with:
+**Limitation**: `dreamball-server` fails fast at boot with:
   `embedding model not found at <path>`
-if `JELLY_EMBED_MODEL_PATH` is absent and `JELLY_EMBED_MOCK` is not set.
-All CI gates use `JELLY_EMBED_MOCK=1` (blake3-seeded deterministic mock).
+if `DREAMBALL_EMBED_MODEL_PATH` is absent and `DREAMBALL_EMBED_MOCK` is not set.
+All CI gates use `DREAMBALL_EMBED_MOCK=1` (blake3-seeded deterministic mock).
 
 **Markers**: `TODO-EMBEDDING: bring-model-local-or-byo` appears in:
-  - `jelly-server/src/embedding/qwen3.ts` (model-load site, ×2)
-  - `jelly-server/src/routes/embed.ts` (route handler, ×1)
-  - `jelly-server/src/routes/embed.mock.ts` (mock module, ×1)
+  - `dreamball-server/src/embedding/qwen3.ts` (model-load site, ×2)
+  - `dreamball-server/src/routes/embed.ts` (route handler, ×1)
+  - `dreamball-server/src/routes/embed.mock.ts` (mock module, ×1)
   - `src/memory-palace/embedding-client.ts` (S4.4 client seam, ×2)
 Total ≥ 6 markers across the embedding surface.
 
@@ -510,10 +510,10 @@ Total ≥ 6 markers across the embedding surface.
    `huggingface-cli download onnx-community/Qwen3-Embedding-0.6B-ONNX`
    or uses the HF Hub API to fetch to `./models/Qwen3-Embedding-0.6B-ONNX/`.
 2. Add a CI job that provisions the model from a cache/artifact store when
-   `JELLY_EMBED_MOCK` is unset (optional; mock is sufficient for sprint-001).
+   `DREAMBALL_EMBED_MOCK` is unset (optional; mock is sufficient for sprint-001).
 3. Consider the uint8-quantised variant (`electroglyph/Qwen3-Embedding-0.6B-onnx-uint8`)
    to reduce memory footprint; MRL prefix property is preserved under quantisation.
-4. S6.2 and S6.3 inherit this gap — they also use `JELLY_EMBED_MOCK=1` in tests.
+4. S6.2 and S6.3 inherit this gap — they also use `DREAMBALL_EMBED_MOCK=1` in tests.
 
 See `docs/decisions/2026-04-24-qwen3-embedding-loader.md` for the full loader ADR.
 

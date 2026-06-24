@@ -11,7 +11,7 @@
 ## Read first
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the runtime map.
-  How the Zig core, WASM binary, CLI, jelly-server, Svelte lib, and
+  How the Zig core, WASM binary, CLI, dreamball-server, Svelte lib, and
   recrypt-server fit together. Start here for the mental model.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — authoritative wire format.
 - [`docs/VISION.md`](docs/VISION.md) — the *why* behind the code. Living
@@ -46,7 +46,7 @@ Concretely:
 - No hand-maintained schemas exist anywhere. `types.ts`, `schemas.ts`
   (Valibot), `cbor.ts`, and `schema.cypher` are all generated.
   Regenerate via `bun run codegen`.
-- The browser and server load the same `jelly.wasm` binary.
+- The browser and server load the same `dreamball.wasm` binary.
   Host-supplied randomness via one `env.getRandomBytes` import is the
   entire runtime seam; see [`docs/VISION.md §14`](docs/VISION.md) and
   ADR-1 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -95,10 +95,10 @@ extremely expensive to reconstruct later from Git blame.
 Zig 0.16.0 + Bun. See `README.md` for the full command list.
 
 **Zig side:**
-- `zig build` — compile library + `jelly` CLI
+- `zig build` — compile library + `dreamball` CLI
 - `zig build test` — unit tests (≥ 51 passing)
 - `zig build smoke` — CLI end-to-end integration test
-- `zig build wasm` — produce `src/lib/wasm/jelly.wasm` (≤ 200 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify)
+- `zig build wasm` — produce `src/lib/wasm/dreamball.wasm` (≤ 200 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify)
 - `zig build schemagen` — regenerate `src/lib/generated/*.ts`
 
 On Linux, all of the above default to `-Dtarget=x86_64-linux-musl`
@@ -115,13 +115,13 @@ toolchain skew permanently).
 - `bun run test:unit -- --run` — Vitest
 - `bun run storybook` / `bun run build-storybook` / `bun run test-storybook`
 - `bun run build` — library + showcase build
-- `bun run dev:server` — jelly-server (Elysia) on :9808
-- `bun run demo` — jelly-server + Vite dev server in parallel
+- `bun run dev:server` — dreamball-server (Elysia) on :9808
+- `bun run demo` — dreamball-server + Vite dev server in parallel
 - `bun run codegen` — alias for `zig build schemagen`
 
 **Integration gates:**
 - `scripts/cli-smoke.sh` — Zig CLI end-to-end
-- `scripts/server-smoke.sh` — HTTP jelly-server end-to-end
+- `scripts/server-smoke.sh` — HTTP dreamball-server end-to-end
 - `tests/e2e-cryptography.sh` — crypto pipeline (mock or real via `RECRYPT_SERVER_URL`)
 
 Every commit must keep every gate green. CI (`.github/workflows/ci.yml`)

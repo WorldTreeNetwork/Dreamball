@@ -82,7 +82,7 @@ guest linear memory bounds, or if scratch space is exhausted while
 copying node bytes.
 
 **Trust**: the sprint-002 host carries an in-memory `Node` slice
-seeded by the host caller (CLI or jelly-server). The production wiring
+seeded by the host caller (CLI or dreamball-server). The production wiring
 is a thin LadybugDB adapter exposing the same interface (D-022
 read-side surface). Guests receive whatever bytes the host stores —
 the node store is not guest-writable.
@@ -112,7 +112,7 @@ signed and promoted or not promoted at all.
 `Host.keypair`; the wasm body cannot forge signatures because it has
 no access to private key material. The signature is produced inside
 the host via `sign_action.signEd25519(keypair, payload)` — the same
-primitive `jelly.wasm`'s `signActionEnvelope` export wraps (D-023) —
+primitive `dreamball.wasm`'s `signActionEnvelope` export wraps (D-023) —
 then written into the envelope before the host promotes the result to
 the emitted log. There is no code path through the host that emits an
 envelope without invoking this signing seam.
