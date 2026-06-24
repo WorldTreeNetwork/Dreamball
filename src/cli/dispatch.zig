@@ -29,14 +29,14 @@ pub const Command = struct {
 };
 
 pub const commands: []const Command = &.{
-    .{ .name = "mint", .summary = "create a new DreamSeed (Ed25519 keypair + seed.jelly)", .run = cmd_mint.run },
+    .{ .name = "mint", .summary = "create a new DreamSeed (Ed25519 keypair + seed.ball)", .run = cmd_mint.run },
     .{ .name = "grow", .summary = "update slots on an existing DreamBall and re-sign", .run = cmd_grow.run },
-    .{ .name = "show", .summary = "pretty-print a .jelly file", .run = cmd_show.run },
+    .{ .name = "show", .summary = "pretty-print a .ball file", .run = cmd_show.run },
     .{ .name = "verify", .summary = "check Ed25519 signature (exit 0 = ok)", .run = cmd_verify.run },
-    .{ .name = "seal", .summary = "wrap a DreamBall into a DragonBall .jelly file", .run = cmd_seal.run },
+    .{ .name = "seal", .summary = "wrap a DreamBall into a DragonBall .ball file", .run = cmd_seal.run },
     .{ .name = "unseal", .summary = "unwrap a DragonBall back to envelope bytes", .run = cmd_unseal.run },
-    .{ .name = "export-json", .summary = "write a canonical .jelly.json", .run = cmd_export_json.run },
-    .{ .name = "import-json", .summary = "read canonical .jelly.json back into CBOR", .run = cmd_import_json.run },
+    .{ .name = "export-json", .summary = "write a canonical .ball.json", .run = cmd_export_json.run },
+    .{ .name = "import-json", .summary = "read canonical .ball.json back into CBOR", .run = cmd_import_json.run },
     .{ .name = "join-guild", .summary = "add a Guild membership attribute and re-sign", .run = cmd_join_guild.run },
     .{ .name = "transmit", .summary = "transmit a Tool to a target Agent via a Guild", .run = cmd_transmit.run },
     .{ .name = "seal-relic", .summary = "wrap a DreamBall into a sealed Relic (MOCKED crypto)", .run = cmd_seal_relic.run },

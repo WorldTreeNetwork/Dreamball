@@ -2,7 +2,7 @@
  * embed.test.ts — S6.1 thorough test suite for POST /embed
  *
  * Test tier: thorough (happy paths, edge cases, error handling).
- * Tests run against the Elysia app in mock mode (JELLY_EMBED_MOCK=1)
+ * Tests run against the Elysia app in mock mode (DREAMBALL_EMBED_MOCK=1)
  * so no live Qwen3 model is needed in CI.
  *
  * ACs covered:
@@ -18,8 +18,8 @@
  */
 
 // Set env before any imports so index.ts skip-listen guard fires
-process.env.JELLY_SERVER_NO_LISTEN = '1';
-process.env.JELLY_EMBED_MOCK = '1';  // use mock backend — no live model in tests
+process.env.DREAMBALL_SERVER_NO_LISTEN = '1';
+process.env.DREAMBALL_EMBED_MOCK = '1';  // use mock backend — no live model in tests
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'fs';

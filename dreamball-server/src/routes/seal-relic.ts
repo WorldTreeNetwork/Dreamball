@@ -12,22 +12,22 @@ import { randomBytes } from 'crypto';
 import { moduleDir } from '../paths.js';
 
 const REPO_ROOT = resolve(moduleDir(import.meta.url, import.meta.dir), '../../../');
-const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
+const CLI = process.env.DREAMBALL_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
 
 export const sealRelicRoute = new Elysia().post(
   '/relics',
   async ({ body, set }) => {
     const { inner_dreamball_json, unlock_guild_fp, reveal_hint } = body;
 
-    if (!existsSync(JELLY)) {
+    if (!existsSync(CLI)) {
       set.status = 503;
-      return { error: 'dreamball CLI not found; run `zig build` first', path: JELLY };
+      return { error: 'dreamball CLI not found; run `zig build` first', path: CLI };
     }
 
     // Write inner DreamBall to a temp file
     const tmpId = randomBytes(8).toString('hex');
-    const innerPath = `/tmp/jelly-inner-${tmpId}.jelly`;
-    const outPath = `/tmp/jelly-relic-${tmpId}.jelly`;
+    const innerPath = `/tmp/dreamball-inner-${tmpId}.ball`;
+    const outPath = `/tmp/dreamball-relic-${tmpId}.ball`;
 
     try {
       writeFileSync(innerPath, inner_dreamball_json, 'utf-8');
@@ -35,7 +35,7 @@ export const sealRelicRoute = new Elysia().post(
       const args = ['seal-relic', innerPath, '--for-guild', unlock_guild_fp, '--out', outPath];
       if (reveal_hint) args.push('--hint', reveal_hint);
 
-      const res = spawnSync(JELLY, args, { encoding: 'utf-8' });
+      const res = spawnSync(CLI, args, { encoding: 'utf-8' });
       if (res.status !== 0) {
         set.status = 422;
         return { error: res.stderr?.trim() || 'seal-relic failed', code: res.status };

@@ -23,8 +23,8 @@
  *   - seal_relic        — wrap a DreamBall in a sealed Relic
  *   - unlock_relic      — open a sealed Relic (MOCKED)
  *   - join_guild        — add a Guild membership
- *   - list_dreamballs   — scan a directory for .jelly files
- *   - show_dreamball    — pretty-print a .jelly file
+ *   - list_dreamballs   — scan a directory for .ball files
+ *   - show_dreamball    — pretty-print a .ball file
  *   - verify_dreamball  — Ed25519 signature check
  *   - describe_protocol — return the v2 type taxonomy for LLMs
  *
@@ -39,18 +39,18 @@ import { existsSync, readdirSync, statSync } from 'fs';
 
 // ---------------------------------------------------------------------------
 // CLI location — defaults to repo-relative zig-out/bin/dreamball. Override with
-// JELLY_CLI env var when invoking from an install location.
+// DREAMBALL_CLI env var when invoking from an install location.
 // ---------------------------------------------------------------------------
 
 const REPO_ROOT = resolve(import.meta.dir, '..', '..');
-const DEFAULT_JELLY = resolve(REPO_ROOT, 'zig-out', 'bin', 'jelly');
-const JELLY = process.env.JELLY_CLI ?? DEFAULT_JELLY;
+const DEFAULT_JELLY = resolve(REPO_ROOT, 'zig-out', 'bin', 'dreamball');
+const JELLY = process.env.DREAMBALL_CLI ?? DEFAULT_JELLY;
 
 function runJelly(args: string[]): { stdout: string; stderr: string; code: number } {
 	if (!existsSync(JELLY)) {
 		return {
 			stdout: '',
-			stderr: `dreamball CLI not found at ${JELLY}; run \`zig build\` first or set JELLY_CLI`,
+			stderr: `dreamball CLI not found at ${JELLY}; run \`zig build\` first or set DREAMBALL_CLI`,
 			code: 127
 		};
 	}
@@ -108,11 +108,11 @@ const tools: ToolSpec[] = [
 	{
 		name: 'show_dreamball',
 		description:
-			'Pretty-print a .jelly file. Format can be "text" (default) or "json" for the canonical JSON export.',
+			'Pretty-print a .ball file. Format can be "text" (default) or "json" for the canonical JSON export.',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				path: { type: 'string', description: 'Path to the .jelly file' },
+				path: { type: 'string', description: 'Path to the .ball file' },
 				format: { type: 'string', description: 'text or json' }
 			},
 			required: ['path']
@@ -127,11 +127,11 @@ const tools: ToolSpec[] = [
 	{
 		name: 'verify_dreamball',
 		description:
-			'Verify the Ed25519 signature on a .jelly file. Exits 0 on success, non-zero on failure.',
+			'Verify the Ed25519 signature on a .ball file. Exits 0 on success, non-zero on failure.',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				path: { type: 'string', description: 'Path to the .jelly file' }
+				path: { type: 'string', description: 'Path to the .ball file' }
 			},
 			required: ['path']
 		},
@@ -172,7 +172,7 @@ const tools: ToolSpec[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				tool: { type: 'string', description: 'Path to the Tool .jelly file' },
+				tool: { type: 'string', description: 'Path to the Tool .ball file' },
 				to: { type: 'string', description: 'Target Agent fingerprint (base58)' },
 				viaGuild: { type: 'string', description: 'Guild fingerprint (base58)' },
 				senderKey: { type: 'string', description: 'Sender\'s Ed25519 secret key path' },
@@ -201,7 +201,7 @@ const tools: ToolSpec[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				inner: { type: 'string', description: 'Path to the inner .jelly file' },
+				inner: { type: 'string', description: 'Path to the inner .ball file' },
 				forGuild: { type: 'string', description: 'Guild fingerprint (base58) authorised to unlock' },
 				out: { type: 'string', description: 'Output path for the sealed relic' },
 				hint: { type: 'string', description: 'Reveal hint (optional)' }
@@ -239,7 +239,7 @@ const tools: ToolSpec[] = [
 	},
 	{
 		name: 'list_dreamballs',
-		description: 'Scan a directory for .jelly files and return a summary per file.',
+		description: 'Scan a directory for .ball files and return a summary per file.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -253,7 +253,7 @@ const tools: ToolSpec[] = [
 				return { error: `not a directory: ${dir}` };
 			}
 			const entries = readdirSync(dir)
-				.filter((f) => f.endsWith('.jelly'))
+				.filter((f) => f.endsWith('.ball'))
 				.map((f) => {
 					const full = resolve(dir, f);
 					const show = runJelly(['show', full]);

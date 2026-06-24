@@ -1,6 +1,6 @@
 <!--
   Fruits — list of ripe DreamBalls awaiting pluck. Phase 1.
-  Pluck → mock .jelly.json downloads + revision bumps.
+  Pluck → mock .ball.json downloads + revision bumps.
 -->
 <script lang="ts">
 	import { iconFor } from './icons.js';

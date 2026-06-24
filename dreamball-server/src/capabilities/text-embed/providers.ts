@@ -13,7 +13,7 @@
  *
  * Mock-import discipline: the mock impl is reached only via a *dynamic* import
  * inside the mock provider's embedRaw, executed solely when the mock provider is
- * selected (JELLY_EMBED_MOCK=1). Nothing in the production import graph (which
+ * selected (DREAMBALL_EMBED_MOCK=1). Nothing in the production import graph (which
  * flows index.ts -> resolver -> this file) statically references embed.mock —
  * the "production never reaches the mock" invariant (embed.mock.ts header)
  * holds, and the AC8 grep on index.ts stays clean.
@@ -40,7 +40,7 @@ const mockProvider: TextEmbedProvider = {
   category: 'service',
   implementsVersion: '1.0',
   nativeDim: 256,
-  available: () => process.env.JELLY_EMBED_MOCK === '1',
+  available: () => process.env.DREAMBALL_EMBED_MOCK === '1',
   load: async () => {
     /* nothing to load */
   },
@@ -77,7 +77,7 @@ const runpodProvider: TextEmbedProvider = {
 // ---------------------------------------------------------------------------
 
 function localModelPath(): string {
-  return process.env.JELLY_EMBED_MODEL_PATH ?? './models/Qwen3-Embedding-0.6B-ONNX';
+  return process.env.DREAMBALL_EMBED_MODEL_PATH ?? './models/Qwen3-Embedding-0.6B-ONNX';
 }
 
 const onnxLocalProvider: TextEmbedProvider = {

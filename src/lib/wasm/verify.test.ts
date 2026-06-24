@@ -14,7 +14,7 @@ import { gzipSync } from 'zlib';
 // This is the "browser acts as independent verifier" proof.
 
 const WASM_PATH = resolve(__dirname, 'dreamball.wasm');
-const JELLY_CLI = resolve(__dirname, '..', '..', '..', 'zig-out', 'bin', 'jelly');
+const DREAMBALL_CLI = resolve(__dirname, '..', '..', '..', 'zig-out', 'bin', 'dreamball');
 
 async function loadWasm() {
 	const bytes = readFileSync(WASM_PATH);
@@ -46,10 +46,10 @@ describe('WASM verifyJelly', () => {
 		wasm = await loadWasm();
 
 		const workdir = mkdtempSync(join(tmpdir(), 'jelly-verify-'));
-		const jellyPath = join(workdir, 'test.jelly');
+		const jellyPath = join(workdir, 'test.ball');
 
 		// Mint a real DreamBall via the Zig CLI.
-		execSync(`${JELLY_CLI} mint --out ${jellyPath} --type avatar --name test`, { stdio: 'pipe' });
+		execSync(`${DREAMBALL_CLI} mint --out ${jellyPath} --type avatar --name test`, { stdio: 'pipe' });
 		pristineBytes = new Uint8Array(readFileSync(jellyPath));
 
 		// Tamper: flip a byte inside the signed region.

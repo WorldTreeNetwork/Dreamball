@@ -13,9 +13,9 @@ import { moduleDir } from './paths.js';
 const HERE = moduleDir(import.meta.url, import.meta.dir);
 
 // Set env before importing app to skip auto-listen
-process.env.JELLY_SERVER_NO_LISTEN = '1';
+process.env.DREAMBALL_SERVER_NO_LISTEN = '1';
 // Use a test-specific data dir to avoid polluting real data
-process.env.JELLY_SERVER_DATA_DIR = resolve(HERE, '../data-test');
+process.env.DREAMBALL_SERVER_DATA_DIR = resolve(HERE, '../data-test');
 
 import { app } from './index.js';
 

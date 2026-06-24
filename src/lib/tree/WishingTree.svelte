@@ -237,7 +237,7 @@
 						</div>
 					</FoldPanel>
 				{:else if phaseTab === 1}
-					<FoldPanel title="P1 · FRUITS · pluck → .jelly.json" align="right">
+					<FoldPanel title="P1 · FRUITS · pluck → .ball.json" align="right">
 						<Fruits {garden} />
 					</FoldPanel>
 					<FoldPanel title="P1 · ROOT ZONE · keys" align="right">

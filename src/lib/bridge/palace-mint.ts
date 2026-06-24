@@ -40,10 +40,10 @@ import { sanitizeFp, cypherString } from '../../memory-palace/cypher-utils.js';
 // it still composes the bridge pattern (D-022) via the D-007 store wrapper.
 import type { MintOutputs } from '@dreamball/palace-client';
 
-// ── Debug log (gated on JELLY_BRIDGE_DEBUG=1) ─────────────────────────────────
+// ── Debug log (gated on DREAMBALL_BRIDGE_DEBUG=1) ─────────────────────────────────
 
 function debugLog(name: string, line: string): void {
-  if (process.env.JELLY_BRIDGE_DEBUG !== '1') return;
+  if (process.env.DREAMBALL_BRIDGE_DEBUG !== '1') return;
   const uid = String(process.getuid?.() ?? 'nouid');
   const dir = join(tmpdir(), `dreamball-${uid}`);
   try {

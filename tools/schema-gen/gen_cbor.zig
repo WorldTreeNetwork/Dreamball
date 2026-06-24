@@ -11,7 +11,7 @@
 //! Per D-018: the CBOR ENCODE algorithm stays canonical in Zig and is
 //! exposed to the browser via the `encode_cbor` WASM primitive (Story
 //! 1.5 wires the call sites). The legacy generator's static body
-//! ships a TS-side READ-only decoder for incoming `.jelly` bytes —
+//! ships a TS-side READ-only decoder for incoming `.ball` bytes —
 //! that's what this generator continues to emit during the D-030
 //! Option A shadow phase. There is NO TS re-implementation of CBOR
 //! ENCODE here.
@@ -45,7 +45,7 @@ const BODY =
     \\//
     \\// Per D-018 the ENCODE side is the canonical Zig algorithm exposed
     \\// to the browser via the `encode_cbor` WASM primitive (Story 1.5);
-    \\// this file ships the read-side decoder for incoming `.jelly`
+    \\// this file ships the read-side decoder for incoming `.ball`
     \\// bytes only.
     \\//
     \\// Per NFR8 / Story 1.3 AC7: this decoder does NOT call Valibot.
@@ -178,7 +178,7 @@ const BODY =
     \\  }
     \\}
     \\
-    \\/** Decode a .jelly envelope's top-level structure into a
+    \\/** Decode a .ball envelope's top-level structure into a
     \\ *  human-readable JS object. Preserves CBOR tags via `__cborTag`
     \\ *  wrappers so callers can introspect envelope/leaf boundaries.
     \\ */

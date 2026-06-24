@@ -55,9 +55,9 @@ export async function resolveTextEmbed(): Promise<BoundTextEmbedder> {
   if (!provider) {
     throw new Error(
       `no provider available for capability ${INTERFACE}\n` +
-        `bind one of: JELLY_EMBED_MOCK=1 (mock), ` +
+        `bind one of: DREAMBALL_EMBED_MOCK=1 (mock), ` +
         `RUNPOD_SERVERLESS_ENDPOINT_ID+RUNPOD_API_KEY (runpod), ` +
-        `or JELLY_EMBED_MODEL_PATH (local ONNX; run scripts/download-embed-model.ts)`,
+        `or DREAMBALL_EMBED_MODEL_PATH (local ONNX; run scripts/download-embed-model.ts)`,
     );
   }
 

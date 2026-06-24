@@ -4,7 +4,7 @@
  * Flow: mint palace → add room → inscribe 3 docs → embed each → kNN query
  * Asserts: 3 hits returned; top-1 is one of the 3 inserted inscriptions.
  *
- * Run with JELLY_EMBED_MOCK=1 (deterministic blake3-seeded mock, no Qwen3).
+ * Run with DREAMBALL_EMBED_MOCK=1 (deterministic blake3-seeded mock, no Qwen3).
  * Exit 0 on pass, 1 on failure.
  */
 
@@ -16,8 +16,8 @@ function makeFp(seed: number): string {
 }
 
 async function main(): Promise<void> {
-  if (!process.env['JELLY_EMBED_MOCK']) {
-    process.env['JELLY_EMBED_MOCK'] = '1';
+  if (!process.env['DREAMBALL_EMBED_MOCK']) {
+    process.env['DREAMBALL_EMBED_MOCK'] = '1';
   }
 
   const store = new ServerStore(':memory:');

@@ -29,10 +29,10 @@ import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 
 /**
  * Resolve the `dreamball` CLI path. Defaults to `zig-out/bin/dreamball` (the local
- * build output); overridable via JELLY_CLI env var for test/CI environments.
+ * build output); overridable via DREAMBALL_CLI env var for test/CI environments.
  */
 function resolveJelly(): string {
-  return process.env.JELLY_CLI ?? 'zig-out/bin/dreamball';
+  return process.env.DREAMBALL_CLI ?? 'zig-out/bin/dreamball';
 }
 
 /**

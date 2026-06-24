@@ -15,7 +15,7 @@ New generator comment includes:
 ```
 // Per D-018 the ENCODE side is the canonical Zig algorithm exposed
 // to the browser via the `encode_cbor` WASM primitive (Story 1.5);
-// this file ships the read-side decoder for incoming `.jelly`
+// this file ships the read-side decoder for incoming `.ball`
 // bytes only.
 //
 // Per NFR8 / Story 1.3 AC7: this decoder does NOT call Valibot.
@@ -24,7 +24,7 @@ New generator comment includes:
 
 Legacy generator comment includes:
 ```
-// For v2 MVP we only need decode (incoming .jelly files from the
+// For v2 MVP we only need decode (incoming .ball files from the
 // dreamball-server). Encode path stays on the Zig side.
 ```
 

@@ -1,4 +1,4 @@
-//! dreamball-wasm — WASM-compiled entry point for parsing .jelly files in the
+//! dreamball-wasm — WASM-compiled entry point for parsing .ball files in the
 //! browser. Single source of truth: reuses the same Zig code paths that
 //! the CLI uses, so web + CLI can never drift.
 //!
@@ -87,7 +87,7 @@ export fn reset() void {
     last_err_len = 0;
 }
 
-/// Parse the `.jelly` bytes at `input_ptr[0..input_len]`. On success,
+/// Parse the `.ball` bytes at `input_ptr[0..input_len]`. On success,
 /// returns a packed u64 = (result_ptr << 32) | result_len pointing at
 /// the JSON rendering of the DreamBall. On failure, returns 0 and sets
 /// the last-error buffer (readable via `resultErrPtr`/`resultErrLen`).
@@ -115,7 +115,7 @@ export fn parseJelly(input_ptr: u32, input_len: u32) u64 {
         // Canonical JSON — echo it back (the user already has the target shape).
         return pack(input_bytes);
     } else {
-        setErr("unknown .jelly format; expected BALL magic, CBOR tag 200, or JSON object", .{});
+        setErr("unknown .ball format; expected BALL magic, CBOR tag 200, or JSON object", .{});
         return 0;
     }
 
@@ -468,7 +468,7 @@ export fn verifyJelly(input_ptr: u32, input_len: u32) i32 {
     } else if (input_bytes.len >= 2 and input_bytes[0] == 0xD8 and input_bytes[1] == 0xC8) {
         // bare envelope, use as-is
     } else {
-        setErr("verify: input is not a .jelly envelope (expected BALL or tag 200)", .{});
+        setErr("verify: input is not a .ball envelope (expected BALL or tag 200)", .{});
         return -1;
     }
 

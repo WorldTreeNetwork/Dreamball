@@ -22,7 +22,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer parsed.deinit();
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
-        try io.writeAllStdout("dreamball export-json <in.jelly> --out <out.jelly.json>\n");
+        try io.writeAllStdout("dreamball export-json <in.ball> --out <out.ball.json>\n");
         return 0;
     }
 

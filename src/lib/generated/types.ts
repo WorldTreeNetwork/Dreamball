@@ -257,7 +257,7 @@ export interface OmnisphericalGrid {
   note?: string;
 }
 
-/** Convenience: a DreamBall bundle (the .jelly file) — the envelope
+/** Convenience: a DreamBall bundle (the .ball file) — the envelope
  *  plus optional attachments carried alongside (textures, scripts,
  *  sealed payloads). For most consumers `DreamBall` alone is enough.
  */

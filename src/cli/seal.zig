@@ -22,7 +22,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(2) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\dreamball seal <in.jelly> --out <out.dragon.jelly> [--compress]
+            \\dreamball seal <in.ball> --out <out.dragon.ball> [--compress]
             \\
         );
         return 0;

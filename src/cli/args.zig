@@ -80,7 +80,7 @@ pub fn parse(allocator: std.mem.Allocator, argv: [][:0]const u8, specs: []const 
 
 test "parse extracts long values and positionals" {
     const t = std.testing;
-    const argv_owned = [_][:0]const u8{ "--out", "/tmp/x.jelly", "--name", "curiosity", "input.bin" };
+    const argv_owned = [_][:0]const u8{ "--out", "/tmp/x.ball", "--name", "curiosity", "input.bin" };
     const argv = argv_owned[0..];
     const specs = [_]Spec{
         .{ .long = "out" },
@@ -89,7 +89,7 @@ test "parse extracts long values and positionals" {
     };
     var parsed = try parse(t.allocator, @constCast(argv), &specs);
     defer parsed.deinit();
-    try t.expectEqualStrings("/tmp/x.jelly", parsed.get(0).?);
+    try t.expectEqualStrings("/tmp/x.ball", parsed.get(0).?);
     try t.expectEqualStrings("curiosity", parsed.get(1).?);
     try t.expect(!parsed.flag(2));
     try t.expectEqual(@as(usize, 1), parsed.positional.items.len);
@@ -98,7 +98,7 @@ test "parse extracts long values and positionals" {
 
 test "parse handles --key=value form and presence flags" {
     const t = std.testing;
-    const argv_owned = [_][:0]const u8{ "--out=/tmp/y.jelly", "--compress" };
+    const argv_owned = [_][:0]const u8{ "--out=/tmp/y.ball", "--compress" };
     const argv = argv_owned[0..];
     const specs = [_]Spec{
         .{ .long = "out" },
@@ -106,6 +106,6 @@ test "parse handles --key=value form and presence flags" {
     };
     var parsed = try parse(t.allocator, @constCast(argv), &specs);
     defer parsed.deinit();
-    try t.expectEqualStrings("/tmp/y.jelly", parsed.get(0).?);
+    try t.expectEqualStrings("/tmp/y.ball", parsed.get(0).?);
     try t.expect(parsed.flag(1));
 }

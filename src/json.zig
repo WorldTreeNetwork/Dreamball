@@ -1,7 +1,7 @@
 //! Lossless JSON export for a DreamBall, matching PROTOCOL.md §7.
 //!
 //! Byte strings are rendered as `"b58:<base58>"` strings so consumers without
-//! CBOR tooling can still read `.jelly.json`. Import-from-JSON lives next
+//! CBOR tooling can still read `.ball.json`. Import-from-JSON lives next
 //! sprint; for now we only export.
 
 const std = @import("std");
@@ -422,7 +422,7 @@ fn writeAct(allocator: Allocator, buf: *Buf, a: protocol.Act) !void {
 }
 
 // ============================================================================
-// Import path — read a canonical .jelly.json back into a DreamBall struct.
+// Import path — read a canonical .ball.json back into a DreamBall struct.
 //
 // Lifetimes: `readDreamBall` uses the provided allocator (typically an arena)
 // for every string/slice inside the returned DreamBall, so the caller can

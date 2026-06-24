@@ -8,7 +8,7 @@
  * AC8 (content-type inference): inferContentType maps extensions correctly.
  *
  * Test tier: smoke (happy-path; edge cases deferred to S6.3 thorough tier).
- * Env: JELLY_EMBED_MOCK=hash (set by vite.config.ts server project env).
+ * Env: DREAMBALL_EMBED_MOCK=hash (set by vite.config.ts server project env).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -162,7 +162,7 @@ describe('inscribeWithEmbedding — AC1 online happy path', () => {
       parentHashes: [],
       content: 'hello palace',
       contentType: 'text/markdown',
-      // JELLY_EMBED_MOCK=hash is set via vite.config.ts env — no live server needed
+      // DREAMBALL_EMBED_MOCK=hash is set via vite.config.ts env — no live server needed
       embedViaUrl: 'http://localhost:9808/embed',
     });
 

@@ -5,14 +5,14 @@
  * Exercises:
  *   - satisfies() — enforced-semver range matching (§10.1), incl. major discrim.
  *   - resolvePalaceCapabilities() against the REAL generated PALACE_CAPABILITIES:
- *       embed → bound (mock, in JELLY_EMBED_MOCK mode); knn → degraded;
+ *       embed → bound (mock, in DREAMBALL_EMBED_MOCK mode); knn → degraded;
  *       store + scene → unbound (no provider yet) ⇒ report.ok === false.
  *   - a synthetic all-providers registry ⇒ everything bound, ok === true.
  *   - version mismatch (provider implements 2.0 for a ^1 need) ⇒ unbound.
  */
 
 // Mock the text-embed provider so `embed` binds in CI without a model.
-process.env.JELLY_EMBED_MOCK = '1';
+process.env.DREAMBALL_EMBED_MOCK = '1';
 
 import { describe, it, expect } from 'vitest';
 import {

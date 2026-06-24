@@ -99,9 +99,9 @@ cleanup() {
 trap cleanup EXIT
 
 info "Starting dreamball-server on port $PORT..."
-# JELLY_EMBED_MOCK=1: use deterministic blake3-seeded mock (no Qwen3 weights needed in CI).
+# DREAMBALL_EMBED_MOCK=1: use deterministic blake3-seeded mock (no Qwen3 weights needed in CI).
 # The real model is deferred per TODO-EMBEDDING in dreamball-server/src/routes/embed.ts.
-JELLY_SERVER_PORT=$PORT JELLY_EMBED_MOCK=1 bun run "${REPO_ROOT}/dreamball-server/src/index.ts" &
+DREAMBALL_SERVER_PORT=$PORT DREAMBALL_EMBED_MOCK=1 bun run "${REPO_ROOT}/dreamball-server/src/index.ts" &
 SERVER_PID=$!
 
 # Wait for the server to be ready (up to 15 seconds)
@@ -385,7 +385,7 @@ fi
 # ─── S6.3 AC9: K-NN round-trip block ────────────────────────────────────────
 
 info "=== 16. K-NN round-trip (S6.3 AC9: mint→addRoom→inscribe 3 docs→kNN query) ==="
-KNN_SMOKE_OUT=$(JELLY_EMBED_MOCK=1 bun run "${REPO_ROOT}/scripts/knn-smoke.ts" 2>&1)
+KNN_SMOKE_OUT=$(DREAMBALL_EMBED_MOCK=1 bun run "${REPO_ROOT}/scripts/knn-smoke.ts" 2>&1)
 KNN_SMOKE_EXIT=$?
 echo "$KNN_SMOKE_OUT"
 if [ "$KNN_SMOKE_EXIT" -eq 0 ]; then

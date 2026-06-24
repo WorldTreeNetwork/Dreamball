@@ -18,7 +18,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer parsed.deinit();
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
-        try io.writeAllStdout("dreamball unseal <in.dragon.jelly> --out <out.jelly>\n");
+        try io.writeAllStdout("dreamball unseal <in.dragon.ball> --out <out.ball>\n");
         return 0;
     }
 

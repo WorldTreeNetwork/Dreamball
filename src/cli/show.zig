@@ -115,7 +115,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\dreamball show <file.jelly> [--format=text|json]
+            \\dreamball show <file.ball> [--format=text|json]
             \\       dreamball show --as-palace <palace> [--json] [--archiforms]
             \\
         );

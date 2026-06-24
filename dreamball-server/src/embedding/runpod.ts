@@ -20,11 +20,11 @@ const RUNPOD_BASE = 'https://api.runpod.ai/v2';
 const POLL_INTERVAL_MS = 5_000;
 
 // Cold-start on Runpod Serverless can take several minutes when the worker
-// pool is idle. Default budget is 5 min; override with JELLY_EMBED_RUNPOD_TIMEOUT_MS.
-const POLL_TIMEOUT_MS = Number(process.env.JELLY_EMBED_RUNPOD_TIMEOUT_MS ?? 300_000);
+// pool is idle. Default budget is 5 min; override with DREAMBALL_EMBED_RUNPOD_TIMEOUT_MS.
+const POLL_TIMEOUT_MS = Number(process.env.DREAMBALL_EMBED_RUNPOD_TIMEOUT_MS ?? 300_000);
 const MAX_POLL_ATTEMPTS = Math.max(1, Math.ceil(POLL_TIMEOUT_MS / POLL_INTERVAL_MS));
 
-const EMBEDDING_MODEL = process.env.JELLY_EMBED_RUNPOD_MODEL ?? 'qwen3-embedding:0.6b';
+const EMBEDDING_MODEL = process.env.DREAMBALL_EMBED_RUNPOD_MODEL ?? 'qwen3-embedding:0.6b';
 
 interface OpenAIEmbeddingRequest {
   model: string;

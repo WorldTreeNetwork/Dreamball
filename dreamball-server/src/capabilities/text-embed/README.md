@@ -42,5 +42,5 @@ the least invention and zero wire-format change.
 
 `bunx vitest run dreamball-server` → 30/30 pass (unchanged behavior).
 `bunx tsc --noEmit -p dreamball-server/tsconfig.json` → clean.
-`scripts/server-smoke.sh` boots with `JELLY_EMBED_MOCK=1`, which binds the mock
+`scripts/server-smoke.sh` boots with `DREAMBALL_EMBED_MOCK=1`, which binds the mock
 provider; its `/embed` assertions (dim 256, model, `mrl-256`) are unchanged.

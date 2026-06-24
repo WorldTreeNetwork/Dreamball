@@ -272,7 +272,7 @@ describe('buildSystemPrompt', () => {
 // Story 6.2 / D-023 / FR13 / SEC3: oracleActionStub migrated to oracleSignAction.
 // Tests verify: real 64-byte Ed25519 signature present, fp is Blake3 hex,
 // different timestamps produce different fps, inscription-orphaned works.
-// No JELLY_ORACLE_ALLOW_UNSIGNED gate — oracleSignAction is unconditional.
+// No DREAMBALL_ORACLE_ALLOW_UNSIGNED gate — oracleSignAction is unconditional.
 
 describe('S6.2 oracleSignAction — real Ed25519 oracle-signed actions', () => {
   // Create a temp palace with a synthetic oracle key.

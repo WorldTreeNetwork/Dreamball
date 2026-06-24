@@ -2,7 +2,7 @@
  * dreamball-export — produces a downloadable JSON-shaped DreamBall. NOT real
  * dCBOR / not signed; clearly labelled mock so consumers don't mistake it
  * for a verifiable artefact. Phase 1+ swaps this for a call into the Zig
- * `dreamball` CLI via MCP, which produces a real `.jelly`.
+ * `dreamball` CLI via MCP, which produces a real `.ball`.
  */
 
 import type { SynthesisedFruit } from './agent/MockAgent.js';
@@ -44,12 +44,12 @@ export function fruitToJellyJson(fruit: SynthesisedFruit): unknown {
 
 export function downloadFruit(fruit: SynthesisedFruit): void {
 	const json = fruitToJellyJson(fruit);
-	const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/jelly+json' });
+	const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/ball+json' });
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
 	const safe = fruit.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-	a.download = `${safe || fruit.id}.jelly.json`;
+	a.download = `${safe || fruit.id}.ball.json`;
 	document.body.appendChild(a);
 	a.click();
 	a.remove();
@@ -96,11 +96,11 @@ export function downloadTreeBundle(meta: {
 			{ alg: 'ml-dsa-87', value: 'b58:placeholder' }
 		]
 	};
-	const blob = new Blob([JSON.stringify(env, null, 2)], { type: 'application/jelly+json' });
+	const blob = new Blob([JSON.stringify(env, null, 2)], { type: 'application/ball+json' });
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
-	a.download = `wishing-tree.jelly.json`;
+	a.download = `wishing-tree.ball.json`;
 	document.body.appendChild(a);
 	a.click();
 	a.remove();

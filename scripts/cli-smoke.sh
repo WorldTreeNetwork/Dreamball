@@ -6,98 +6,98 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-JELLY="$REPO_DIR/zig-out/bin/dreamball"
-WORK="$(mktemp -d -t jelly-smoke.XXXXXX)"
+CLI="$REPO_DIR/zig-out/bin/dreamball"
+WORK="$(mktemp -d -t dreamball-smoke.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
-if [[ ! -x "$JELLY" ]]; then
-  echo "building jelly…"
+if [[ ! -x "$DREAMBALL" ]]; then
+  echo "building dreamball…"
   (cd "$REPO_DIR" && zig build)
 fi
 
 cd "$WORK"
 
 echo "==> version"
-"$JELLY" version | grep -q "format-version 1"
+"$DREAMBALL" version | grep -q "format-version 1"
 
 echo "==> mint"
-"$JELLY" mint --out seed.jelly --name "smoke-test" > mint.out
-test -s seed.jelly
-test -s seed.jelly.key
+"$DREAMBALL" mint --out seed.ball --name "smoke-test" > mint.out
+test -s seed.ball
+test -s seed.ball.key
 grep -q "identity fingerprint" mint.out
 
 echo "==> show (text)"
-"$JELLY" show seed.jelly | grep -q "stage:"
+"$DREAMBALL" show seed.ball | grep -q "stage:"
 
 echo "==> show (json)"
-"$JELLY" show seed.jelly --format=json | grep -q '"type":"ball.dreamball"'
+"$DREAMBALL" show seed.ball --format=json | grep -q '"type":"ball.dreamball"'
 
 echo "==> verify (pristine)"
-"$JELLY" verify seed.jelly
+"$DREAMBALL" verify seed.ball
 
 echo "==> verify (tampered) — must fail"
-cp seed.jelly tampered.jelly
+cp seed.ball tampered.ball
 python3 -c "
 import sys
-p='tampered.jelly'
+p='tampered.ball'
 b=bytearray(open(p,'rb').read())
 b[60]^=0x01
 open(p,'wb').write(bytes(b))
 "
-if "$JELLY" verify tampered.jelly 2>/dev/null; then
+if "$DREAMBALL" verify tampered.ball 2>/dev/null; then
   echo "FAIL: tampered file verified successfully"; exit 1
 fi
 
 echo "==> export-json"
-"$JELLY" export-json seed.jelly --out seed.jelly.json > /dev/null
-grep -q '"type":"ball.dreamball"' seed.jelly.json
+"$DREAMBALL" export-json seed.ball --out seed.ball.json > /dev/null
+grep -q '"type":"ball.dreamball"' seed.ball.json
 
 echo "==> seal / unseal (round-trip)"
-"$JELLY" seal seed.jelly --out seed.dragon.jelly > /dev/null
-"$JELLY" unseal seed.dragon.jelly --out seed.back.jelly > /dev/null
-cmp seed.jelly seed.back.jelly
+"$DREAMBALL" seal seed.ball --out seed.dragon.ball > /dev/null
+"$DREAMBALL" unseal seed.dragon.ball --out seed.back.ball > /dev/null
+cmp seed.ball seed.back.ball
 
 echo "==> grow (bump revision)"
-"$JELLY" grow seed.jelly --key seed.jelly.key --set-personality "curious" --revision-bump > grow.out
+"$DREAMBALL" grow seed.ball --key seed.ball.key --set-personality "curious" --revision-bump > grow.out
 grep -q "revision=1" grow.out
-"$JELLY" verify seed.jelly  # must still verify after re-signing
+"$DREAMBALL" verify seed.ball  # must still verify after re-signing
 
 # --- v2 typed DreamBalls + Demo-D primitives ---
 echo "==> mint typed DreamBalls (all six types)"
 for t in avatar agent tool relic field guild; do
-  "$JELLY" mint --out "$t.jelly" --type "$t" --name "test-$t" > /dev/null
-  "$JELLY" show "$t.jelly" | grep -q "type:         $t"
-  "$JELLY" verify "$t.jelly"
+  "$DREAMBALL" mint --out "$t.ball" --type "$t" --name "test-$t" > /dev/null
+  "$DREAMBALL" show "$t.ball" | grep -q "type:         $t"
+  "$DREAMBALL" verify "$t.ball"
 done
 
 echo "==> join guild"
-"$JELLY" join-guild agent.jelly --guild guild.jelly --key agent.jelly.key > join.out
+"$DREAMBALL" join-guild agent.ball --guild guild.ball --key agent.ball.key > join.out
 grep -q "joined guild" join.out
-"$JELLY" verify agent.jelly
+"$DREAMBALL" verify agent.ball
 
 echo "==> transmit tool"
-AGENT_FP=$("$JELLY" show agent.jelly | grep fingerprint | awk '{print $2}')
-GUILD_FP=$("$JELLY" show guild.jelly | grep fingerprint | awk '{print $2}')
-"$JELLY" transmit tool.jelly --to "$AGENT_FP" --via-guild "$GUILD_FP" --sender-key tool.jelly.key --out transmission.jelly > transmit.out
+AGENT_FP=$("$DREAMBALL" show agent.ball | grep fingerprint | awk '{print $2}')
+GUILD_FP=$("$DREAMBALL" show guild.ball | grep fingerprint | awk '{print $2}')
+"$DREAMBALL" transmit tool.ball --to "$AGENT_FP" --via-guild "$GUILD_FP" --sender-key tool.ball.key --out transmission.ball > transmit.out
 grep -q "transmitted" transmit.out
-test -s transmission.jelly
+test -s transmission.ball
 
 echo "==> seal + unlock relic"
-"$JELLY" seal-relic tool.jelly --for-guild "$GUILD_FP" --out sealed.jelly > /dev/null
-"$JELLY" unlock sealed.jelly --out unsealed.jelly > /dev/null
-cmp tool.jelly unsealed.jelly
+"$DREAMBALL" seal-relic tool.ball --for-guild "$GUILD_FP" --out sealed.ball > /dev/null
+"$DREAMBALL" unlock sealed.ball --out unsealed.ball > /dev/null
+cmp tool.ball unsealed.ball
 
 echo "==> unknown command — must exit nonzero"
-if "$JELLY" not-a-real-command 2>/dev/null; then
+if "$DREAMBALL" not-a-real-command 2>/dev/null; then
   echo "FAIL: unknown command succeeded"; exit 1
 fi
 
 # --- palace verb group (Story 3.1 / AC1, AC2, AC5) ---
-echo "==> palace: AC1 — jelly --help lists palace with correct summary"
-"$JELLY" --help | grep -E '^\s*palace\b' | grep -q "palace verb group (see dreamball palace --help)"
+echo "==> palace: AC1 — dreamball --help lists palace with correct summary"
+"$DREAMBALL" --help | grep -E '^\s*palace\b' | grep -q "palace verb group (see dreamball palace --help)"
 
 echo "==> palace: AC2 — dreamball palace --help exits 0; lists 5 subverbs in order; Growth note present"
-palace_help=$("$JELLY" palace --help)
+palace_help=$("$DREAMBALL" palace --help)
 echo "$palace_help" | grep -q "mint"
 echo "$palace_help" | grep -q "add-room"
 echo "$palace_help" | grep -q "inscribe"
@@ -115,21 +115,21 @@ if [[ "$mint_line" -ge "$add_room_line" || "$add_room_line" -ge "$inscribe_line"
 fi
 
 echo "==> palace: AC5 — dreamball palace bogus exits nonzero; stdout contains usage"
-palace_bogus_out=$("$JELLY" palace bogus 2>&1 || true)
-"$JELLY" palace bogus > /dev/null 2>&1 && { echo "FAIL: dreamball palace bogus should exit nonzero"; exit 1; }
+palace_bogus_out=$("$DREAMBALL" palace bogus 2>&1 || true)
+"$DREAMBALL" palace bogus > /dev/null 2>&1 && { echo "FAIL: dreamball palace bogus should exit nonzero"; exit 1; }
 echo "$palace_bogus_out" | grep -q "Usage: dreamball palace"
 
 # --- palace mint (Story 3.2 / AC1, AC2, AC3, AC5, AC6) ---
 echo "==> palace mint: AC2 — missing --mythos exits nonzero with helpful message"
-pmiss_out=$("$JELLY" palace mint --out pmiss 2>&1 || true)
-"$JELLY" palace mint --out pmiss > /dev/null 2>&1 && { echo "FAIL: palace mint without --mythos should exit nonzero"; exit 1; }
+pmiss_out=$("$DREAMBALL" palace mint --out pmiss 2>&1 || true)
+"$DREAMBALL" palace mint --out pmiss > /dev/null 2>&1 && { echo "FAIL: palace mint without --mythos should exit nonzero"; exit 1; }
 echo "$pmiss_out" | grep -q "mythos required"
 
 echo "==> palace mint: AC1 — mint with --mythos produces verifying bundle"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace mint --out pmint --mythos "smoke test mythos body" > pmint.out
+"$DREAMBALL" palace mint --out pmint --mythos "smoke test mythos body" > pmint.out
 # AC1: exit 0 (set -e enforces this); output mentions palace fp
 grep -q "palace fp:" pmint.out
 grep -q "field-kind:" pmint.out
@@ -150,7 +150,7 @@ echo "==> palace mint: AC5 — seed registry deterministic across two mints"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace mint --out pmint2 --mythos "second smoke test" > /dev/null
+"$DREAMBALL" palace mint --out pmint2 --mythos "second smoke test" > /dev/null
 # Registry asset (registry fp should be identical because it's @embedFile)
 REGISTRY_LINE1=$(grep "^" pmint.bundle | sed -n '4p')   # line 4 = registry fp
 REGISTRY_LINE2=$(grep "^" pmint2.bundle | sed -n '4p')
@@ -163,7 +163,7 @@ echo "==> palace add-room: AC1 — add-room happy path"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace add-room pmint --name "library" > add-room.out
+"$DREAMBALL" palace add-room pmint --name "library" > add-room.out
 grep -q "added room" add-room.out
 grep -q "room fp:" add-room.out
 grep -q "library" add-room.out
@@ -172,14 +172,14 @@ echo "==> palace add-room: AC4 — --mythos attaches genesis mythos"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace add-room pmint --name "garden" --mythos "old bones" > add-room-mythos.out
+"$DREAMBALL" palace add-room pmint --name "garden" --mythos "old bones" > add-room-mythos.out
 grep -q "added room" add-room-mythos.out
 
 echo "==> palace add-room: AC5 — unknown --archiform emits warning and exits 0"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace add-room pmint --name "forge-room" --archiform "frobnicator" 2>add-room-archiform-err.out > /dev/null
+"$DREAMBALL" palace add-room pmint --name "forge-room" --archiform "frobnicator" 2>add-room-archiform-err.out > /dev/null
 # exit 0 (set -e enforces this); warning on stderr
 grep -q "warning: unknown archiform" add-room-archiform-err.out
 
@@ -187,7 +187,7 @@ echo "==> palace add-room: AC5 — valid --archiform accepted"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace add-room pmint --name "forge-official" --archiform "forge" > add-room-valid-archiform.out
+"$DREAMBALL" palace add-room pmint --name "forge-official" --archiform "forge" > add-room-valid-archiform.out
 grep -q "added room" add-room-valid-archiform.out
 
 echo "==> palace add-room: AC6 — cycle rejection (duplicate room attempt)"
@@ -195,8 +195,8 @@ echo "==> palace add-room: AC6 — cycle rejection (duplicate room attempt)"
 ROOM_FP=$(grep "room fp:" add-room.out | awk '{print $NF}')
 # Attempting to add a room with the same name+timing would give a different fp (timestamp differs),
 # but we can test the --name missing error path
-"$JELLY" palace add-room pmint 2>&1 | grep -q "error:" && true
-"$JELLY" palace add-room pmint > /dev/null 2>&1 && { echo "FAIL: add-room without --name should exit nonzero"; exit 1; } || true
+"$DREAMBALL" palace add-room pmint 2>&1 | grep -q "error:" && true
+"$DREAMBALL" palace add-room pmint > /dev/null 2>&1 && { echo "FAIL: add-room without --name should exit nonzero"; exit 1; } || true
 
 # --- palace inscribe (Story 3.3 / AC2, AC3, AC4, AC5, AC9) ---
 echo "==> palace inscribe: setup — create a source file"
@@ -206,7 +206,7 @@ echo "==> palace inscribe: AC2 — inscribe happy path"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md > inscribe.out
+"$DREAMBALL" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md > inscribe.out
 grep -q "inscribed" inscribe.out
 grep -q "inscription fp:" inscribe.out
 grep -q "source blake3:" inscribe.out
@@ -214,7 +214,7 @@ grep -q "scroll" inscribe.out  # default --surface
 
 echo "==> palace inscribe: AC3 — unknown room exits nonzero"
 FAKE_ROOM_FP="$(printf '%064d' 0 | tr '0' 'a')"
-"$JELLY" palace inscribe pmint --room "$FAKE_ROOM_FP" smoke-doc.md > /dev/null 2>&1 && {
+"$DREAMBALL" palace inscribe pmint --room "$FAKE_ROOM_FP" smoke-doc.md > /dev/null 2>&1 && {
   echo "FAIL: inscribe with unknown room should exit nonzero"; exit 1;
 } || true
 
@@ -222,21 +222,21 @@ echo "==> palace inscribe: AC5 — valid --archiform accepted"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --archiform "scroll" > inscribe-archiform.out
+"$DREAMBALL" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --archiform "scroll" > inscribe-archiform.out
 grep -q "inscribed" inscribe-archiform.out
 
 echo "==> palace inscribe: AC5 — unknown --archiform emits warning"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --archiform "bogusform" 2>inscribe-warn-err.out > /dev/null
+"$DREAMBALL" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --archiform "bogusform" 2>inscribe-warn-err.out > /dev/null
 grep -q "warning: unknown archiform" inscribe-warn-err.out
 
 echo "==> palace inscribe: AC4 — --mythos attaches per-inscription mythos"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --mythos "this scroll remembers" > inscribe-mythos.out
+"$DREAMBALL" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --mythos "this scroll remembers" > inscribe-mythos.out
 grep -q "inscribed" inscribe-mythos.out
 
 echo "==> palace inscribe: AC9 — --embed-via unreachable exits nonzero"
@@ -244,19 +244,19 @@ echo "==> palace inscribe: AC9 — --embed-via unreachable exits nonzero"
 inscribe_embed_out=$(PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
   PALACE_DB_PATH="$WORK/palace-smoke.db" \
   PALACE_BUN="$(command -v bun)" \
-  "$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" 2>&1 || true)
+  "$DREAMBALL" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" 2>&1 || true)
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
   PALACE_DB_PATH="$WORK/palace-smoke.db" \
   PALACE_BUN="$(command -v bun)" \
-  "$JELLY" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" > /dev/null 2>&1 && {
+  "$DREAMBALL" palace inscribe pmint --room "$ROOM_FP" smoke-doc.md --embed-via "http://127.0.0.1:1" > /dev/null 2>&1 && {
   echo "FAIL: inscribe with unreachable --embed-via should exit nonzero"; exit 1;
 } || true
 echo "$inscribe_embed_out" | grep -q "embedding service unreachable"
 
 # --- palace rename-mythos (Story 3.4 / AC1, AC2, AC3, AC5) ---
 echo "==> palace rename-mythos: AC2 — missing --body exits nonzero"
-rename_no_body=$("$JELLY" palace rename-mythos pmint 2>&1 || true)
-"$JELLY" palace rename-mythos pmint > /dev/null 2>&1 && {
+rename_no_body=$("$DREAMBALL" palace rename-mythos pmint 2>&1 || true)
+"$DREAMBALL" palace rename-mythos pmint > /dev/null 2>&1 && {
   echo "FAIL: rename-mythos without --body should exit nonzero"; exit 1;
 } || true
 echo "$rename_no_body" | grep -q "\-\-body"
@@ -265,7 +265,7 @@ echo "==> palace rename-mythos: AC1 — happy path appends successor mythos"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace rename-mythos pmint \
+"$DREAMBALL" palace rename-mythos pmint \
   --body "the library remembers" \
   --true-name "rememberer" \
   --form "library" \
@@ -279,7 +279,7 @@ echo "==> palace rename-mythos: AC3 — second rename (chain of 2) still succeed
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace rename-mythos pmint \
+"$DREAMBALL" palace rename-mythos pmint \
   --body "the library deepens" \
   --yes \
   > rename-mythos-2.out
@@ -289,7 +289,7 @@ echo "==> palace rename-mythos: AC5 — genesis-only palace mints cleanly (no re
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace mint --out pmint_genesis_only --mythos "genesis only palace" > pmint_genesis_only.out
+"$DREAMBALL" palace mint --out pmint_genesis_only --mythos "genesis only palace" > pmint_genesis_only.out
 # AC5: freshly minted palace bundle and oracle key exist (rename-mythos not needed for genesis)
 test -s pmint_genesis_only.bundle
 test -s pmint_genesis_only.oracle.key
@@ -315,17 +315,17 @@ test -n "$INSCRIPTION_FP" || { echo "FAIL: INSCRIPTION_FP not captured"; exit 1;
 test -n "$ROOM2_FP"       || { echo "FAIL: ROOM2_FP not captured"; exit 1; }
 
 echo "==> palace move: AC5 — missing --avatar exits nonzero"
-"$JELLY" palace move pmint > /dev/null 2>&1 && {
+"$DREAMBALL" palace move pmint > /dev/null 2>&1 && {
   echo "FAIL: move without --avatar should exit nonzero"; exit 1;
 } || true
-move_no_avatar=$("$JELLY" palace move pmint 2>&1 || true)
+move_no_avatar=$("$DREAMBALL" palace move pmint 2>&1 || true)
 echo "$move_no_avatar" | grep -q "\-\-avatar"
 
 echo "==> palace move: AC2 — happy path moves inscription to destination room"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace move pmint \
+"$DREAMBALL" palace move pmint \
   --avatar "$INSCRIPTION_FP" \
   --to "$ROOM2_FP" \
   > move.out
@@ -352,11 +352,11 @@ echo "  move atomicity verified: output shape matches pre-projection behavior"
 #   (a) fully validates AC2 (URL shape), AC3 (unknown palace), AC4 (port-in-use)
 #       without spawning Vite; and
 #   (b) marks the full AC1 spawn+poll path as a best-effort skip in CI
-#       (controlled by JELLY_SMOKE_SKIP_VITE=1).
+#       (controlled by DREAMBALL_SMOKE_SKIP_VITE=1).
 
 echo "==> palace open: AC3 — unknown palace exits nonzero with 'unknown palace'"
-open_missing_out=$("$JELLY" palace open ./does-not-exist 2>&1 || true)
-"$JELLY" palace open ./does-not-exist > /dev/null 2>&1 && {
+open_missing_out=$("$DREAMBALL" palace open ./does-not-exist 2>&1 || true)
+"$DREAMBALL" palace open ./does-not-exist > /dev/null 2>&1 && {
   echo "FAIL: palace open on missing palace should exit nonzero"; exit 1;
 } || true
 echo "$open_missing_out" | grep -qi "unknown palace"
@@ -378,18 +378,18 @@ try:
     time.sleep(10)
 finally:
     s.close()
-" > /tmp/jelly-port-holder.out 2>&1 &
+" > /tmp/dreamball-port-holder.out 2>&1 &
 HOLDER_PID=$!
 trap 'kill $HOLDER_PID 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
 # Wait for the holder to bind.
 for i in $(seq 1 20); do
-  grep -q "ready" /tmp/jelly-port-holder.out 2>/dev/null && break
+  grep -q "ready" /tmp/dreamball-port-holder.out 2>/dev/null && break
   sleep 0.1
 done
 
-open_port_out=$("$JELLY" palace open pmint --port $BUSY_PORT 2>&1 || true)
-"$JELLY" palace open pmint --port $BUSY_PORT > /dev/null 2>&1 && {
+open_port_out=$("$DREAMBALL" palace open pmint --port $BUSY_PORT 2>&1 || true)
+"$DREAMBALL" palace open pmint --port $BUSY_PORT > /dev/null 2>&1 && {
   echo "FAIL: palace open with busy port should exit nonzero"; exit 1;
 } || true
 echo "$open_port_out" | grep -q "port $BUSY_PORT in use"
@@ -399,33 +399,33 @@ echo "==> palace open: AC2 — URL shape (no Vite spawn; verify URL stdout forma
 # We verify the URL is printed before the child is waited on by checking with a
 # timeout. Since AC3 confirmed the bundle check works, use the minted pmint bundle.
 # Run palace open in background, capture first line of stdout, then SIGTERM it.
-if [[ "${JELLY_SMOKE_SKIP_VITE:-}" == "1" ]]; then
-  echo "  (JELLY_SMOKE_SKIP_VITE=1 — skipping Vite spawn/reachability poll)"
+if [[ "${DREAMBALL_SMOKE_SKIP_VITE:-}" == "1" ]]; then
+  echo "  (DREAMBALL_SMOKE_SKIP_VITE=1 — skipping Vite spawn/reachability poll)"
 else
   PALACE_FP=$(head -1 "$WORK/pmint.bundle")
   OPEN_PORT=15793
   # Attempt open; capture stdout; send SIGTERM after URL appears.
   PALACE_BUN_PATH="$(command -v bun)"
-  PALACE_BUN="$PALACE_BUN_PATH" "$JELLY" palace open pmint --port $OPEN_PORT > /tmp/jelly-open-url.out 2>/tmp/jelly-open-err.out &
+  PALACE_BUN="$PALACE_BUN_PATH" "$DREAMBALL" palace open pmint --port $OPEN_PORT > /tmp/dreamball-open-url.out 2>/tmp/dreamball-open-err.out &
   OPEN_PID=$!
   # Wait up to 5s for the URL line to appear, then SIGTERM.
   for i in $(seq 1 50); do
     sleep 0.1
-    if grep -q "http://localhost" /tmp/jelly-open-url.out 2>/dev/null; then
+    if grep -q "http://localhost" /tmp/dreamball-open-url.out 2>/dev/null; then
       break
     fi
   done
   kill -TERM $OPEN_PID 2>/dev/null || true
   wait $OPEN_PID 2>/dev/null || true
   # AC2: URL must match expected shape.
-  grep -q "http://localhost:$OPEN_PORT/demo/palace/$PALACE_FP" /tmp/jelly-open-url.out \
-    || { echo "FAIL: palace open URL did not match expected shape"; cat /tmp/jelly-open-url.out; exit 1; }
-  echo "  URL shape verified: $(cat /tmp/jelly-open-url.out | head -1)"
+  grep -q "http://localhost:$OPEN_PORT/demo/palace/$PALACE_FP" /tmp/dreamball-open-url.out \
+    || { echo "FAIL: palace open URL did not match expected shape"; cat /tmp/dreamball-open-url.out; exit 1; }
+  echo "  URL shape verified: $(cat /tmp/dreamball-open-url.out | head -1)"
 fi
 
 # --- palace show (Story 3.6 / AC1, AC2, AC4) ---
 echo "==> palace show: AC4 — dreamball palace show --archiforms lists 19 forms"
-archiforms_out=$("$JELLY" palace show pmint --archiforms 2>&1 || true)
+archiforms_out=$("$DREAMBALL" palace show pmint --archiforms 2>&1 || true)
 # Check a sample of the 19 forms
 echo "$archiforms_out" | grep -q "library"
 echo "$archiforms_out" | grep -q "forge"
@@ -437,7 +437,7 @@ if [[ "$form_count" -ne 19 ]]; then
 fi
 
 echo "==> palace show: AC2 — dreamball show --as-palace --json"
-show_json=$("$JELLY" show --as-palace pmint --json 2>&1)
+show_json=$("$DREAMBALL" show --as-palace pmint --json 2>&1)
 echo "$show_json" | grep -q '"mythosHeadBody"'
 echo "$show_json" | grep -q '"trueName"'
 echo "$show_json" | grep -q '"rooms"'
@@ -446,13 +446,13 @@ echo "$show_json" | grep -q '"oracleFp"'
 echo "  --json output contains all 5 AC2 keys"
 
 echo "==> palace show: AC1 — dreamball show --as-palace human-readable"
-show_human=$("$JELLY" show --as-palace pmint 2>&1)
+show_human=$("$DREAMBALL" show --as-palace pmint 2>&1)
 echo "$show_human" | grep -q "mythos:"
 echo "$show_human" | grep -q "oracle fp:"
 echo "  human-readable output verified"
 
 echo "==> palace show: AC3 — non-palace file exits nonzero"
-"$JELLY" show --as-palace seed.jelly > /dev/null 2>&1 && {
+"$DREAMBALL" show --as-palace seed.ball > /dev/null 2>&1 && {
   echo "FAIL: show --as-palace on non-palace should exit nonzero"; exit 1;
 } || true
 
@@ -461,19 +461,19 @@ echo "==> palace verify: happy — freshly-minted palace verifies ok"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace mint --out pverify --mythos "verify test palace" > /dev/null
+"$DREAMBALL" palace mint --out pverify --mythos "verify test palace" > /dev/null
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
-"$JELLY" palace add-room pverify --name "library" > /dev/null
-verify_ok=$("$JELLY" verify pverify.bundle 2>&1)
+"$DREAMBALL" palace add-room pverify --name "library" > /dev/null
+verify_ok=$("$DREAMBALL" verify pverify.bundle 2>&1)
 echo "$verify_ok" | grep -q "palace ok"
 echo "  happy-path verify passed"
 
 echo "==> palace verify: AC5 — invariant (a) no rooms"
 FIXTURE_NO_ROOMS="$REPO_DIR/tests/fixtures/palace-no-rooms"
-verify_no_rooms=$("$JELLY" verify "$FIXTURE_NO_ROOMS/palace.bundle" 2>&1 || true)
-"$JELLY" verify "$FIXTURE_NO_ROOMS/palace.bundle" > /dev/null 2>&1 && {
+verify_no_rooms=$("$DREAMBALL" verify "$FIXTURE_NO_ROOMS/palace.bundle" 2>&1 || true)
+"$DREAMBALL" verify "$FIXTURE_NO_ROOMS/palace.bundle" > /dev/null 2>&1 && {
   echo "FAIL: palace-no-rooms should exit nonzero"; exit 1;
 } || true
 echo "$verify_no_rooms" | grep -qi "no rooms"
@@ -481,8 +481,8 @@ echo "  invariant (a) palace has no rooms — correct failure"
 
 echo "==> palace verify: AC6 — invariant (b) two agents"
 FIXTURE_TWO_AGENTS="$REPO_DIR/tests/fixtures/palace-two-agents"
-verify_two=$("$JELLY" verify "$FIXTURE_TWO_AGENTS/palace.bundle" 2>&1 || true)
-"$JELLY" verify "$FIXTURE_TWO_AGENTS/palace.bundle" > /dev/null 2>&1 && {
+verify_two=$("$DREAMBALL" verify "$FIXTURE_TWO_AGENTS/palace.bundle" 2>&1 || true)
+"$DREAMBALL" verify "$FIXTURE_TWO_AGENTS/palace.bundle" > /dev/null 2>&1 && {
   echo "FAIL: palace-two-agents should exit nonzero"; exit 1;
 } || true
 echo "$verify_two" | grep -qi "multiple Agents"
@@ -490,8 +490,8 @@ echo "  invariant (b) multiple agents — correct failure"
 
 echo "==> palace verify: AC7 — invariant (c) orphan action parent"
 FIXTURE_ORPHAN="$REPO_DIR/tests/fixtures/palace-orphan-action"
-verify_orphan=$("$JELLY" verify "$FIXTURE_ORPHAN/palace.bundle" 2>&1 || true)
-"$JELLY" verify "$FIXTURE_ORPHAN/palace.bundle" > /dev/null 2>&1 && {
+verify_orphan=$("$DREAMBALL" verify "$FIXTURE_ORPHAN/palace.bundle" 2>&1 || true)
+"$DREAMBALL" verify "$FIXTURE_ORPHAN/palace.bundle" > /dev/null 2>&1 && {
   echo "FAIL: palace-orphan-action should exit nonzero"; exit 1;
 } || true
 echo "$verify_orphan" | grep -qi "unresolvable parent-hash\|invariant c"
@@ -508,8 +508,8 @@ echo "  broken-mythos fixture present (S3.4 AC4 reuse)"
 
 echo "==> palace verify: AC9 — invariant (e) head-hashes wrong (non-leaf)"
 FIXTURE_WRONG_HEAD="$REPO_DIR/tests/fixtures/palace-head-hashes-wrong"
-verify_wrong=$("$JELLY" verify "$FIXTURE_WRONG_HEAD/palace.bundle" 2>&1 || true)
-"$JELLY" verify "$FIXTURE_WRONG_HEAD/palace.bundle" > /dev/null 2>&1 && {
+verify_wrong=$("$DREAMBALL" verify "$FIXTURE_WRONG_HEAD/palace.bundle" 2>&1 || true)
+"$DREAMBALL" verify "$FIXTURE_WRONG_HEAD/palace.bundle" > /dev/null 2>&1 && {
   echo "FAIL: palace-head-hashes-wrong should exit nonzero"; exit 1;
 } || true
 echo "$verify_wrong" | grep -qi "head-hash\|invariant e\|not a leaf"

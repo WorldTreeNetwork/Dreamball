@@ -36,7 +36,7 @@
  * `dreamball` CLI binary via `spawnSync`. The spike DOES NOT exercise that
  * underlying CLI path — Story 4.2's scope is the elicitation routing,
  * not the action execution. The handler's post-confirmation dispatch
- * to `renameMythos(args)` is gated behind a JELLY_CLI shim test
+ * to `renameMythos(args)` is gated behind a DREAMBALL_CLI shim test
  * environment variable so the spawn doesn't crash the test.
  */
 
@@ -136,7 +136,7 @@ describe('Story 4.2 — MCP elicitation spike (AC3, AC4)', () => {
     // We can't run the underlying client (it shells out to dreamball CLI), but
     // we can assert that elicit is NOT called when confirmed=true is already
     // threaded through. The handler will then attempt to dispatch — wrap
-    // in try so the spawn failure (no JELLY_CLI in test env) doesn't fail
+    // in try so the spawn failure (no DREAMBALL_CLI in test env) doesn't fail
     // this assertion.
     try {
       await handleRenameMythos(
@@ -144,7 +144,7 @@ describe('Story 4.2 — MCP elicitation spike (AC3, AC4)', () => {
         { elicit, confirmed: true },
       );
     } catch {
-      // expected: spawn failure when JELLY_CLI is unset / not built
+      // expected: spawn failure when DREAMBALL_CLI is unset / not built
     }
     expect(elicitCalls.length).toBe(0);
   });
@@ -247,14 +247,14 @@ describe('Story 4.2 — MCP elicitation spike (AC3, AC4)', () => {
       // what the runtime entrypoint (Story 4.3) will do.
       const elicit: ElicitFn = (params) => server.elicitInput(params);
 
-      // Stub JELLY_CLI to a no-op script so the post-confirmation dispatch
+      // Stub DREAMBALL_CLI to a no-op script so the post-confirmation dispatch
       // succeeds (we just need to verify the elicit→dispatch flow happens).
       const tmp = mkdtempSync(join(tmpdir(), 'jelly-stub-'));
       const stubPath = join(tmp, 'jelly');
       writeFileSync(stubPath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
       chmodSync(stubPath, 0o755);
-      const prevJelly = process.env.JELLY_CLI;
-      process.env.JELLY_CLI = stubPath;
+      const prevJelly = process.env.DREAMBALL_CLI;
+      process.env.DREAMBALL_CLI = stubPath;
 
       try {
         const result = await handleRenameMythos(
@@ -267,9 +267,9 @@ describe('Story 4.2 — MCP elicitation spike (AC3, AC4)', () => {
         expect(result.confirmed).toBe(true);
       } finally {
         if (prevJelly === undefined) {
-          delete process.env.JELLY_CLI;
+          delete process.env.DREAMBALL_CLI;
         } else {
-          process.env.JELLY_CLI = prevJelly;
+          process.env.DREAMBALL_CLI = prevJelly;
         }
       }
     });

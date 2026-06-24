@@ -14,7 +14,7 @@
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
  *   This route hosts Qwen3-Embedding-0.6B via onnxruntime-node.
- *   The model weights must be placed at JELLY_EMBED_MODEL_PATH before boot.
+ *   The model weights must be placed at DREAMBALL_EMBED_MODEL_PATH before boot.
  *   See docs/decisions/2026-04-24-qwen3-embedding-loader.md.
  *
  * Decisions: D-012, D-002; NFR11 (sanctioned exit), NFR13, SEC6, SEC7.

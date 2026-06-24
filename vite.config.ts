@@ -53,8 +53,8 @@ export default defineConfig({
 					// These vars are set here (not only in test files) because ESM
 					// top-level await in index.ts runs before test-file assignments.
 					env: {
-						JELLY_SERVER_NO_LISTEN: '1',
-						JELLY_EMBED_MOCK: '1'
+						DREAMBALL_SERVER_NO_LISTEN: '1',
+						DREAMBALL_EMBED_MOCK: '1'
 					}
 				}
 			},

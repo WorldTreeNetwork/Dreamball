@@ -12,9 +12,9 @@
  * normalized). See D-002 and Epic 6 AC3.
  *
  * Backend selection (priority order, decided at boot):
- *   1. JELLY_EMBED_MOCK=1                              → deterministic mock
+ *   1. DREAMBALL_EMBED_MOCK=1                              → deterministic mock
  *   2. RUNPOD_SERVERLESS_ENDPOINT_ID + RUNPOD_API_KEY  → remote Runpod (Ollama qwen3-embedding:0.6b)
- *   3. JELLY_EMBED_MODEL_PATH (or ./models default)    → local ONNX
+ *   3. DREAMBALL_EMBED_MODEL_PATH (or ./models default)    → local ONNX
  *   4. None of the above at boot                       → fail-fast
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
@@ -60,19 +60,19 @@ let _loaded = false;
  * Load the Qwen3-Embedding-0.6B model from the pinned local path.
  *
  * Fail-fast contract: if the model directory does not exist at
- * JELLY_EMBED_MODEL_PATH, this function throws before the server
+ * DREAMBALL_EMBED_MODEL_PATH, this function throws before the server
  * starts accepting requests.
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
  *   Default path: ./models/Qwen3-Embedding-0.6B-ONNX
- *   Override: JELLY_EMBED_MODEL_PATH=<absolute-path>
+ *   Override: DREAMBALL_EMBED_MODEL_PATH=<absolute-path>
  *   Download script: scripts/download-embed-model.ts
  */
 export async function loadQwen3Model(): Promise<void> {
   if (_loaded) return;  // load-once guard
 
-  // Mock mode: skip model load entirely (test seam, JELLY_EMBED_MOCK=1)
-  if (process.env.JELLY_EMBED_MOCK === '1') {
+  // Mock mode: skip model load entirely (test seam, DREAMBALL_EMBED_MOCK=1)
+  if (process.env.DREAMBALL_EMBED_MOCK === '1') {
     _loaded = true;
     return;
   }
@@ -85,7 +85,7 @@ export async function loadQwen3Model(): Promise<void> {
     return;
   }
 
-  const modelPath = process.env.JELLY_EMBED_MODEL_PATH
+  const modelPath = process.env.DREAMBALL_EMBED_MODEL_PATH
     ?? './models/Qwen3-Embedding-0.6B-ONNX';
 
   // Fail-fast: check local path exists before attempting load
@@ -93,7 +93,7 @@ export async function loadQwen3Model(): Promise<void> {
   if (!existsSync(modelPath)) {
     throw new Error(
       `embedding model not found at ${modelPath}\n` +
-      `Set JELLY_EMBED_MODEL_PATH or run: bun run scripts/download-embed-model.ts`
+      `Set DREAMBALL_EMBED_MODEL_PATH or run: bun run scripts/download-embed-model.ts`
     );
   }
 
@@ -123,14 +123,14 @@ export async function loadQwen3Model(): Promise<void> {
  * This is the raw Qwen3-Embedding-0.6B output BEFORE MRL truncation.
  * Callers (routes/embed.ts) apply truncateMrl() before returning to clients.
  *
- * In mock mode (JELLY_EMBED_MOCK=1): returns a deterministic pseudo-random
+ * In mock mode (DREAMBALL_EMBED_MOCK=1): returns a deterministic pseudo-random
  * 1024d Float32Array seeded from the content string's bytes.
  *
  * @throws Error if loadQwen3Model() was never called (server bug)
  */
 export async function embed(content: string): Promise<Float32Array> {
   // Mock mode: deterministic hash-based embedding, no model needed
-  if (process.env.JELLY_EMBED_MOCK === '1') {
+  if (process.env.DREAMBALL_EMBED_MOCK === '1') {
     return _mockEmbed1024(content);
   }
 
@@ -195,7 +195,7 @@ export function truncateMrl(vec: Float32Array, dim: number): Float32Array {
 
 /**
  * Deterministic pseudo-random 1024d Float32Array seeded from content.
- * ONLY used when JELLY_EMBED_MOCK=1. NOT a real embedding.
+ * ONLY used when DREAMBALL_EMBED_MOCK=1. NOT a real embedding.
  *
  * Uses Bun.hash.blake3 when available (Bun runtime), falls back to
  * node:crypto SHA-256 for Vitest worker compatibility.

@@ -39,7 +39,7 @@ import { embedRoute } from './routes/embed.js';
 import { resolveTextEmbed } from './capabilities/text-embed/resolver.js';
 import { buildMcpDoc, buildTypesDoc } from './mcp-doc.js';
 
-const PORT = Number(process.env.JELLY_SERVER_PORT ?? 9808);
+const PORT = Number(process.env.DREAMBALL_SERVER_PORT ?? 9808);
 
 // ---------------------------------------------------------------------------
 // Structured logging middleware
@@ -131,13 +131,13 @@ export const app = new Elysia()
 // which only exposes `.fetch()`). We try/catch both to keep this file
 // importable everywhere without an env-var contract that ESM hoisting
 // can defeat.
-if (process.env.JELLY_SERVER_NO_LISTEN !== '1') {
+if (process.env.DREAMBALL_SERVER_NO_LISTEN !== '1') {
   try {
     // Bind the text-embed/1 capability once at boot — fail-fast if no provider
     // is available (S6.1 AC10). Selection (mock / runpod / onnx-local) lives in
     // the resolver, the single binding point. In mock mode the mock provider
     // binds with nothing to load. This runs inside the listen guard so test
-    // imports (JELLY_SERVER_NO_LISTEN=1) never trigger provider load or exit.
+    // imports (DREAMBALL_SERVER_NO_LISTEN=1) never trigger provider load or exit.
     // See docs/decisions/2026-05-31-capability-provider-model.md.
     await resolveTextEmbed().catch((err: unknown) => {
       process.stderr.write(

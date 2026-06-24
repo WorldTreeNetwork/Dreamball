@@ -31,7 +31,7 @@
 
 <div class="pub">
 	<button class="big" type="button" onclick={publish}>
-		▲ PUBLISH TREE → wishing-tree.jelly.json
+		▲ PUBLISH TREE → wishing-tree.ball.json
 	</button>
 	<div class="meta">
 		<span>wishes <strong>{garden.wishes.length}</strong></span>
@@ -44,7 +44,7 @@
 	{/if}
 	<details class="plant">
 		<summary>plant preview · how a recipient grows this</summary>
-		<pre class="cmd">$ dreamball unseal wishing-tree.jelly --out tree.cbor
+		<pre class="cmd">$ dreamball unseal wishing-tree.ball --out tree.cbor
 $ dreamball plant tree.cbor
   ▸ scaffolding workspace…
   ▸ unsealing attachments → src/, docs/, scripts/

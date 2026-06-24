@@ -12,7 +12,7 @@ import { randomBytes } from 'crypto';
 import { moduleDir } from '../paths.js';
 
 const REPO_ROOT = resolve(moduleDir(import.meta.url, import.meta.dir), '../../../');
-const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
+const CLI = process.env.DREAMBALL_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
 
 export const unlockRelicRoute = new Elysia().post(
   '/relics/:id/unlock',
@@ -23,21 +23,21 @@ export const unlockRelicRoute = new Elysia().post(
       return { error: 'relic not found', id: params.id };
     }
 
-    if (!existsSync(JELLY)) {
+    if (!existsSync(CLI)) {
       set.status = 503;
-      return { error: 'dreamball CLI not found; run `zig build` first', path: JELLY };
+      return { error: 'dreamball CLI not found; run `zig build` first', path: CLI };
     }
 
     const tmpId = randomBytes(8).toString('hex');
-    const relicPath = `/tmp/jelly-relic-${tmpId}.jelly`;
-    const outPath = `/tmp/jelly-unlocked-${tmpId}.jelly`;
+    const relicPath = `/tmp/dreamball-relic-${tmpId}.ball`;
+    const outPath = `/tmp/dreamball-unlocked-${tmpId}.ball`;
 
     try {
       writeFileSync(relicPath, JSON.stringify(relic), 'utf-8');
 
       const args = ['unlock', relicPath, '--out', outPath];
 
-      const res = spawnSync(JELLY, args, { encoding: 'utf-8' });
+      const res = spawnSync(CLI, args, { encoding: 'utf-8' });
       if (res.status !== 0) {
         set.status = 422;
         return { error: res.stderr?.trim() || 'unlock failed', code: res.status };

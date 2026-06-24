@@ -14,7 +14,7 @@
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
  *   Replace this mock with a call to the real /embed endpoint when Qwen3 weights
- *   are available locally. The JELLY_EMBED_MOCK=1 env var signals to embed.ts to
+ *   are available locally. The DREAMBALL_EMBED_MOCK=1 env var signals to embed.ts to
  *   use this path instead of onnxruntime-node. See S6.1 AC8.
  *
  * Decisions: D-012 (wire shape), D-002 (256d MRL target).

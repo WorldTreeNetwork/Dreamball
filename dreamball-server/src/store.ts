@@ -2,8 +2,8 @@
  * Content-addressed filesystem store for DreamBall envelopes + secret keys.
  *
  * Layout:
- *   data/dreamballs/<fingerprint>.jelly       — RAW CBOR envelope bytes (authoritative)
- *   data/dreamballs/<fingerprint>.jelly.json  — JSON rendering (convenience, recomputable)
+ *   data/dreamballs/<fingerprint>.ball       — RAW CBOR envelope bytes (authoritative)
+ *   data/dreamballs/<fingerprint>.ball.json  — JSON rendering (convenience, recomputable)
  *   data/keys/<fingerprint>.key               — 64 raw bytes, mode 0600
  *
  * Why store both CBOR and JSON: CBOR is authoritative (the bytes that were
@@ -27,7 +27,7 @@ import { resolve, join } from 'path';
 import { moduleDir } from './paths.js';
 
 const DATA_DIR =
-  process.env.JELLY_SERVER_DATA_DIR ??
+  process.env.DREAMBALL_SERVER_DATA_DIR ??
   resolve(moduleDir(import.meta.url, import.meta.dir), '../data');
 const DREAMBALL_DIR = join(DATA_DIR, 'dreamballs');
 const KEY_DIR = join(DATA_DIR, 'keys');
@@ -47,15 +47,15 @@ export function fingerprintFrom(dreamball: Record<string, unknown>): string {
   return identity.startsWith('b58:') ? identity.slice(4) : identity;
 }
 
-/** Store a DreamBall — writes both the raw CBOR bytes (.jelly) and the
- *  parsed JSON cache (.jelly.json). Returns the fingerprint. */
+/** Store a DreamBall — writes both the raw CBOR bytes (.ball) and the
+ *  parsed JSON cache (.ball.json). Returns the fingerprint. */
 export function storeDreamBall(
   envelopeBytes: Uint8Array,
   dreamball: Record<string, unknown>
 ): string {
   const fp = fingerprintFrom(dreamball);
-  const cborPath = join(DREAMBALL_DIR, `${fp}.jelly`);
-  const jsonPath = join(DREAMBALL_DIR, `${fp}.jelly.json`);
+  const cborPath = join(DREAMBALL_DIR, `${fp}.ball`);
+  const jsonPath = join(DREAMBALL_DIR, `${fp}.ball.json`);
   writeFileSync(cborPath, envelopeBytes);
   writeFileSync(jsonPath, JSON.stringify(dreamball, null, 2), 'utf-8');
   return fp;
@@ -81,7 +81,7 @@ export function loadSecretKey(fingerprint: string): Uint8Array | null {
 
 /** Load a DreamBall's parsed JSON. Null if not found. */
 export function loadDreamBall(fingerprint: string): Record<string, unknown> | null {
-  const jsonPath = join(DREAMBALL_DIR, `${fingerprint}.jelly.json`);
+  const jsonPath = join(DREAMBALL_DIR, `${fingerprint}.ball.json`);
   if (!existsSync(jsonPath)) return null;
   const text = readFileSync(jsonPath, 'utf-8');
   return JSON.parse(text) as Record<string, unknown>;
@@ -89,7 +89,7 @@ export function loadDreamBall(fingerprint: string): Record<string, unknown> | nu
 
 /** Load the raw CBOR envelope bytes by fingerprint. */
 export function loadEnvelopeBytes(fingerprint: string): Uint8Array | null {
-  const cborPath = join(DREAMBALL_DIR, `${fingerprint}.jelly`);
+  const cborPath = join(DREAMBALL_DIR, `${fingerprint}.ball`);
   if (!existsSync(cborPath)) return null;
   return new Uint8Array(readFileSync(cborPath));
 }
@@ -101,14 +101,14 @@ export function listDreamBalls(): Array<{
 }> {
   if (!existsSync(DREAMBALL_DIR)) return [];
   return readdirSync(DREAMBALL_DIR)
-    .filter((f) => f.endsWith('.jelly.json'))
+    .filter((f) => f.endsWith('.ball.json'))
     .map((f) => {
-      const fp = f.slice(0, -'.jelly.json'.length);
+      const fp = f.slice(0, -'.ball.json'.length);
       const text = readFileSync(join(DREAMBALL_DIR, f), 'utf-8');
       return { fingerprint: fp, dreamball: JSON.parse(text) as Record<string, unknown> };
     });
 }
 
 export function hasDreamBall(fingerprint: string): boolean {
-  return existsSync(join(DREAMBALL_DIR, `${fingerprint}.jelly`));
+  return existsSync(join(DREAMBALL_DIR, `${fingerprint}.ball`));
 }

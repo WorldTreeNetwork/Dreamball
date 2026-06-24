@@ -1,5 +1,5 @@
 /**
- * Jelly WASM loader — single source of truth for `.jelly` parsing,
+ * Jelly WASM loader — single source of truth for `.ball` parsing,
  * Ed25519 verification, and ML-DSA-87 verification in the browser.
  * Compiles from `src/wasm_main.zig` via `zig build wasm`.
  *
@@ -60,7 +60,7 @@ export type VerifyResult =
 	| { ok: false; reason: string; code: 0 | -1 };
 
 /**
- * Verify every signature on a `.jelly` file in-browser.
+ * Verify every signature on a `.ball` file in-browser.
  *
  * Both Ed25519 AND ML-DSA-87 signatures are checked — the WASM module
  * ships with liboqs's ML-DSA-87 verify path linked in (see
@@ -247,7 +247,7 @@ async function getInstance(): Promise<WasmExports> {
 }
 
 /**
- * Parse a `.jelly` byte array (bare CBOR envelope, sealed JELY wrapper,
+ * Parse a `.ball` byte array (bare CBOR envelope, sealed JELY wrapper,
  * or canonical JSON text) into a **fully validated** DreamBall.
  *
  * The WASM parser does the heavy lifting (CBOR → JSON); Valibot validates

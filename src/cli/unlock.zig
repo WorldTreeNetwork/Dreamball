@@ -1,4 +1,4 @@
-//! `dreamball unlock <relic.jelly> --out=<inner.jelly>`
+//! `dreamball unlock <relic.ball> --out=<inner.ball>`
 //!
 //! Reads a DragonBall-wrapped relic bundle, extracts the inner DreamBall
 //! bytes from attachment slot 0, and writes them to the output path. Also
@@ -27,7 +27,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\dreamball unlock <relic.jelly> --out <inner.jelly>
+            \\dreamball unlock <relic.ball> --out <inner.ball>
             \\
         );
         return 0;

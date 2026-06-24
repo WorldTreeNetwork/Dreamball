@@ -295,7 +295,7 @@ export const DreamBallGuildSchema = v.object({
 });
 
 /** Top-level DreamBall — discriminated on `type`. Use this to
- *  validate any incoming .jelly JSON. */
+ *  validate any incoming .ball JSON. */
 export const DreamBallSchema = v.variant('type', [
   DreamBallUntypedSchema,
   DreamBallAvatarSchema,

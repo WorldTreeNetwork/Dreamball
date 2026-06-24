@@ -12,7 +12,7 @@ import { randomBytes } from 'crypto';
 import { moduleDir } from '../paths.js';
 
 const REPO_ROOT = resolve(moduleDir(import.meta.url, import.meta.dir), '../../../');
-const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
+const CLI = process.env.DREAMBALL_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
 
 export const transmitRoute = new Elysia().post(
   '/dreamballs/:fp/transmit',
@@ -23,15 +23,15 @@ export const transmitRoute = new Elysia().post(
       return { error: 'tool DreamBall not found', fingerprint: params.fp };
     }
 
-    if (!existsSync(JELLY)) {
+    if (!existsSync(CLI)) {
       set.status = 503;
-      return { error: 'dreamball CLI not found; run `zig build` first', path: JELLY };
+      return { error: 'dreamball CLI not found; run `zig build` first', path: CLI };
     }
 
     const tmpId = randomBytes(8).toString('hex');
-    const toolPath = `/tmp/jelly-tool-${tmpId}.jelly`;
-    const keyPath = `/tmp/jelly-key-${tmpId}.key`;
-    const outPath = `/tmp/jelly-transmit-${tmpId}.jelly`;
+    const toolPath = `/tmp/dreamball-tool-${tmpId}.ball`;
+    const keyPath = `/tmp/dreamball-key-${tmpId}.key`;
+    const outPath = `/tmp/dreamball-transmit-${tmpId}.ball`;
 
     try {
       writeFileSync(toolPath, JSON.stringify(tool), 'utf-8');
@@ -45,7 +45,7 @@ export const transmitRoute = new Elysia().post(
         '--out', outPath
       ];
 
-      const res = spawnSync(JELLY, args, { encoding: 'utf-8' });
+      const res = spawnSync(CLI, args, { encoding: 'utf-8' });
       if (res.status !== 0) {
         set.status = 422;
         return { error: res.stderr?.trim() || 'transmit failed', code: res.status };

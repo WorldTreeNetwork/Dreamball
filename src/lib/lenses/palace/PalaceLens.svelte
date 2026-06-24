@@ -55,7 +55,7 @@
     palaceFp: string;
 
     /**
-     * Raw bytes of the palace field envelope (.jelly CBOR).
+     * Raw bytes of the palace field envelope (.ball CBOR).
      * Decoded via dreamball.wasm (TC6 / AC1). When null, layout falls
      * back to the deterministic grid for all rooms.
      */
