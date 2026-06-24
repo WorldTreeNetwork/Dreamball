@@ -5,7 +5,7 @@
 <script lang="ts">
 	import { iconFor } from './icons.js';
 	import type { WishGarden } from './wishes.svelte.js';
-	import { downloadFruit } from './jelly-export.js';
+	import { downloadFruit } from './dreamball-export.js';
 	import { SFX } from './style/sfx.js';
 
 	interface Props {

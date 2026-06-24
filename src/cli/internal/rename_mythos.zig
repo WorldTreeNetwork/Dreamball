@@ -1,4 +1,4 @@
-//! `jelly palace rename-mythos` — append a new canonical ball.mythos to a palace.
+//! `dreamball palace rename-mythos` — append a new canonical ball.mythos to a palace.
 //!
 //! Appends a new `ball.mythos` with `predecessor = Blake3(prior head)`, emits a
 //! paired `"true-naming"` `ball.action` referenced by `discovered-in`, bumps
@@ -67,7 +67,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(4)) {
         try io.writeAllStdout(
-            \\jelly palace rename-mythos <palace> --body <text>
+            \\dreamball palace rename-mythos <palace> --body <text>
             \\                           [--body-file <path>]
             \\                           [--true-name <word>]
             \\                           [--form <form>]

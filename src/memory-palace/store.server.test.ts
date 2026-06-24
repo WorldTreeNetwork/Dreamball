@@ -53,7 +53,7 @@ describe('AC1 — @ladybugdb/core not imported outside store*.ts', () => {
     let exitCode = 0;
     try {
       output = execSync(
-        `grep -r --include="*.ts" --include="*.js" "@ladybugdb/core" "${repoRoot}/src" "${repoRoot}/jelly-server" \
+        `grep -r --include="*.ts" --include="*.js" "@ladybugdb/core" "${repoRoot}/src" "${repoRoot}/dreamball-server" \
          --exclude="store.server.ts" --exclude="store.ts" --exclude="store-types.ts" \
          --exclude="parity.test.ts"`,
         { encoding: 'utf-8' }

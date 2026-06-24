@@ -411,7 +411,7 @@ const BODY =
     \\ *  plus optional attachments carried alongside (textures, scripts,
     \\ *  sealed payloads). For most consumers `DreamBall` alone is enough.
     \\ */
-    \\export interface JellyBundle {
+    \\export interface DreamballBundle {
     \\  envelope: DreamBall;
     \\  attachments: Uint8Array[];
     \\  flags: {

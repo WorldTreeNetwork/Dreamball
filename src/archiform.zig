@@ -79,7 +79,7 @@ pub fn resolveImplicit(on_wire: ?[32]u8) [32]u8 {
 }
 
 /// AC4 — compare two resolved fps. Returns null if equal (no drift),
-/// or a `DriftReport` documenting the mismatch. Callers (jelly verify,
+/// or a `DriftReport` documenting the mismatch. Callers (dreamball verify,
 /// store consistency checks) plug this in wherever genesis + subsequent
 /// envelopes for the same ball are loaded.
 pub fn detectDrift(genesis: [32]u8, observed: [32]u8) ?DriftReport {

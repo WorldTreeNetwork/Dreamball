@@ -3,7 +3,7 @@
   Blender has the Python console + BPY inspector for reaching below the UI;
   the Wishing Tree has this — CBOR byte preview, hash tree, signature
   fingerprints. Phase 0 shows a synthesised placeholder; Phase 1 wires it
-  to the real `jelly show --format=bytes`.
+  to the real `dreamball show --format=bytes`.
 -->
 <script lang="ts">
 	const bytes = buildFakeBytes();
@@ -52,7 +52,7 @@
 
 	{#if tab === 'bytes'}
 		<pre class="pane hex">{bytes.join('\n')}
-(phase 0 · placeholder CBOR · phase 1 wires to `jelly show --format=bytes`)</pre>
+(phase 0 · placeholder CBOR · phase 1 wires to `dreamball show --format=bytes`)</pre>
 	{:else if tab === 'hashes'}
 		<ul class="pane list">
 			{#each hashes as h, i (i + '|' + h.label)}

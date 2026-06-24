@@ -1,7 +1,7 @@
 /**
  * runpod.ts — RunPod Serverless adapter for Qwen3-Embedding-0.6B.
  *
- * When `RUNPOD_SERVERLESS_ENDPOINT_ID` + `RUNPOD_API_KEY` are set, jelly-server
+ * When `RUNPOD_SERVERLESS_ENDPOINT_ID` + `RUNPOD_API_KEY` are set, dreamball-server
  * proxies its `/embed` endpoint to a remote RunPod worker that hosts Ollama
  * with `qwen3-embedding:0.6b`. The worker exposes an OpenAI-compatible
  * `/v1/embeddings` route; RunPod wraps requests in `{ input: { openai_route,

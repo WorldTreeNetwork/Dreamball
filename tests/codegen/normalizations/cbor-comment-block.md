@@ -25,7 +25,7 @@ New generator comment includes:
 Legacy generator comment includes:
 ```
 // For v2 MVP we only need decode (incoming .jelly files from the
-// jelly-server). Encode path stays on the Zig side.
+// dreamball-server). Encode path stays on the Zig side.
 ```
 
 ## Why it is semantically equivalent

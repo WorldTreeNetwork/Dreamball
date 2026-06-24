@@ -10,7 +10,7 @@
 // See docs/sprints/002-archiform-foundation/architecture-decisions.md
 // (D-019 action manifest, D-022 bridge pattern, D-024 spike-before-promote).
 
-//! Generated CLI dispatcher for `jelly palace inscribe`.
+//! Generated CLI dispatcher for `dreamball palace inscribe`.
 //!
 //! Composes the bridge pattern (D-022) by delegating to the internal
 //! verb primitive after flag parsing. Story 3.5 moved the primitives
@@ -39,7 +39,7 @@ const SPECS = [_]args_mod.Spec{
 };
 
 pub const HELP_TEXT: []const u8 =
-    "jelly palace inscribe — " ++
+    "dreamball palace inscribe — " ++
     SUMMARY ++ "\n\n" ++
     "Flags:\n" ++
     "  --room <string>  Target room fingerprint (64 hex chars).\n" ++

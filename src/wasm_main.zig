@@ -1,4 +1,4 @@
-//! jelly-wasm — WASM-compiled entry point for parsing .jelly files in the
+//! dreamball-wasm — WASM-compiled entry point for parsing .jelly files in the
 //! browser. Single source of truth: reuses the same Zig code paths that
 //! the CLI uses, so web + CLI can never drift.
 //!
@@ -69,7 +69,7 @@ var last_err_len: u32 = 0;
 
 fn setErr(comptime fmt: []const u8, args: anytype) void {
     const slice = std.fmt.bufPrint(&last_err, fmt, args) catch {
-        const msg = "jelly-wasm: unknown error";
+        const msg = "dreamball-wasm: unknown error";
         @memcpy(last_err[0..msg.len], msg);
         last_err_len = msg.len;
         return;
@@ -150,10 +150,10 @@ fn pack(bytes: []const u8) u64 {
 // ML-DSA-87 signatures are NOT emitted here. The browser doesn't hold
 // the signer's PQ secret — user signing lives in a key-bearing
 // extension/app path, and the server mint path subprocesses the native
-// `jelly` binary which signs with both algorithms locally. Browser-
+// `dreamball` binary which signs with both algorithms locally. Browser-
 // minted envelopes are therefore Ed25519-only (explicitly legal under
 // PROTOCOL.md §2.3). A consumer that wants PQ strength re-signs with
-// `jelly grow --key` using a hybrid key file.
+// `dreamball grow --key` using a hybrid key file.
 // ============================================================================
 
 const Ed25519 = std.crypto.sign.Ed25519;
@@ -265,7 +265,7 @@ export fn mintDreamBall(
 
     // Attach Ed25519 only — browser mint doesn't hold a PQ key, and
     // §2.3 accepts Ed25519-only nodes. A downstream caller (typically
-    // `jelly grow --key` on the native CLI with a hybrid key file)
+    // `dreamball grow --key` on the native CLI with a hybrid key file)
     // upgrades the envelope to hybrid when real PQ strength is wanted.
     const sigs = [_]protocol.Signature{
         .{ .alg = "ed25519", .value = &sig_bytes },

@@ -11,7 +11,7 @@
  * specific provider. It is a Category-B (stateful host service) capability:
  * the host binds a provider; the ball declares the need. See the decision doc §4.
  *
- * NOTE (prototype scope): this is a TS-level interface inside jelly-server. The
+ * NOTE (prototype scope): this is a TS-level interface inside dreamball-server. The
  * production shape would declare `text-embed/1` in the archiform JSON Schema's
  * `capabilities` block (decision doc §3.1) and resolve content-addressed
  * providers. Here we prove the *seam*, not the wire format.

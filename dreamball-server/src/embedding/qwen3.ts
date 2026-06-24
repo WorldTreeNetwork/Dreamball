@@ -1,5 +1,5 @@
 /**
- * qwen3.ts — Qwen3-Embedding-0.6B adapter for jelly-server (S6.1).
+ * qwen3.ts — Qwen3-Embedding-0.6B adapter for dreamball-server (S6.1).
  *
  * Public surface:
  *   loadQwen3Model(): Promise<void>  — called ONCE at server boot; fail-fast if absent
@@ -174,7 +174,7 @@ function assertMrlCapacity(len: number): void {
  * output form a semantically valid N-dimensional embedding. We always take the
  * FIRST 256 dims — not the last, not a random projection, not normalized.
  *
- * This is the sole truncation path: every embedding that leaves jelly-server
+ * This is the sole truncation path: every embedding that leaves dreamball-server
  * must pass through here. See AC3.
  *
  * @param vec  Full-length embedding (typically 1024d)

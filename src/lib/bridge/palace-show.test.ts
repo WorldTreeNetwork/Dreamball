@@ -1,5 +1,5 @@
 /**
- * palace-show.test.ts — AC12 (S3.6) Vitest tests for `jelly show --as-palace --json`
+ * palace-show.test.ts — AC12 (S3.6) Vitest tests for `dreamball show --as-palace --json`
  * output structure and round-trip through the generated TS decoder + Valibot schemas.
  *
  * These tests exercise:

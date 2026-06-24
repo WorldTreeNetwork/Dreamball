@@ -1,4 +1,4 @@
-//! `jelly palace open` — launch the showcase Vite dev server and deep-link
+//! `dreamball palace open` — launch the showcase Vite dev server and deep-link
 //! to the omnispherical palace lens.
 //!
 //! Behaviour:
@@ -74,7 +74,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(1)) {
         try io.writeAllStdout(
-            \\jelly palace open <palace> [--port <N>]
+            \\dreamball palace open <palace> [--port <N>]
             \\
             \\Launch the showcase Vite dev server and open the palace deep-link.
             \\

@@ -2,7 +2,7 @@
 //!
 //! Per D-032 and AC6, these helpers MUST live here (in `src/wasm-host/`),
 //! not in a CLI-specific file, so they apply symmetrically to CLI,
-//! jelly-server, and in-renderer hosts.
+//! dreamball-server, and in-renderer hosts.
 //!
 //! Three failure paths:
 //!

@@ -1,12 +1,12 @@
 /**
- * JellyBackend — thin interface to the crypto/authoring layer.
+ * DreamballBackend — thin interface to the crypto/authoring layer.
  *
  * Every renderer call goes through this interface. Two default
  * implementations ship:
  *
  *   - `MockBackend`: generates fixture DreamBalls in-memory; good for
  *     Storybook + Vitest; does NOT do real crypto.
- *   - `HttpBackend`: proxies to a locally-running `jelly-server`
+ *   - `HttpBackend`: proxies to a locally-running `dreamball-server`
  *     HTTP daemon (A2 from the v2 PRD).
  *
  * The interface is minimal on purpose — callers should be able to
@@ -20,7 +20,7 @@
 
 import type { DreamBall, Fingerprint } from '../generated/types.js';
 
-export interface JellyBackend {
+export interface DreamballBackend {
 	/** Load a DreamBall by its file path or identity fingerprint. */
 	load(reference: string | Fingerprint): Promise<DreamBall>;
 

@@ -1,6 +1,6 @@
 /**
  * POST /relics/:id/unlock — Unlock a sealed relic and extract the inner DreamBall.
- * MVP: subprocesses to `jelly unlock` CLI.
+ * MVP: subprocesses to `dreamball unlock` CLI.
  */
 
 import Elysia, { t } from 'elysia';
@@ -12,7 +12,7 @@ import { randomBytes } from 'crypto';
 import { moduleDir } from '../paths.js';
 
 const REPO_ROOT = resolve(moduleDir(import.meta.url, import.meta.dir), '../../../');
-const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/jelly');
+const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
 
 export const unlockRelicRoute = new Elysia().post(
   '/relics/:id/unlock',
@@ -25,7 +25,7 @@ export const unlockRelicRoute = new Elysia().post(
 
     if (!existsSync(JELLY)) {
       set.status = 503;
-      return { error: 'jelly CLI not found; run `zig build` first', path: JELLY };
+      return { error: 'dreamball CLI not found; run `zig build` first', path: JELLY };
     }
 
     const tmpId = randomBytes(8).toString('hex');
@@ -65,7 +65,7 @@ export const unlockRelicRoute = new Elysia().post(
     body: t.Object({}),
     detail: {
       summary: 'Unlock a relic',
-      description: 'Extracts the inner DreamBall from a sealed relic. MVP: subprocesses to jelly CLI.'
+      description: 'Extracts the inner DreamBall from a sealed relic. MVP: subprocesses to dreamball CLI.'
     }
   }
 );

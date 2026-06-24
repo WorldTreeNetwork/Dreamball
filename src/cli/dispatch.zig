@@ -1,4 +1,4 @@
-//! Command dispatch table for the `jelly` CLI.
+//! Command dispatch table for the `dreamball` CLI.
 //!
 //! Each command lives in its own file and exports `run(gpa, args) !u8`.
 //! `args` is the full argv starting at argv[2] — the command name is already
@@ -41,7 +41,7 @@ pub const commands: []const Command = &.{
     .{ .name = "transmit", .summary = "transmit a Tool to a target Agent via a Guild", .run = cmd_transmit.run },
     .{ .name = "seal-relic", .summary = "wrap a DreamBall into a sealed Relic (MOCKED crypto)", .run = cmd_seal_relic.run },
     .{ .name = "unlock", .summary = "unlock a sealed Relic (MOCKED crypto)", .run = cmd_unlock.run },
-    .{ .name = "palace", .summary = "palace verb group (see jelly palace --help)", .run = cmd_palace.run },
+    .{ .name = "palace", .summary = "palace verb group (see dreamball palace --help)", .run = cmd_palace.run },
 };
 
 pub fn findCommand(name: []const u8) ?Command {
@@ -55,9 +55,9 @@ pub fn printUsage() !void {
     var buf: [8192]u8 = undefined;
     var w = std.Io.File.stdout().writer(io.io(), &buf);
     try w.interface.writeAll(
-        \\jelly — DreamBall protocol CLI
+        \\dreamball — DreamBall protocol CLI
         \\
-        \\Usage: jelly <command> [args...]
+        \\Usage: dreamball <command> [args...]
         \\
         \\Commands:
         \\
@@ -68,7 +68,7 @@ pub fn printUsage() !void {
     try w.interface.writeAll(
         \\  version        print protocol format-version
         \\
-        \\Run `jelly <command> --help` for per-command flags.
+        \\Run `dreamball <command> --help` for per-command flags.
         \\
     );
     try w.interface.flush();

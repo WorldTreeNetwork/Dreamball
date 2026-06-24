@@ -1,6 +1,6 @@
 /**
  * POST /dreamballs/:fp/transmit — Transmit a Tool DreamBall to a target Agent via a Guild.
- * MVP: subprocesses to `jelly transmit` CLI.
+ * MVP: subprocesses to `dreamball transmit` CLI.
  */
 
 import Elysia, { t } from 'elysia';
@@ -12,7 +12,7 @@ import { randomBytes } from 'crypto';
 import { moduleDir } from '../paths.js';
 
 const REPO_ROOT = resolve(moduleDir(import.meta.url, import.meta.dir), '../../../');
-const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/jelly');
+const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
 
 export const transmitRoute = new Elysia().post(
   '/dreamballs/:fp/transmit',
@@ -25,7 +25,7 @@ export const transmitRoute = new Elysia().post(
 
     if (!existsSync(JELLY)) {
       set.status = 503;
-      return { error: 'jelly CLI not found; run `zig build` first', path: JELLY };
+      return { error: 'dreamball CLI not found; run `zig build` first', path: JELLY };
     }
 
     const tmpId = randomBytes(8).toString('hex');
@@ -78,7 +78,7 @@ export const transmitRoute = new Elysia().post(
     }),
     detail: {
       summary: 'Transmit a Tool DreamBall',
-      description: 'Produces a signed transmission receipt. MVP: subprocesses to jelly CLI.'
+      description: 'Produces a signed transmission receipt. MVP: subprocesses to dreamball CLI.'
     }
   }
 );

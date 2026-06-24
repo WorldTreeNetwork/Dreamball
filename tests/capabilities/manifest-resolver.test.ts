@@ -1,6 +1,6 @@
 /**
  * manifest-resolver.test.ts — green/red gate for the manifest-driven resolver
- * (jelly-server/src/capabilities/resolver-core.ts + palace-resolver.ts).
+ * (dreamball-server/src/capabilities/resolver-core.ts + palace-resolver.ts).
  *
  * Exercises:
  *   - satisfies() — enforced-semver range matching (§10.1), incl. major discrim.
@@ -22,8 +22,8 @@ import {
   type ProviderRegistry,
   type CapabilityProviderDescriptor,
   type Resolution,
-} from '../../jelly-server/src/capabilities/resolver-core.js';
-import { resolvePalaceCapabilities } from '../../jelly-server/src/capabilities/palace-resolver.js';
+} from '../../dreamball-server/src/capabilities/resolver-core.js';
+import { resolvePalaceCapabilities } from '../../dreamball-server/src/capabilities/palace-resolver.js';
 import { PALACE_CAPABILITIES } from '../../src/lib/generated/palace-capabilities.js';
 
 const find = (report: { resolutions: readonly Resolution[] }, alias: string): Resolution => {

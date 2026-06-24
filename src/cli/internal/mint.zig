@@ -1,4 +1,4 @@
-//! `jelly palace mint` — mint a new palace DreamBall.
+//! `dreamball palace mint` — mint a new palace DreamBall.
 //!
 //! Produces six CAS envelopes written to a staging directory, then either:
 //!   (a) invokes the bun bridge (`src/lib/bridge/palace-mint.ts`) which
@@ -44,7 +44,7 @@ const REGISTRY_BYTES: []const u8 =
 
 // ── Oracle personality seed bytes (AC7 / S4.1) ────────────────────────────────
 // Embedded at compile time so the seed is available in any runtime environment
-// (CLI, jelly-server, browser) without a disk read at runtime.
+// (CLI, dreamball-server, browser) without a disk read at runtime.
 // The content is placed into the oracle envelope's personality_master_prompt slot.
 const ORACLE_PROMPT_BYTES: []const u8 =
     @embedFile("../../memory-palace/seed/oracle-prompt.md");
@@ -66,7 +66,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         // TODO-CRYPTO: oracle key is plaintext; wrap with recrypt wallet DCYW shell post-MVP (known-gaps §6)
         // The .oracle.key output below is written with mode 0600 but is NOT encrypted in MVP.
         try io.writeAllStdout(
-            \\jelly palace mint --out <path> --mythos <string>
+            \\dreamball palace mint --out <path> --mythos <string>
             \\                  [--mythos-file <path>]
             \\
             \\Mints a new palace DreamBall with genesis mythos, oracle Agent,

@@ -1,5 +1,5 @@
 /**
- * palace-move.ts — Bridge script invoked by `jelly palace move` (Zig → Bun).
+ * palace-move.ts — Bridge script invoked by `dreamball palace move` (Zig → Bun).
  *
  * Argv: <staging_path> <bundle_path>
  *

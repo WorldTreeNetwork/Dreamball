@@ -11,7 +11,7 @@ Do not edit by hand — changes will be overwritten by
   the renderer library and the showcase app's type-safety story.
 - `cbor.ts` — minimal dCBOR decoder + base58 helpers for consuming
   `.jelly` bytes when the lib receives them directly (vs. going
-  through the `jelly-server` HTTP shim which returns JSON).
+  through the `dreamball-server` HTTP shim which returns JSON).
 
 ## Why it's generated, not hand-written
 

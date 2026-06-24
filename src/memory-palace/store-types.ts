@@ -221,7 +221,7 @@ export interface RecordTraversalParams {
   timestamp?: number;
   /**
    * 64-byte Ed25519 keypair [seed(32) || pubkey(32)] for signing the move action.
-   * Story 6.2 / D-023: when present, signActionEnvelope is called via jelly.wasm
+   * Story 6.2 / D-023: when present, signActionEnvelope is called via dreamball.wasm
    * and the resulting signature's Blake3 hash is stored as cborBytesBlake3.
    * When absent, the derived action fp is used as cborBytesBlake3 (legacy path
    * for callers that do not yet have keypair access at call time).

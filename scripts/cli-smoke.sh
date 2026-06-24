@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# CLI smoke test — exercises every `jelly` command end-to-end.
+# CLI smoke test — exercises every `dreamball` command end-to-end.
 # Fails fast on any non-zero exit or missing expected output.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-JELLY="$REPO_DIR/zig-out/bin/jelly"
+JELLY="$REPO_DIR/zig-out/bin/dreamball"
 WORK="$(mktemp -d -t jelly-smoke.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -94,9 +94,9 @@ fi
 
 # --- palace verb group (Story 3.1 / AC1, AC2, AC5) ---
 echo "==> palace: AC1 — jelly --help lists palace with correct summary"
-"$JELLY" --help | grep -E '^\s*palace\b' | grep -q "palace verb group (see jelly palace --help)"
+"$JELLY" --help | grep -E '^\s*palace\b' | grep -q "palace verb group (see dreamball palace --help)"
 
-echo "==> palace: AC2 — jelly palace --help exits 0; lists 5 subverbs in order; Growth note present"
+echo "==> palace: AC2 — dreamball palace --help exits 0; lists 5 subverbs in order; Growth note present"
 palace_help=$("$JELLY" palace --help)
 echo "$palace_help" | grep -q "mint"
 echo "$palace_help" | grep -q "add-room"
@@ -114,10 +114,10 @@ if [[ "$mint_line" -ge "$add_room_line" || "$add_room_line" -ge "$inscribe_line"
   echo "FAIL: palace subverbs not in expected order"; exit 1
 fi
 
-echo "==> palace: AC5 — jelly palace bogus exits nonzero; stdout contains usage"
+echo "==> palace: AC5 — dreamball palace bogus exits nonzero; stdout contains usage"
 palace_bogus_out=$("$JELLY" palace bogus 2>&1 || true)
-"$JELLY" palace bogus > /dev/null 2>&1 && { echo "FAIL: jelly palace bogus should exit nonzero"; exit 1; }
-echo "$palace_bogus_out" | grep -q "Usage: jelly palace"
+"$JELLY" palace bogus > /dev/null 2>&1 && { echo "FAIL: dreamball palace bogus should exit nonzero"; exit 1; }
+echo "$palace_bogus_out" | grep -q "Usage: dreamball palace"
 
 # --- palace mint (Story 3.2 / AC1, AC2, AC3, AC5, AC6) ---
 echo "==> palace mint: AC2 — missing --mythos exits nonzero with helpful message"
@@ -424,7 +424,7 @@ else
 fi
 
 # --- palace show (Story 3.6 / AC1, AC2, AC4) ---
-echo "==> palace show: AC4 — jelly palace show --archiforms lists 19 forms"
+echo "==> palace show: AC4 — dreamball palace show --archiforms lists 19 forms"
 archiforms_out=$("$JELLY" palace show pmint --archiforms 2>&1 || true)
 # Check a sample of the 19 forms
 echo "$archiforms_out" | grep -q "library"
@@ -436,7 +436,7 @@ if [[ "$form_count" -ne 19 ]]; then
   echo "FAIL: expected 19 archiforms, got $form_count"; exit 1
 fi
 
-echo "==> palace show: AC2 — jelly show --as-palace --json"
+echo "==> palace show: AC2 — dreamball show --as-palace --json"
 show_json=$("$JELLY" show --as-palace pmint --json 2>&1)
 echo "$show_json" | grep -q '"mythosHeadBody"'
 echo "$show_json" | grep -q '"trueName"'
@@ -445,7 +445,7 @@ echo "$show_json" | grep -q '"timelineHeadHashes"'
 echo "$show_json" | grep -q '"oracleFp"'
 echo "  --json output contains all 5 AC2 keys"
 
-echo "==> palace show: AC1 — jelly show --as-palace human-readable"
+echo "==> palace show: AC1 — dreamball show --as-palace human-readable"
 show_human=$("$JELLY" show --as-palace pmint 2>&1)
 echo "$show_human" | grep -q "mythos:"
 echo "$show_human" | grep -q "oracle fp:"

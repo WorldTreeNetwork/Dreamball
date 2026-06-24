@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
     const pq_wasm = b.option(
         bool,
         "pq-wasm",
-        "Link ML-DSA-87 verify into jelly.wasm. Default: true.",
+        "Link ML-DSA-87 verify into dreamball.wasm. Default: true.",
     ) orelse true;
 
     const build_opts = b.addOptions();
@@ -103,12 +103,18 @@ pub fn build(b: *std.Build) void {
     exe_mod.addImport("zbor", zbor_mod);
 
     const exe = b.addExecutable(.{
-        .name = "jelly",
+        .name = "dreamball",
         .root_module = exe_mod,
     });
-    b.installArtifact(exe);
+    const exe_install = b.addInstallArtifact(exe, .{});
+    b.getInstallStep().dependOn(&exe_install.step);
+    // `ball` convenience alias → dreamball (relative symlink in the same bin dir).
+    // Hung off the exe's install step (not getInstallStep) to avoid a dependency cycle.
+    const ball_alias = b.addSystemCommand(&.{ "ln", "-sf", "dreamball", b.getInstallPath(.bin, "ball") });
+    ball_alias.step.dependOn(&exe_install.step);
+    b.getInstallStep().dependOn(&ball_alias.step);
 
-    const run_step = b.step("run", "Run the jelly CLI");
+    const run_step = b.step("run", "Run the dreamball CLI");
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
@@ -318,9 +324,9 @@ pub fn build(b: *std.Build) void {
     const fixture_step = b.step("export-mldsa-fixture", "Write fixtures/ml_dsa_87_golden.json (deterministic KAT vector)");
     fixture_step.dependOn(&fixture_run.step);
 
-    // jelly-wasm — WASM build of the parser for browser consumption.
+    // dreamball-wasm — WASM build of the parser for browser consumption.
     // Separate module because freestanding-wasm drops std.Io / std.crypto.random,
-    // so we skip linking signer.zig / io.zig. See tools/jelly-wasm/main.zig.
+    // so we skip linking signer.zig / io.zig. See tools/dreamball-wasm/main.zig.
     const wasm_target = b.resolveTargetQuery(.{
         .cpu_arch = .wasm32,
         .os_tag = .freestanding,
@@ -387,17 +393,17 @@ pub fn build(b: *std.Build) void {
     }
 
     const wasm_exe = b.addExecutable(.{
-        .name = "jelly",
+        .name = "dreamball",
         .root_module = wasm_mod,
     });
     wasm_exe.entry = .disabled;
     wasm_exe.rdynamic = true;
-    // Install the produced jelly.wasm into src/lib/wasm/ so the Svelte lib
+    // Install the produced dreamball.wasm into src/lib/wasm/ so the Svelte lib
     // can import it via Vite's asset pipeline.
     const wasm_install = b.addInstallArtifact(wasm_exe, .{
         .dest_dir = .{ .override = .{ .custom = "../src/lib/wasm" } },
     });
-    const wasm_step = b.step("wasm", "Build jelly.wasm for the Svelte lib");
+    const wasm_step = b.step("wasm", "Build dreamball.wasm for the Svelte lib");
     wasm_step.dependOn(&wasm_install.step);
 
     // ----------------------------------------------------------------
@@ -651,7 +657,7 @@ pub fn build(b: *std.Build) void {
     // via the production wasm host, run end-to-end, emit the structured
     // verify-before-instantiate event {phase: "verify", status: "match",
     // module_fp} BEFORE instantiation, and print `{ "palaceFp": "..." }`
-    // JSON to stdout on success. This is what `jelly palace mint --use-wasm`
+    // JSON to stdout on success. This is what `dreamball palace mint --use-wasm`
     // (and the AC6 smoke gate) shells out to.
     const mint_host_mod = b.createModule(.{
         .root_source_file = b.path("src/wasm-host/mint_host_main.zig"),

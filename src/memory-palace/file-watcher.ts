@@ -169,7 +169,7 @@ export interface WatcherHandle {
  * Per D-008: each file change fires onFileChange with a per-palace mutex;
  * file deletes fire onFileDelete.
  *
- * OQ-S4.4-c: runs wherever palace is `open()`ed (CLI, jelly-server, showcase).
+ * OQ-S4.4-c: runs wherever palace is `open()`ed (CLI, dreamball-server, showcase).
  *
  * @param palacePath    Path prefix for this palace (used to read oracle key)
  * @param palaceFp      Blake3 fp of the palace

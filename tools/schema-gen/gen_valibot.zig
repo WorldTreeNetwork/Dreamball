@@ -3,7 +3,7 @@
 //! Emits Valibot runtime validators for the DreamBall root protocol
 //! to `src/lib/generated/schemas.ts`. Per NFR8 (validate-on-publish,
 //! not validate-on-decode) these validators are exported for callers
-//! at publish boundaries (jelly-server ingest, mint-time authoring,
+//! at publish boundaries (dreamball-server ingest, mint-time authoring,
 //! manual replay tools). The generated decoders in `cbor.ts` do NOT
 //! call `Valibot.parse` / `safeParse`; that's the AC7 grep audit.
 //!

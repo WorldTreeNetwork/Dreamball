@@ -1,8 +1,8 @@
 /**
- * jelly-export — produces a downloadable JSON-shaped DreamBall. NOT real
+ * dreamball-export — produces a downloadable JSON-shaped DreamBall. NOT real
  * dCBOR / not signed; clearly labelled mock so consumers don't mistake it
  * for a verifiable artefact. Phase 1+ swaps this for a call into the Zig
- * `jelly` CLI via MCP, which produces a real `.jelly`.
+ * `dreamball` CLI via MCP, which produces a real `.jelly`.
  */
 
 import type { SynthesisedFruit } from './agent/MockAgent.js';

@@ -3,7 +3,7 @@
  *
  * ⚠ TODO-CRYPTO: replace before prod. Nothing here is cryptographically
  * authentic; this exists to let the renderer run without a live
- * `jelly-server` daemon.
+ * `dreamball-server` daemon.
  */
 
 import type {
@@ -20,7 +20,7 @@ import type {
 	OmnisphericalGrid,
 	DreamBallType
 } from '../generated/types.js';
-import { ALWAYS_PUBLIC_SLOTS, type JellyBackend } from './JellyBackend.js';
+import { ALWAYS_PUBLIC_SLOTS, type DreamballBackend } from './DreamballBackend.js';
 
 function fakeFp(seed: number): Fingerprint {
 	const s = String.fromCharCode(65 + (seed % 26)) + seed.toString(36).padStart(5, '0');
@@ -162,7 +162,7 @@ export function mockBall(type: DreamBallType, overrides?: Partial<DreamBall>): D
 	return { ...ball, ...overrides };
 }
 
-export class MockBackend implements JellyBackend {
+export class MockBackend implements DreamballBackend {
 	private readonly fixtures = new Map<string, DreamBall>();
 
 	constructor(seeded: DreamBall[] = []) {

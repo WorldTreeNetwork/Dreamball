@@ -2,7 +2,7 @@
 /**
  * jelly MCP server — stdio transport, JSON-RPC 2.0.
  *
- * Exposes the Zig `jelly` CLI as a set of MCP tools so AI agents +
+ * Exposes the Zig `dreamball` CLI as a set of MCP tools so AI agents +
  * scripting workflows can compose DreamBalls interactively. Every tool
  * maps to a subprocess invocation of the CLI. Output is returned as
  * structured JSON.
@@ -38,7 +38,7 @@ import { resolve } from 'path';
 import { existsSync, readdirSync, statSync } from 'fs';
 
 // ---------------------------------------------------------------------------
-// CLI location — defaults to repo-relative zig-out/bin/jelly. Override with
+// CLI location — defaults to repo-relative zig-out/bin/dreamball. Override with
 // JELLY_CLI env var when invoking from an install location.
 // ---------------------------------------------------------------------------
 
@@ -50,7 +50,7 @@ function runJelly(args: string[]): { stdout: string; stderr: string; code: numbe
 	if (!existsSync(JELLY)) {
 		return {
 			stdout: '',
-			stderr: `jelly CLI not found at ${JELLY}; run \`zig build\` first or set JELLY_CLI`,
+			stderr: `dreamball CLI not found at ${JELLY}; run \`zig build\` first or set JELLY_CLI`,
 			code: 127
 		};
 	}

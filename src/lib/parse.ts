@@ -5,7 +5,7 @@
  * The generated `src/lib/generated/schemas.ts` exports Valibot
  * validators; the generated `src/lib/generated/cbor.ts` decodes raw
  * CBOR without invoking Valibot. This file is the *publish-boundary*
- * caller of those validators — jelly-server ingest, mint-time
+ * caller of those validators — dreamball-server ingest, mint-time
  * authoring, manual replay tools, and Story-1.3 AC7's grep audit
  * (`grep -R 'Valibot.parse|safeParse' src/lib/generated/`) MUST
  * remain zero, which is why these helpers live here, NOT in

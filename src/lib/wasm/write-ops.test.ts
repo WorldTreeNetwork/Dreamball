@@ -6,7 +6,7 @@ import { resolve } from 'path';
 // Every op's output is round-tripped through the existing parse path to
 // prove the emitted envelope is structurally valid.
 
-const WASM_PATH = resolve(__dirname, 'jelly.wasm');
+const WASM_PATH = resolve(__dirname, 'dreamball.wasm');
 
 interface WasmAPI {
 	memory: WebAssembly.Memory;

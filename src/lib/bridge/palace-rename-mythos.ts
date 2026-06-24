@@ -1,5 +1,5 @@
 /**
- * palace-rename-mythos.ts — Bridge script invoked by `jelly palace rename-mythos` (Zig → Bun).
+ * palace-rename-mythos.ts — Bridge script invoked by `dreamball palace rename-mythos` (Zig → Bun).
  *
  * Argv: <staging_path> <bundle_path>
  *

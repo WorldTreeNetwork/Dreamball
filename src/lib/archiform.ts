@@ -30,15 +30,15 @@ const SCHEMA_PATH = resolve(__dirname, '..', '..', 'schemas', 'memory-palace-0.1
 let _implicitFpBytes: Uint8Array | null = null;
 
 /** 32-byte blake3 of `schemas/memory-palace-0.1.0.json`, computed via
- *  the WebCrypto-friendly host blake3 wired through `jelly.wasm`. The
+ *  the WebCrypto-friendly host blake3 wired through `dreamball.wasm`. The
  *  module loads the wasm on first call and caches the digest. */
 async function computeBlake3(bytes: Uint8Array): Promise<Uint8Array> {
 	// Use Web Crypto subtle.digest is SHA-only; we delegate to the
-	// vendored jelly.wasm which exports `hashBlake3`. To avoid pulling
+	// vendored dreamball.wasm which exports `hashBlake3`. To avoid pulling
 	// the full wasm loader into every consumer, the public API
 	// memoizes after first call; tests can also pass the bytes
 	// directly via `setMemoryPalaceImplicitFp`.
-	const wasmPath = resolve(__dirname, 'wasm', 'jelly.wasm');
+	const wasmPath = resolve(__dirname, 'wasm', 'dreamball.wasm');
 	const wasmBytes = readFileSync(wasmPath);
 	let inst: WebAssembly.Instance;
 	const env = {

@@ -3,9 +3,9 @@
 //! This is the **single seam** through which Dreamball action-envelope
 //! signatures are produced. Two callers go through it:
 //!
-//!   1. `jelly.wasm` (browser/server projection) — `signActionEnvelope`
+//!   1. `dreamball.wasm` (browser/server projection) — `signActionEnvelope`
 //!      export in `src/wasm_main.zig`.
-//!   2. `jelly` CLI wasm host (Story 5.2 production host) —
+//!   2. `dreamball` CLI wasm host (Story 5.2 production host) —
 //!      `dreamball.emit_action_envelope` in `src/wasm-host/imports.zig`.
 //!
 //! Per D-023 + 2026-04-25 steering: sprint-002 ships Ed25519-only.
@@ -14,7 +14,7 @@
 //! call sites pick up the new primitive here in one place.
 //!
 //! Per SEC2: guests cannot reach this function directly. The host (CLI
-//! wasm-host or browser jelly.wasm) is the only path; both *always*
+//! wasm-host or browser dreamball.wasm) is the only path; both *always*
 //! invoke this seam after staging and before promoting (D-022).
 
 const std = @import("std");

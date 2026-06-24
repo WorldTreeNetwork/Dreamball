@@ -1,5 +1,5 @@
 /**
- * palace-mint.ts — Bridge script invoked by `jelly palace mint` (Zig → Bun).
+ * palace-mint.ts — Bridge script invoked by `dreamball palace mint` (Zig → Bun).
  *
  * Argv: <staging_path> <bundle_path>
  *

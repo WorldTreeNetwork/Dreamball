@@ -1,4 +1,4 @@
-//! `jelly palace inscribe` — inscribe an artefact into a Room inside a palace.
+//! `dreamball palace inscribe` — inscribe an artefact into a Room inside a palace.
 //!
 //! Reads an existing palace bundle, validates the target room is known,
 //! builds a new signed `ball.action` of kind `"avatar-inscribed"`, writes
@@ -65,7 +65,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(7)) {
         try io.writeAllStdout(
-            \\jelly palace inscribe <palace> --room <roomFp> <source>
+            \\dreamball palace inscribe <palace> --room <roomFp> <source>
             \\                      [--mythos <string>] [--mythos-file <path>]
             \\                      [--archiform <name>] [--embed-via <url>]
             \\                      [--surface <name>] [--placement <name>]
@@ -132,7 +132,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     if (archiform_name) |af| {
         if (!isValidArchiform(af)) {
             try io.writeAllStderr(
-                "warning: unknown archiform — run 'jelly palace show --archiforms' for the list\n",
+                "warning: unknown archiform — run 'dreamball palace show --archiforms' for the list\n",
             );
         }
     }

@@ -41,14 +41,14 @@ export default defineConfig({
 					environment: 'node',
 					include: [
 						'src/**/*.{test,spec}.{js,ts}',
-						'jelly-server/src/**/*.{test,spec}.{js,ts}',
+						'dreamball-server/src/**/*.{test,spec}.{js,ts}',
 						'tests/codegen/**/*.{test,spec}.{js,ts}',
 						'tests/wasm/host/**/*.{test,spec}.{js,ts}',
 						'tests/mcp/**/*.{test,spec}.{js,ts}',
 						'tests/capabilities/**/*.{test,spec}.{js,ts}'
 					],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}'],
-					// S6.1: jelly-server tests must not attempt to start the server
+					// S6.1: dreamball-server tests must not attempt to start the server
 					// or load the Qwen3 model (weights not present in CI).
 					// These vars are set here (not only in test files) because ESM
 					// top-level await in index.ts runs before test-file assignments.

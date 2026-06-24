@@ -2,14 +2,14 @@
  * embed.mock.ts — Deterministic mock backend for POST /embed (S6.1 AC8).
  *
  * HARNESS-ONLY: This module is imported by Vitest tests and Storybook stories.
- * It MUST NOT be imported by jelly-server/src/index.ts (production never reaches it).
+ * It MUST NOT be imported by dreamball-server/src/index.ts (production never reaches it).
  *
  * The mock derives a deterministic 256d float vector from blake3(content),
  * seeded with a byte counter. This is not a real embedding — it exists solely
  * to give tests and stories a stable, reproducible vector without a live model.
  *
  * Usage:
- *   import { mockEmbed } from 'jelly-server/src/routes/embed.mock.ts';
+ *   import { mockEmbed } from 'dreamball-server/src/routes/embed.mock.ts';
  *   const vector = await mockEmbed({ content: '...', contentType: 'text/markdown' });
  *
  * TODO-EMBEDDING: bring-model-local-or-byo

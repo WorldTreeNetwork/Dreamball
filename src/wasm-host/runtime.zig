@@ -30,7 +30,7 @@
 //!     that expose a tested entrypoint other than `_start`.
 //!
 //! Per D-032 (single shared host): this source MUST stay compatible with
-//! both `jelly` CLI compilation and (future, sprint-003) browser
+//! both `dreamball` CLI compilation and (future, sprint-003) browser
 //! compilation. We avoid `std.os` and other CLI-only paths here; clock
 //! reads and stderr output happen one level up (in `imports.zig` /
 //! `main.zig`) where the platform shim layer lives.

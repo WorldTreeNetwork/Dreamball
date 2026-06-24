@@ -1,6 +1,6 @@
 //! Palace verb group dispatch (D-013).
 //!
-//! Routes `jelly palace <subverb>` to per-subverb handlers that live in
+//! Routes `dreamball palace <subverb>` to per-subverb handlers that live in
 //! separate files. Each subverb handler exports `run(gpa, args) !u8` with
 //! the same signature as top-level commands.
 
@@ -46,7 +46,7 @@ pub const subcommands: []const SubCommand = &.{
 
 pub fn printPalaceUsage() !void {
     try io.writeAllStdout(
-        \\Usage: jelly palace <subverb> [args...]
+        \\Usage: dreamball palace <subverb> [args...]
         \\
         \\Subverbs:
         \\  mint            mint a new palace DreamBall with required mythos
@@ -60,7 +60,7 @@ pub fn printPalaceUsage() !void {
         \\Growth (unimplemented):
         \\  layout, share, rewind, observe
         \\
-        \\Run `jelly palace <subverb> --help` for per-subverb flags.
+        \\Run `dreamball palace <subverb> --help` for per-subverb flags.
         \\
     );
 }

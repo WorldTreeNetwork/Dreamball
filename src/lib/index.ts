@@ -72,8 +72,8 @@ export { ALL_LENSES, type LensName } from './lenses/lens-types.js';
 
 export { MockBackend, mockBall } from './backend/MockBackend.js';
 export { HttpBackend } from './backend/HttpBackend.js';
-export type { JellyBackend } from './backend/JellyBackend.js';
-export { ALWAYS_PUBLIC_SLOTS } from './backend/JellyBackend.js';
+export type { DreamballBackend } from './backend/DreamballBackend.js';
+export { ALWAYS_PUBLIC_SLOTS } from './backend/DreamballBackend.js';
 
 export * from './generated/types.js';
 export {

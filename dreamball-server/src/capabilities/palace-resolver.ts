@@ -4,7 +4,7 @@
  * Wires the generated requirements manifest (`PALACE_CAPABILITIES`) to the
  * server's provider registry via the generic resolver (resolver-core.ts).
  *
- * The jelly-server runtime currently offers two capability provider families —
+ * The dreamball-server runtime currently offers two capability provider families —
  * `service/text-embed` (mock / runpod / onnx-local) and `service/graph-store`
  * (the in-memory reference provider, conformance-verified). So:
  *   - `service/text-embed` (embed) → bound
@@ -27,7 +27,7 @@ import {
 } from './resolver-core.js';
 import { TEXT_EMBED_PROVIDERS } from './text-embed/providers.js';
 
-/** Provider descriptors the jelly-server runtime offers (service scope). */
+/** Provider descriptors the dreamball-server runtime offers (service scope). */
 export function buildServerRegistry(): ProviderRegistry {
   const textEmbed: CapabilityProviderDescriptor[] = TEXT_EMBED_PROVIDERS.map((p) => ({
     interface: 'service/text-embed',

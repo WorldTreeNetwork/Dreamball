@@ -1,5 +1,5 @@
 /**
- * inscribe-bridge.ts — Orchestrates embedding + store ingestion for `jelly palace inscribe`
+ * inscribe-bridge.ts — Orchestrates embedding + store ingestion for `dreamball palace inscribe`
  * with `--embed-via` flag (S6.2).
  *
  * Exports:

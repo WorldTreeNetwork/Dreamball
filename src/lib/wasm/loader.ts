@@ -130,7 +130,7 @@ export async function verifyMlDsa(
  * Compute Blake3-256 of `bytes` and return the 64-char lowercase hex digest.
  *
  * Uses the same `std.crypto.hash.Blake3` that the Zig CLI uses, compiled
- * into `jelly.wasm`. This eliminates the SHA-256 fallback that previously
+ * into `dreamball.wasm`. This eliminates the SHA-256 fallback that previously
  * existed in `cypher-utils.ts` for non-Bun runtimes — a field named
  * `source_blake3` is now genuinely Blake3 in every runtime (browser,
  * Bun server, Node tests). See Sprint-1 code review HIGH-2.
@@ -215,9 +215,9 @@ async function getModule(): Promise<WebAssembly.Module> {
 			// Resolve the wasm URL via Vite's asset handling. `?url` makes
 			// Vite copy the file into the build output and return its
 			// resolved URL, which works in dev + production alike.
-			const { default: wasmUrl } = await import('./jelly.wasm?url');
+			const { default: wasmUrl } = await import('./dreamball.wasm?url');
 			const resp = await fetch(wasmUrl);
-			if (!resp.ok) throw new Error(`fetch jelly.wasm: ${resp.status}`);
+			if (!resp.ok) throw new Error(`fetch dreamball.wasm: ${resp.status}`);
 			return WebAssembly.compile(await resp.arrayBuffer());
 		})();
 	}
@@ -299,7 +299,7 @@ async function parseJellyToJsonRaw(bytes: Uint8Array): Promise<string> {
 	exp.reset();
 
 	const inPtr = exp.alloc(bytes.length);
-	if (inPtr === 0) throw new Error('jelly-wasm: alloc failed (input too large?)');
+	if (inPtr === 0) throw new Error('dreamball-wasm: alloc failed (input too large?)');
 	new Uint8Array(exp.memory.buffer, inPtr, bytes.length).set(bytes);
 
 	const packed = exp.parseJelly(inPtr, bytes.length);
@@ -308,7 +308,7 @@ async function parseJellyToJsonRaw(bytes: Uint8Array): Promise<string> {
 		const ep = exp.resultErrPtr();
 		const el = exp.resultErrLen();
 		const msg = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
-		throw new Error(`jelly-wasm parse failed: ${msg || '(no diagnostic)'}`);
+		throw new Error(`dreamball-wasm parse failed: ${msg || '(no diagnostic)'}`);
 	}
 
 	const resultPtr = Number(packed >> 32n);

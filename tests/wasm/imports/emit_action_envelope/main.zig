@@ -7,7 +7,7 @@
 //!   i.   stages the payload bytes (D-022 staging area);
 //!   ii.  invokes the shared Ed25519 sign primitive in
 //!        `src/sign_action.zig` — the same primitive
-//!        `jelly.wasm`'s `signActionEnvelope` export wraps (D-023);
+//!        `dreamball.wasm`'s `signActionEnvelope` export wraps (D-023);
 //!   iii. promotes by appending to `host.emitted`;
 //!   iv.  returns envelope bytes carrying the real Ed25519 signature.
 //!

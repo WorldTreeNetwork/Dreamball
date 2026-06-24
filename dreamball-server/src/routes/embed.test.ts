@@ -33,7 +33,7 @@ const HERE = moduleDir(import.meta.url, import.meta.dir);
 // ---------------------------------------------------------------------------
 
 describe('AC8 — embed.mock not imported by index.ts', () => {
-  it('grep "embed.mock" in jelly-server/src/index.ts returns empty', () => {
+  it('grep "embed.mock" in dreamball-server/src/index.ts returns empty', () => {
     const indexSrc = readFileSync(resolve(HERE, '../index.ts'), 'utf8');
     expect(indexSrc).not.toMatch(/embed\.mock/);
   });

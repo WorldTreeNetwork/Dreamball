@@ -1,5 +1,5 @@
 /**
- * jelly-server unit tests.
+ * dreamball-server unit tests.
  *
  * Uses Elysia's .handle(new Request(...)) pattern for in-process testing
  * without binding a port. All routes tested without network I/O.

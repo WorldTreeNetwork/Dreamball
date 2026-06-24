@@ -24,11 +24,11 @@ jobs:
         run: zig build test --summary all
       - name: zig build wasm
         run: zig build wasm
-      - name: Confirm jelly.wasm ≤ 200 KB raw, ≤ 64 KB gzipped
+      - name: Confirm dreamball.wasm ≤ 200 KB raw, ≤ 64 KB gzipped
         run: |
-          raw=$(wc -c < src/lib/wasm/jelly.wasm)
-          gz=$(gzip -9c src/lib/wasm/jelly.wasm | wc -c)
-          echo "jelly.wasm is ${raw} bytes raw, ${gz} bytes gzipped"
+          raw=$(wc -c < src/lib/wasm/dreamball.wasm)
+          gz=$(gzip -9c src/lib/wasm/dreamball.wasm | wc -c)
+          echo "dreamball.wasm is ${raw} bytes raw, ${gz} bytes gzipped"
           test "$raw" -le 204800
           test "$gz" -le 65536
       - name: zig build smoke
@@ -46,11 +46,11 @@ jobs:
           echo "$out" | grep -q 'spike: hello.wasm wrote: HELLO_FROM_DREAMBALL_SPIKE'
           echo "$out" | grep -q 'spike: hello-bad.wasm rejected import env.malicious_function'
           echo "$out" | grep -q 'spike: all ACs (2,4,5,6) green'
-      - name: Upload jelly.wasm artifact
+      - name: Upload dreamball.wasm artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jelly.wasm
-          path: src/lib/wasm/jelly.wasm
+          name: dreamball.wasm
+          path: src/lib/wasm/dreamball.wasm
           if-no-files-found: error
 
   bun:
@@ -95,7 +95,7 @@ jobs:
         run: |
           # Whitelist: the mint route is the ONLY place secret_key_b58 is
           # legitimately returned. Every other occurrence is a bug.
-          allowed='jelly-server/src/routes/mint.ts\|src/wasm_main.zig\|src/lib/wasm/write-ops.test.ts\|src/cli\|README.md\|docs/\|.omc/plans/\|CLAUDE.md\|tools/schema-gen'
+          allowed='dreamball-server/src/routes/mint.ts\|src/wasm_main.zig\|src/lib/wasm/write-ops.test.ts\|src/cli\|README.md\|docs/\|.omc/plans/\|CLAUDE.md\|tools/schema-gen'
           hits=$(grep -rn 'secret_key_b58' --include='*.ts' --include='*.zig' --include='*.svelte' . \
                  | grep -v "$allowed" || true)
           if [ -n "$hits" ]; then

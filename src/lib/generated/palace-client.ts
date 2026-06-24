@@ -14,7 +14,7 @@
 // archiform's `x-actions` manifest (D-019). One typed async function per verb.
 //
 // Per D-034: this client wraps the D-007 store wrapper at one remove — each
-// function dispatches to the manifest-derived `jelly palace <verb>` CLI, which
+// function dispatches to the manifest-derived `dreamball palace <verb>` CLI, which
 // runs Zig + the existing bridge subprocesses (`src/lib/bridge/palace-*.ts`),
 // which in turn use the ServerStore. The bridge pattern (D-022) is preserved
 // underneath. This file MUST NOT import @ladybugdb/core, kuzu, or use
@@ -28,15 +28,15 @@
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 
 /**
- * Resolve the `jelly` CLI path. Defaults to `zig-out/bin/jelly` (the local
+ * Resolve the `dreamball` CLI path. Defaults to `zig-out/bin/dreamball` (the local
  * build output); overridable via JELLY_CLI env var for test/CI environments.
  */
 function resolveJelly(): string {
-  return process.env.JELLY_CLI ?? 'zig-out/bin/jelly';
+  return process.env.JELLY_CLI ?? 'zig-out/bin/dreamball';
 }
 
 /**
- * Common spawn helper. Shells out to `jelly palace <verb> ...flags`, captures
+ * Common spawn helper. Shells out to `dreamball palace <verb> ...flags`, captures
  * stdout, and returns it. Throws on non-zero exit, surfacing stderr text.
  */
 function invokeVerb(verb: string, flags: string[], opts: SpawnSyncOptions = {}): string {
@@ -119,7 +119,7 @@ export interface MintOutputs {
 /**
  * Mint a new Memory Palace DreamBall with genesis mythos, oracle Agent, seed archiform registry, and a rooted timeline.
  *
- * Dispatches to `jelly palace mint` (manifest-derived CLI; gen_cli output). The CLI runs
+ * Dispatches to `dreamball palace mint` (manifest-derived CLI; gen_cli output). The CLI runs
  * the bridge subprocess `src/lib/bridge/palace-mint.ts` underneath, which
  * uses the D-007 store wrapper (D-022 bridge pattern preserved beneath).
  */
@@ -191,7 +191,7 @@ export interface InscribeOutputs {
 /**
  * Inscribe an artefact file into a Room inside an existing palace, producing a signed avatar-inscribed action.
  *
- * Dispatches to `jelly palace inscribe` (manifest-derived CLI; gen_cli output). The CLI runs
+ * Dispatches to `dreamball palace inscribe` (manifest-derived CLI; gen_cli output). The CLI runs
  * the bridge subprocess `src/lib/bridge/palace-inscribe.ts` underneath, which
  * uses the D-007 store wrapper (D-022 bridge pattern preserved beneath).
  */
@@ -243,7 +243,7 @@ export interface AddRoomOutputs {
 /**
  * Add a new Room to an existing palace, producing a signed room-added action.
  *
- * Dispatches to `jelly palace add-room` (manifest-derived CLI; gen_cli output). The CLI runs
+ * Dispatches to `dreamball palace add-room` (manifest-derived CLI; gen_cli output). The CLI runs
  * the bridge subprocess `src/lib/bridge/palace-add-room.ts` underneath, which
  * uses the D-007 store wrapper (D-022 bridge pattern preserved beneath).
  */
@@ -295,7 +295,7 @@ export interface RenameMythosOutputs {
 /**
  * Append a new canonical ball.mythos to a palace's true-name chain, producing a signed true-naming action.
  *
- * Dispatches to `jelly palace rename-mythos` (manifest-derived CLI; gen_cli output). The CLI runs
+ * Dispatches to `dreamball palace rename-mythos` (manifest-derived CLI; gen_cli output). The CLI runs
  * the bridge subprocess `src/lib/bridge/palace-rename-mythos.ts` underneath, which
  * uses the D-007 store wrapper (D-022 bridge pattern preserved beneath).
  */
@@ -335,7 +335,7 @@ export interface MoveOutputs {
 /**
  * Move an inscription from its current Room to a new destination Room, producing a signed move action.
  *
- * Dispatches to `jelly palace move` (manifest-derived CLI; gen_cli output). The CLI runs
+ * Dispatches to `dreamball palace move` (manifest-derived CLI; gen_cli output). The CLI runs
  * the bridge subprocess `src/lib/bridge/palace-move.ts` underneath, which
  * uses the D-007 store wrapper (D-022 bridge pattern preserved beneath).
  */

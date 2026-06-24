@@ -5,7 +5,7 @@
 //!
 //! Background
 //! ----------
-//! `scripts/cli-smoke.sh` runs `jelly verify <bundle>` against six committed
+//! `scripts/cli-smoke.sh` runs `dreamball verify <bundle>` against six committed
 //! palace fixtures under `tests/fixtures/`. Each fixture is a signed,
 //! content-addressed palace bundle deliberately broken so that exactly ONE of
 //! palace_verify's structural invariants (a)–(e) trips, with a specific stderr
@@ -13,7 +13,7 @@
 //!
 //! The original fixtures were hand-rolled (throwaway python3 dCBOR + manual
 //! Blake3) using the OLD `jelly.*` wire tags. After the clean-break rename to
-//! `ball.*`, `jelly verify` no longer recognises their rooms/agents/etc., so it
+//! `ball.*`, `dreamball verify` no longer recognises their rooms/agents/etc., so it
 //! stops at invariant (a) "no rooms" for ALL of them — producing false
 //! coincidental passes and one hard failure (palace-two-agents AC6).
 //!

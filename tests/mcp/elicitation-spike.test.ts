@@ -33,7 +33,7 @@
  *     in its constructor for the server's elicit request to be accepted.
  *
  * Note: the existing `palace-client.ts` (Story 4.1) shells out to a
- * `jelly` CLI binary via `spawnSync`. The spike DOES NOT exercise that
+ * `dreamball` CLI binary via `spawnSync`. The spike DOES NOT exercise that
  * underlying CLI path — Story 4.2's scope is the elicitation routing,
  * not the action execution. The handler's post-confirmation dispatch
  * to `renameMythos(args)` is gated behind a JELLY_CLI shim test
@@ -133,7 +133,7 @@ describe('Story 4.2 — MCP elicitation spike (AC3, AC4)', () => {
       elicitCalls.push(1);
       return { action: 'accept', content: { confirm: true } };
     };
-    // We can't run the underlying client (it shells out to jelly CLI), but
+    // We can't run the underlying client (it shells out to dreamball CLI), but
     // we can assert that elicit is NOT called when confirmed=true is already
     // threaded through. The handler will then attempt to dispatch — wrap
     // in try so the spawn failure (no JELLY_CLI in test env) doesn't fail

@@ -2,7 +2,7 @@
  * store.server.ts — Server-side StoreAPI implementation using @ladybugdb/core napi.
  *
  * TC12: This file is the ONLY place that imports @ladybugdb/core.
- *       grep -R "@ladybugdb/core" src/ jelly-server/ (excluding store*.ts) must return zero.
+ *       grep -R "@ladybugdb/core" src/ dreamball-server/ (excluding store*.ts) must return zero.
  *
  * TC9:  Every conn.query() is wrapped in runQuery() which calls qr.close() in a finally block.
  *       No QueryResult handle leaks.
@@ -909,7 +909,7 @@ export class ServerStore implements StoreAPI {
     //    AND is palace-scoped so two palaces sharing rooms cannot collide on the
     //    same (fromFp, toFp, timestamp) triple (M6 review fix).
     //    Story 6.2 / D-023: when keypairBytes is supplied, produce a real Ed25519
-    //    signature via signActionEnvelope (jelly.wasm) and store its Blake3 hash
+    //    signature via signActionEnvelope (dreamball.wasm) and store its Blake3 hash
     //    as cborBytesBlake3. When absent, fall back to the derived action fp
     //    (legacy path for callers without keypair access at call time).
     const moveActionFp = await deriveTripleFp(fromFp, toFp, `move:${palaceFp}`, String(timestamp));

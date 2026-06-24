@@ -11,7 +11,7 @@
  * exactly as written to disk (LF endings preserved). The vendored
  * file IS the canonical form; no canonicalization step.
  *
- * Implementation note: blake3 is exposed via jelly.wasm. We require
+ * Implementation note: blake3 is exposed via dreamball.wasm. We require
  * the wasm artifact to be present (see `zig build wasm`); the script
  * loads it directly via `WebAssembly.instantiate` to avoid the
  * Vite-flavored import in `src/lib/wasm/loader.ts`.
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
-const WASM_PATH = join(REPO_ROOT, 'src', 'lib', 'wasm', 'jelly.wasm');
+const WASM_PATH = join(REPO_ROOT, 'src', 'lib', 'wasm', 'dreamball.wasm');
 
 interface JellyExports {
 	memory: WebAssembly.Memory;
@@ -36,7 +36,7 @@ interface JellyExports {
 async function loadWasm(): Promise<JellyExports> {
 	if (!existsSync(WASM_PATH)) {
 		throw new Error(
-			`jelly.wasm not found at ${WASM_PATH}; run \`zig build wasm\` first.`,
+			`dreamball.wasm not found at ${WASM_PATH}; run \`zig build wasm\` first.`,
 		);
 	}
 	const bytes = readFileSync(WASM_PATH);

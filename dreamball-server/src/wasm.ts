@@ -1,7 +1,7 @@
 /**
- * Singleton WASM instance loader for jelly-server.
+ * Singleton WASM instance loader for dreamball-server.
  *
- * Reads jelly.wasm from disk once, instantiates with the host-provided
+ * Reads dreamball.wasm from disk once, instantiates with the host-provided
  * getRandomBytes import, and caches the instance for the lifetime of the
  * process. All routes share this one instance — callers must call reset()
  * before each operation to clear the linear memory scratch arena.
@@ -43,7 +43,7 @@ export interface WasmExports {
   resultErrLen: () => number;
 }
 
-const WASM_PATH = resolve(moduleDir(import.meta.url, import.meta.dir), '../../src/lib/wasm/jelly.wasm');
+const WASM_PATH = resolve(moduleDir(import.meta.url, import.meta.dir), '../../src/lib/wasm/dreamball.wasm');
 
 let cachedInstance: WasmExports | null = null;
 let initPromise: Promise<WasmExports> | null = null;

@@ -18,13 +18,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-JELLY="$REPO_DIR/zig-out/bin/jelly"
+JELLY="$REPO_DIR/zig-out/bin/dreamball"
 WORK="$(mktemp -d -t jelly-e2e-crypto.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
 cd "$WORK"
 
-echo "==> Pre-flight: jelly CLI built?"
+echo "==> Pre-flight: dreamball CLI built?"
 if [[ ! -x "$JELLY" ]]; then
   (cd "$REPO_DIR" && zig build)
 fi

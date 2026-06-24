@@ -14,10 +14,10 @@
 //!      `tsconfig.json` `paths` to the generated file. No npm package
 //!      ships in sprint-002.
 //!   4. Bridge composition (D-022): each generated client function shells
-//!      out to `jelly palace <verb>` via Bun's spawn API. The CLI is itself
+//!      out to `dreamball palace <verb>` via Bun's spawn API. The CLI is itself
 //!      manifest-derived (Story 3.x), so the call chain is:
 //!        TS client (manifest types)
-//!          → jelly CLI (manifest dispatcher, gen_cli output)
+//!          → dreamball CLI (manifest dispatcher, gen_cli output)
 //!            → Zig staging
 //!              → Bun bridge subprocess (`src/lib/bridge/palace-<verb>.ts`)
 //!                → ServerStore (D-007 store wrapper)
@@ -109,7 +109,7 @@ const PRELUDE =
     \\// archiform's `x-actions` manifest (D-019). One typed async function per verb.
     \\//
     \\// Per D-034: this client wraps the D-007 store wrapper at one remove — each
-    \\// function dispatches to the manifest-derived `jelly palace <verb>` CLI, which
+    \\// function dispatches to the manifest-derived `dreamball palace <verb>` CLI, which
     \\// runs Zig + the existing bridge subprocesses (`src/lib/bridge/palace-*.ts`),
     \\// which in turn use the ServerStore. The bridge pattern (D-022) is preserved
     \\// underneath. This file MUST NOT import @ladybugdb/core, kuzu, or use
@@ -123,15 +123,15 @@ const PRELUDE =
     \\import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
     \\
     \\/**
-    \\ * Resolve the `jelly` CLI path. Defaults to `zig-out/bin/jelly` (the local
+    \\ * Resolve the `dreamball` CLI path. Defaults to `zig-out/bin/dreamball` (the local
     \\ * build output); overridable via JELLY_CLI env var for test/CI environments.
     \\ */
     \\function resolveJelly(): string {
-    \\  return process.env.JELLY_CLI ?? 'zig-out/bin/jelly';
+    \\  return process.env.JELLY_CLI ?? 'zig-out/bin/dreamball';
     \\}
     \\
     \\/**
-    \\ * Common spawn helper. Shells out to `jelly palace <verb> ...flags`, captures
+    \\ * Common spawn helper. Shells out to `dreamball palace <verb> ...flags`, captures
     \\ * stdout, and returns it. Throws on non-zero exit, surfacing stderr text.
     \\ */
     \\function invokeVerb(verb: string, flags: string[], opts: SpawnSyncOptions = {}): string {
@@ -275,7 +275,7 @@ fn projectVerb(
     try body.appendSlice(arena, "/**\n * ");
     try writeTsCommentEscaped(arena, body, summary);
     try body.appendSlice(arena, "\n *\n");
-    try body.appendSlice(arena, " * Dispatches to `jelly palace ");
+    try body.appendSlice(arena, " * Dispatches to `dreamball palace ");
     try body.appendSlice(arena, verb_name);
     try body.appendSlice(arena, "` (manifest-derived CLI; gen_cli output). The CLI runs\n");
     try body.appendSlice(arena, " * the bridge subprocess `src/lib/bridge/palace-");

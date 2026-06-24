@@ -38,7 +38,7 @@
 //! ## Per D-032 (single shared host)
 //!
 //! Nothing CLI-specific lives in this file beyond stdout/stderr writes
-//! and argv parsing. The browser/jelly-server hosts (sprint-003) reuse
+//! and argv parsing. The browser/dreamball-server hosts (sprint-003) reuse
 //! `runtime.zig`, `imports.zig`, and `failure_paths.zig` directly.
 
 const std = @import("std");

@@ -53,7 +53,7 @@ const WHITELIST = [_][]const u8{ "mint", "inscribe", "add-room", "rename-mythos"
 /// legacy verb implementations (they are never `--flag value` pairs). The
 /// generator excludes them from the emitted SPECS table and from required-flag
 /// enforcement so the generated dispatcher does not incorrectly reject
-/// positional invocations like `jelly palace inscribe <palace> --room <fp> <source>`.
+/// positional invocations like `dreamball palace inscribe <palace> --room <fp> <source>`.
 ///
 /// Convention: `palace` is always the first positional arg in every verb.
 /// `source` is the second positional in `inscribe`. This is a CLI-layer
@@ -204,7 +204,7 @@ fn projectVerbToDirImpl(
     var body: std.ArrayList(u8) = .empty;
     defer body.deinit(arena);
 
-    try body.appendSlice(arena, "//! Generated CLI dispatcher for `jelly palace ");
+    try body.appendSlice(arena, "//! Generated CLI dispatcher for `dreamball palace ");
     try body.appendSlice(arena, verb_name);
     try body.appendSlice(arena,
         \\`.
@@ -287,7 +287,7 @@ fn projectVerbToDirImpl(
 
     // Help-text constant.
     try body.appendSlice(arena, "pub const HELP_TEXT: []const u8 =\n");
-    try body.appendSlice(arena, "    \"jelly palace ");
+    try body.appendSlice(arena, "    \"dreamball palace ");
     try body.appendSlice(arena, verb_name);
     try body.appendSlice(arena, " — \" ++\n");
     try body.appendSlice(arena, "    SUMMARY ++ \"\\n\\n\" ++\n");

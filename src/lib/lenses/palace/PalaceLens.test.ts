@@ -4,7 +4,7 @@
  * Run under Vitest `server` project (colocated with lens, no browser needed
  * for the headless assertions). Covers:
  *
- *   AC1 — palace envelope decoded via jelly.wasm; shape validated by Valibot;
+ *   AC1 — palace envelope decoded via dreamball.wasm; shape validated by Valibot;
  *          no @ladybugdb/core or kuzu-wasm imports in lens file.
  *   AC2 — rooms placed at layout.position from ball.layout (position math verified).
  *   AC3 — deterministic-grid fallback: Fibonacci spiral gives byte-stable positions

@@ -7,7 +7,7 @@
  * than spawning a subprocess, so CI can run it as part of `bun run test:unit`.
  *
  * AC2: invoke `palace.mint` with valid inputs → response carries HandlerResult
- *   shape (the client's spawn may fail in CI if jelly CLI is not built, but
+ *   shape (the client's spawn may fail in CI if dreamball CLI is not built, but
  *   the routing/translation layer is verified end-to-end via JELLY_CLI stub).
  * AC3: invoke `palace.rename-mythos` without confirmation → elicitation round-
  *   trip occurs; declining returns `{ elicited: true, confirmed: false }`.
@@ -175,10 +175,10 @@ describe('Story 4.3 — MCP server smoke test', () => {
     expect(result.isError).toBe(true);
   });
 
-  // ── AC2: happy path invocation (jelly CLI stubbed) ───────────────────────
+  // ── AC2: happy path invocation (dreamball CLI stubbed) ───────────────────────
 
   it('AC2: palace.mint with valid inputs routes through handler (JELLY_CLI stub)', async () => {
-    // Stub the jelly CLI so the underlying spawn succeeds without a real build.
+    // Stub the dreamball CLI so the underlying spawn succeeds without a real build.
     const tmp = mkdtempSync(join(tmpdir(), 'jelly-stub-smoke-'));
     const stubPath = join(tmp, 'jelly');
     // The stub emits a JSON line on stdout (the palace-client reads stdout).
@@ -226,7 +226,7 @@ describe('Story 4.3 — MCP server smoke test', () => {
   });
 
   it('AC3: palace.rename-mythos proceeds after elicitation grant (JELLY_CLI stub)', async () => {
-    // Set up a jelly CLI stub for the post-confirmation dispatch.
+    // Set up a dreamball CLI stub for the post-confirmation dispatch.
     const tmp = mkdtempSync(join(tmpdir(), 'jelly-stub-rename-'));
     const stubPath = join(tmp, 'jelly');
     writeFileSync(stubPath, '#!/bin/sh\necho \'{"trueName":"new-name"}\'\nexit 0\n');

@@ -41,7 +41,7 @@
 //!        i.   write the envelope payload to the host's per-invocation
 //!             staging area;
 //!        ii.  invoke `signActionEnvelope(keypair, payload)` (the same
-//!             primitive `jelly.wasm`'s D-023 export wraps; see
+//!             primitive `dreamball.wasm`'s D-023 export wraps; see
 //!             `src/sign_action.zig`) to produce an Ed25519 signature;
 //!        iii. on success, promote staging → committed and append the
 //!             signed envelope to the host's emit log;
@@ -118,7 +118,7 @@ pub const Node = struct {
 };
 
 /// Single signed envelope captured from `dreamball.emit_action_envelope`.
-/// The host caller (e.g. `jelly` CLI's wasm-action runner) consumes
+/// The host caller (e.g. `dreamball` CLI's wasm-action runner) consumes
 /// `host.emitted` after `invokeAction` returns.
 pub const EmittedEnvelope = struct {
     payload: []u8,
@@ -399,7 +399,7 @@ pub fn read_node(
 //   i.   Host stages the payload bytes (copies them out of guest
 //        linear memory into host-owned `EmittedEnvelope`).
 //   ii.  Host invokes `sign_action.signEd25519(keypair, payload)` —
-//        the same primitive `jelly.wasm`'s `signActionEnvelope` export
+//        the same primitive `dreamball.wasm`'s `signActionEnvelope` export
 //        wraps (D-023). One seam, called from both compile targets.
 //   iii. On signing success, host promotes by appending to
 //        `host.emitted` (the per-invocation staging → committed).

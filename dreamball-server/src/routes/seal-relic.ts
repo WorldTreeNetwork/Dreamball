@@ -1,6 +1,6 @@
 /**
  * POST /relics — Seal a DreamBall into a relic.
- * MVP: subprocesses to `jelly seal-relic` CLI.
+ * MVP: subprocesses to `dreamball seal-relic` CLI.
  */
 
 import Elysia, { t } from 'elysia';
@@ -12,7 +12,7 @@ import { randomBytes } from 'crypto';
 import { moduleDir } from '../paths.js';
 
 const REPO_ROOT = resolve(moduleDir(import.meta.url, import.meta.dir), '../../../');
-const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/jelly');
+const JELLY = process.env.JELLY_CLI ?? resolve(REPO_ROOT, 'zig-out/bin/dreamball');
 
 export const sealRelicRoute = new Elysia().post(
   '/relics',
@@ -21,7 +21,7 @@ export const sealRelicRoute = new Elysia().post(
 
     if (!existsSync(JELLY)) {
       set.status = 503;
-      return { error: 'jelly CLI not found; run `zig build` first', path: JELLY };
+      return { error: 'dreamball CLI not found; run `zig build` first', path: JELLY };
     }
 
     // Write inner DreamBall to a temp file
@@ -65,7 +65,7 @@ export const sealRelicRoute = new Elysia().post(
     }),
     detail: {
       summary: 'Seal a relic',
-      description: 'Wraps an inner DreamBall JSON into a sealed Relic envelope. MVP: subprocesses to jelly CLI.'
+      description: 'Wraps an inner DreamBall JSON into a sealed Relic envelope. MVP: subprocesses to dreamball CLI.'
     }
   }
 );

@@ -1,4 +1,4 @@
-//! `jelly palace move` — move an inscription from one Room to another.
+//! `dreamball palace move` — move an inscription from one Room to another.
 //!
 //! Reads an existing palace bundle, validates both source and destination rooms,
 //! builds a new signed `ball.action` of kind `"move"`, writes it to staging,
@@ -52,7 +52,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(2)) {
         try io.writeAllStdout(
-            \\jelly palace move <palace> --avatar <docFp> --to <roomFp>
+            \\dreamball palace move <palace> --avatar <docFp> --to <roomFp>
             \\
             \\Move an inscription from its current Room to a new destination Room.
             \\

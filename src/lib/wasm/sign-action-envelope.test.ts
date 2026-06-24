@@ -9,7 +9,7 @@ import { resolve } from 'path';
 // Zig's Ed25519 secret key is 64 bytes: [seed(32) || pubkey(32)].
 // The last 32 bytes are the raw Ed25519 public key, importable by subtle.
 
-const WASM_PATH = resolve(__dirname, 'jelly.wasm');
+const WASM_PATH = resolve(__dirname, 'dreamball.wasm');
 
 interface WasmAPI {
 	memory: WebAssembly.Memory;

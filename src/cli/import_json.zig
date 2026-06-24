@@ -1,4 +1,4 @@
-//! `jelly import-json <in.jelly.json> --out <out.jelly>` — read canonical JSON
+//! `dreamball import-json <in.jelly.json> --out <out.jelly>` — read canonical JSON
 //! and emit canonical dCBOR. Round-trips byte-identically with files that were
 //! produced by `export-json`.
 
@@ -20,7 +20,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer parsed.deinit();
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
-        try io.writeAllStdout("jelly import-json <in.jelly.json> --out <out.jelly>\n");
+        try io.writeAllStdout("dreamball import-json <in.jelly.json> --out <out.jelly>\n");
         return 0;
     }
 

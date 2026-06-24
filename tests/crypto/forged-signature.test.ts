@@ -15,7 +15,7 @@
  *      Then Web Crypto subtle.verify returns false;
  *      the verifier surfaces a structured error event.
  *
- * Key file setup: uses a real Ed25519 keypair produced by jelly.wasm mintDreamBall
+ * Key file setup: uses a real Ed25519 keypair produced by dreamball.wasm mintDreamBall
  * so the seed→pubkey relationship is cryptographically valid. The oracle key file
  * is written with [seed(32) || pubkey(32)] bytes so parseKeyFile extracts the
  * correct 32-byte public key for Web Crypto import.
@@ -29,7 +29,7 @@ import { oracleSignAction } from '../../src/memory-palace/oracle.js';
 
 // ── WASM loader (direct — mirrors sign-action-envelope.test.ts pattern) ───────
 
-const WASM_PATH = resolve(__dirname, '../../src/lib/wasm/jelly.wasm');
+const WASM_PATH = resolve(__dirname, '../../src/lib/wasm/dreamball.wasm');
 
 interface WasmAPI {
   memory: WebAssembly.Memory;
@@ -88,7 +88,7 @@ describe('AC4 — forged signature fails Ed25519 verification (Story 6.2)', () =
   const targetFp = 'b'.repeat(64);
 
   beforeAll(async () => {
-    // 1. Obtain a real Ed25519 keypair from jelly.wasm (same pattern as
+    // 1. Obtain a real Ed25519 keypair from dreamball.wasm (same pattern as
     //    sign-action-envelope.test.ts AC2). This ensures seed→pubkey is
     //    cryptographically valid and subtle.verify will work correctly.
     const wasm = await loadWasm();

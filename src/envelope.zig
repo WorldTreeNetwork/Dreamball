@@ -1126,7 +1126,7 @@ test "decodeDreamBall full round-trip — populated envelope" {
 }
 
 test "second-pass round-trip preserves attributes (grow path)" {
-    // Models what `jelly grow` does on a previously-grown envelope: read the
+    // Models what `dreamball grow` does on a previously-grown envelope: read the
     // bytes back through the full decoder, mutate one field, re-encode. The
     // bug this guards against was the show/export/grow sites using the
     // subject-only decoder, which dropped name/feel/act on the floor before

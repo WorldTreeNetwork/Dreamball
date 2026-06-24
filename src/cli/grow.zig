@@ -1,4 +1,4 @@
-//! `jelly grow <in> --key <keyfile> [flags...]` — update slots and re-sign.
+//! `dreamball grow <in> --key <keyfile> [flags...]` — update slots and re-sign.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -27,7 +27,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(9) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly grow <in.jelly> --key <keyfile> [flags]
+            \\dreamball grow <in.jelly> --key <keyfile> [flags]
             \\  --out <path>             write updated file here (default: in-place)
             \\  --stage <seed|dreamball> set the stage value
             \\  --set-name <str>

@@ -1,10 +1,10 @@
 # palace-two-agents fixture
 
-Negative-test palace for `jelly verify` invariant (b) — "oracle is the sole
+Negative-test palace for `dreamball verify` invariant (b) — "oracle is the sole
 direct Agent".
 
 A valid `ball.*` palace whose `contains` set holds TWO
-`ball.dreamball.agent` envelopes. `jelly verify` reports:
+`ball.dreamball.agent` envelopes. `dreamball verify` reports:
 
 ```
 error: multiple Agents directly contained; exactly one (oracle) permitted (invariant b)

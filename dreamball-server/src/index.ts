@@ -1,5 +1,5 @@
 /**
- * jelly-server — Bun-native Elysia HTTP server wrapping jelly.wasm.
+ * dreamball-server — Bun-native Elysia HTTP server wrapping dreamball.wasm.
  *
  * Exposes DreamBall write+read operations over HTTP. Routes mirror the CLI.
  * Valibot schemas drive request/response validation.
@@ -68,7 +68,7 @@ export const app = new Elysia()
     swagger({
       documentation: {
         info: {
-          title: 'jelly-server',
+          title: 'dreamball-server',
           version: '0.0.1',
           description: 'DreamBall v2 protocol HTTP API'
         }

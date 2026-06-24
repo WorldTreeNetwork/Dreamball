@@ -1,4 +1,4 @@
-//! `jelly mint --out <path> [--name <str>]` — create a new DreamSeed with a
+//! `dreamball mint --out <path> [--name <str>]` — create a new DreamSeed with a
 //! freshly generated hybrid Ed25519 + ML-DSA-87 identity. Writes:
 //!   <out>           canonical dCBOR node bytes (format-version 3)
 //!   <out>.key       hybrid key file (see src/key_file.zig)
@@ -27,7 +27,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(3)) {
         try io.writeAllStdout(
-            \\jelly mint --out <path> [--name <string>] [--type <type>]
+            \\dreamball mint --out <path> [--name <string>] [--type <type>]
             \\
             \\Creates a new DreamSeed with a freshly generated Ed25519 identity.
             \\Writes <out> (CBOR envelope) and <out>.key (raw secret, 0600).

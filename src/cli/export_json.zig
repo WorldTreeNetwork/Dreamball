@@ -1,4 +1,4 @@
-//! `jelly export-json <in> --out <out>` — write canonical JSON rendering.
+//! `dreamball export-json <in> --out <out>` — write canonical JSON rendering.
 //!
 //! Uses the full `decodeDreamBall` so every mutable attribute (name,
 //! look/feel/act, guilds, contains, derived-from, signatures, …) survives
@@ -22,7 +22,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer parsed.deinit();
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
-        try io.writeAllStdout("jelly export-json <in.jelly> --out <out.jelly.json>\n");
+        try io.writeAllStdout("dreamball export-json <in.jelly> --out <out.jelly.json>\n");
         return 0;
     }
 

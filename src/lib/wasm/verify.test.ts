@@ -13,7 +13,7 @@ import { gzipSync } from 'zlib';
 //   - tampered envelope rejects
 // This is the "browser acts as independent verifier" proof.
 
-const WASM_PATH = resolve(__dirname, 'jelly.wasm');
+const WASM_PATH = resolve(__dirname, 'dreamball.wasm');
 const JELLY_CLI = resolve(__dirname, '..', '..', '..', 'zig-out', 'bin', 'jelly');
 
 async function loadWasm() {

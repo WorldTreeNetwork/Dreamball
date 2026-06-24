@@ -67,7 +67,7 @@ const EMBEDDING_DIM = 256;
  * In test mock mode (JELLY_EMBED_MOCK=hash): returns deterministic hash-derived floats.
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
- *   This client calls the jelly-server /embed endpoint (S6.1). Replace with
+ *   This client calls the dreamball-server /embed endpoint (S6.1). Replace with
  *   a local WASM/ONNX call once weights are bundled locally.
  *
  * @param content      Text content to embed
@@ -82,7 +82,7 @@ export async function embedFor(
   embedViaUrl = 'http://localhost:9808/embed'
 ): Promise<number[]> {
   // Test-only mock mode: deterministic hash → float array.
-  // JELLY_EMBED_MOCK='1' (jelly-server convention, vite.config.ts) or
+  // JELLY_EMBED_MOCK='1' (dreamball-server convention, vite.config.ts) or
   // JELLY_EMBED_MOCK='hash' (legacy embedding-client convention) both activate mock.
   // TODO-EMBEDDING: bring-model-local-or-byo
   const mockEnv = typeof process !== 'undefined' ? process.env.JELLY_EMBED_MOCK : undefined;

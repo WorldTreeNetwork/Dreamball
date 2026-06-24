@@ -259,7 +259,7 @@ export async function hashBytesBlake3Hex(bytes: Uint8Array): Promise<string> {
     const h = globalBun.hash.blake3(bytes, { asBytes: false });
     return typeof h === 'string' ? h : (h as bigint).toString(16).padStart(64, '0');
   }
-  // Non-Bun path — use the Blake3 WASM export from jelly.wasm so the result
+  // Non-Bun path — use the Blake3 WASM export from dreamball.wasm so the result
   // is genuinely Blake3 in every runtime (browser, Node, Vitest). This
   // replaces the prior SHA-256 fallback that silently produced a different
   // hash for fields named `source_blake3`. See Sprint-1 code review HIGH-2.

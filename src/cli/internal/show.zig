@@ -1,12 +1,12 @@
-//! `jelly show --as-palace <palace>` — pretty-print palace topology.
-//! `jelly palace show --archiforms` — list the 19 seed forms.
+//! `dreamball show --as-palace <palace>` — pretty-print palace topology.
+//! `dreamball palace show --archiforms` — list the 19 seed forms.
 //!
 //! AC1: Human-readable output: mythos head body, true-name, room tree with item counts,
 //!      timeline head hashes, oracle fp. Golden fixture byte-for-byte match.
 //! AC2: `--json` flag: JSON object with keys mythosHeadBody, trueName, rooms[],
 //!      timelineHeadHashes[], oracleFp.
 //! AC3: Non-palace fp → exit non-zero; stderr "not a palace".
-//! AC4: `jelly palace show --archiforms` lists the 19 seed forms.
+//! AC4: `dreamball palace show --archiforms` lists the 19 seed forms.
 //! AC12: ≥5 inline test blocks.
 
 const std = @import("std");
@@ -18,7 +18,7 @@ const args_mod = @import("../args.zig");
 const helpers = @import("../helpers.zig");
 const palace_mint = @import("mint.zig");
 
-// ── CLI spec for `jelly show --as-palace` path ─────────────────────────────────
+// ── CLI spec for `dreamball show --as-palace` path ─────────────────────────────────
 
 const SPECS = [_]args_mod.Spec{
     .{ .long = "json", .takes_value = false },       // 0
@@ -714,7 +714,7 @@ fn loadTopology(gpa: Allocator, palace_path: []const u8) !struct { topo: PalaceT
     };
 }
 
-// ── run (entry point for `jelly show --as-palace <path>`) ─────────────────────
+// ── run (entry point for `dreamball show --as-palace <path>`) ─────────────────────
 
 pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     var parsed = try args_mod.parse(gpa, argv, &SPECS);
@@ -722,7 +722,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(2) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly show --as-palace <palace> [--json] [--archiforms]
+            \\dreamball show --as-palace <palace> [--json] [--archiforms]
             \\
             \\Show palace topology. <palace> is the path prefix (without .bundle).
             \\
@@ -810,7 +810,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     return 0;
 }
 
-/// `jelly palace show --archiforms` entry point (called from palace.zig).
+/// `dreamball palace show --archiforms` entry point (called from palace.zig).
 pub fn runArchiforms(gpa: Allocator, _argv: [][:0]const u8) !u8 {
     _ = gpa;
     _ = _argv;

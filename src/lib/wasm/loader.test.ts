@@ -7,7 +7,7 @@ import { resolve } from 'path';
 // the same test runs in Node without a browser.
 
 async function buildInstance() {
-	const wasmPath = resolve(__dirname, 'jelly.wasm');
+	const wasmPath = resolve(__dirname, 'dreamball.wasm');
 	const bytes = readFileSync(wasmPath);
 	const mod = await WebAssembly.compile(bytes);
 	let inst!: WebAssembly.Instance;
@@ -28,7 +28,7 @@ async function buildInstance() {
 	};
 }
 
-describe('jelly-wasm loader', () => {
+describe('dreamball-wasm loader', () => {
 	let wasm: Awaited<ReturnType<typeof buildInstance>>;
 
 	beforeAll(async () => {

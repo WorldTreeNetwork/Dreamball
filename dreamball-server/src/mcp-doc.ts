@@ -165,7 +165,7 @@ const routes: RouteDoc[] = [
     method: 'POST',
     path: '/dreamballs/:fp/transmit',
     summary: 'Transmit a Tool DreamBall',
-    description: 'Produces a signed transmission receipt for sending a Tool to an Agent via a Guild. MVP: subprocesses to jelly CLI.',
+    description: 'Produces a signed transmission receipt for sending a Tool to an Agent via a Guild. MVP: subprocesses to dreamball CLI.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -181,7 +181,7 @@ const routes: RouteDoc[] = [
     method: 'POST',
     path: '/relics',
     summary: 'Seal a relic',
-    description: 'Wraps an inner DreamBall JSON into a sealed Relic envelope. MVP: subprocesses to jelly CLI.',
+    description: 'Wraps an inner DreamBall JSON into a sealed Relic envelope. MVP: subprocesses to dreamball CLI.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -201,7 +201,7 @@ const routes: RouteDoc[] = [
     method: 'POST',
     path: '/relics/:id/unlock',
     summary: 'Unlock a relic',
-    description: 'Extracts the inner DreamBall from a sealed relic. MVP: subprocesses to jelly CLI.',
+    description: 'Extracts the inner DreamBall from a sealed relic. MVP: subprocesses to dreamball CLI.',
     inputSchema: { type: 'object', properties: {} },
     exampleResponse: { type: 'ball.dreamball.agent', stage: 'dreamball' }
   }
@@ -289,7 +289,7 @@ const dreamballTypes = [
 const mcpTools = [
   {
     name: 'mint_dreamball',
-    description: 'Create a new typed DreamBall via jelly-server HTTP API.',
+    description: 'Create a new typed DreamBall via dreamball-server HTTP API.',
     transport: 'http',
     endpoint: 'POST /dreamballs',
     inputSchema: {
@@ -460,9 +460,9 @@ export function buildMcpDoc() {
     schema_version: '1.0',
     generated_at: new Date().toISOString(),
     server: {
-      name: 'jelly-server',
+      name: 'dreamball-server',
       version: '0.0.1',
-      description: 'Bun-native Elysia HTTP server wrapping jelly.wasm for DreamBall write+read operations.',
+      description: 'Bun-native Elysia HTTP server wrapping dreamball.wasm for DreamBall write+read operations.',
       base_url: `http://localhost:${process.env.JELLY_SERVER_PORT ?? 9808}`
     },
     docs: docAnchors,

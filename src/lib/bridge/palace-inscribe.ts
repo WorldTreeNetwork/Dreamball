@@ -1,5 +1,5 @@
 /**
- * palace-inscribe.ts — Bridge script invoked by `jelly palace inscribe` (Zig → Bun).
+ * palace-inscribe.ts — Bridge script invoked by `dreamball palace inscribe` (Zig → Bun).
  *
  * Argv: <staging_path> <bundle_path>
  *

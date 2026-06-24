@@ -1,4 +1,4 @@
-//! `jelly verify <file>` — check each `'signed'` attribute against the
+//! `dreamball verify <file>` — check each `'signed'` attribute against the
 //! appropriate verification key. Ed25519 signatures verify against
 //! `identity`. ML-DSA-87 signatures verify against `identity-pq` when
 //! present in the core; absent `identity-pq` with a present ML-DSA
@@ -28,7 +28,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer parsed.deinit();
 
     if (parsed.flag(0) or parsed.positional.items.len == 0) {
-        try io.writeAllStdout("jelly verify <file.jelly>\n");
+        try io.writeAllStdout("dreamball verify <file.jelly>\n");
         return 0;
     }
 

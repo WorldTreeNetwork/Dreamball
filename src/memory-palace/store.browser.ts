@@ -652,7 +652,7 @@ export class BrowserStore implements StoreAPI {
     _filter?: { palaceFp?: string; roomFp?: string }
   ): Promise<Array<{ fp: string; roomFp: string; distance: number }>> {
     if (!KNN_LOCAL) {
-      // TODO-KNN-FALLBACK: route through jelly-server /kNN + one-time console.warn
+      // TODO-KNN-FALLBACK: route through dreamball-server /kNN + one-time console.warn
       console.warn(
         'kNN: D-015 parity degraded — routing through HttpBackend (NFR11 relaxation)'
       );
@@ -814,7 +814,7 @@ export class BrowserStore implements StoreAPI {
     // Derived fp for the move action — palace-scoped (M6 review fix) so palaces
     // that share rooms don't collide on the same (fromFp, toFp, timestamp) triple.
     // Story 6.2 / D-023: when keypairBytes is supplied, produce a real Ed25519
-    // signature via signActionEnvelope (jelly.wasm) and store its Blake3 hash
+    // signature via signActionEnvelope (dreamball.wasm) and store its Blake3 hash
     // as cborBytesBlake3. When absent, fall back to the derived action fp
     // (legacy path for callers without keypair access at call time).
     const moveActionFp = await deriveTripleFp(fromFp, toFp, `move:${palaceFp}`, String(timestamp));
@@ -1128,7 +1128,7 @@ export class BrowserStore implements StoreAPI {
    * Fetch and hash-verify CAS body bytes for an inscription (S5.4 / D-007 / TC13 / AC3).
    *
    * Browser implementation: fetches from same-origin `/cas/<source_blake3>` (SEC6).
-   * No cross-origin fetch — the browser store only reads from the same-origin jelly-server.
+   * No cross-origin fetch — the browser store only reads from the same-origin dreamball-server.
    * Hash-verifies: asserts Blake3(bytes) === source_blake3. Throws on mismatch.
    */
   async inscriptionMeta(inscriptionFp: string): Promise<import('./store-types.js').InscriptionMeta | null> {

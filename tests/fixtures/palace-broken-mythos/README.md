@@ -29,7 +29,7 @@ The single `ball.mythos` envelope is a valid dCBOR mythos with:
 
 When `walkToGenesis` (from `src/memory-palace/mythos-chain.zig`) tries to
 resolve the predecessor fp from the CAS it finds nothing and returns
-`unresolvable_predecessor`. `jelly verify` reports invariant (d):
+`unresolvable_predecessor`. `dreamball verify` reports invariant (d):
 
 ```
 error: mythos chain has unresolvable predecessor at <fp> (invariant d)
@@ -42,7 +42,7 @@ invariant that trips is (d) — no coincidental invariant-(a) "no rooms" stop.
 ## Usage
 
 ```bash
-jelly verify tests/fixtures/palace-broken-mythos/palace.bundle
+dreamball verify tests/fixtures/palace-broken-mythos/palace.bundle
 # exit non-zero; stderr: "... unresolvable predecessor ... (invariant d)"
 ```
 

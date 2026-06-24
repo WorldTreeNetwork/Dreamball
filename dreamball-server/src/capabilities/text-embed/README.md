@@ -29,7 +29,7 @@ the least invention and zero wire-format change.
 
 - It does **not** declare `text-embed/1` in the archiform JSON Schema's
   `capabilities` block yet (decision doc §3.1). It proves the runtime *seam*
-  inside jelly-server, in TS, not the wire-format declaration.
+  inside dreamball-server, in TS, not the wire-format declaration.
 - Providers are **not** content-addressed / acquirable here (decision doc §6).
   They wrap in-tree implementations. Content-addressing + signature-verified
   acquisition is the next step once the seam is agreed.
@@ -40,7 +40,7 @@ the least invention and zero wire-format change.
 
 ## Verification
 
-`bunx vitest run jelly-server` → 30/30 pass (unchanged behavior).
-`bunx tsc --noEmit -p jelly-server/tsconfig.json` → clean.
+`bunx vitest run dreamball-server` → 30/30 pass (unchanged behavior).
+`bunx tsc --noEmit -p dreamball-server/tsconfig.json` → clean.
 `scripts/server-smoke.sh` boots with `JELLY_EMBED_MOCK=1`, which binds the mock
 provider; its `/embed` assertions (dim 256, model, `mrl-256`) are unchanged.

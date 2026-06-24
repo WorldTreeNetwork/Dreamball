@@ -500,7 +500,7 @@ pub const Archiform = struct {
 pub const PalaceInvariantError = error{
     /// PROTOCOL.md §13.11 fixture 1: a Field with field-kind "palace" MUST carry
     /// a ball.mythos attribute. This error is returned when that invariant is
-    /// violated. Full enforcement lives in Epic 3 (`jelly verify`).
+    /// violated. Full enforcement lives in Epic 3 (`dreamball verify`).
     PalaceMissingMythos,
 };
 

@@ -1,4 +1,4 @@
-//! `jelly palace add-room` — add a Room to an existing palace DreamBall.
+//! `dreamball palace add-room` — add a Room to an existing palace DreamBall.
 //!
 //! Reads an existing palace bundle (resolved via <palace>.bundle + <palace>.key),
 //! builds a new signed `ball.action` of kind `"room-added"`, writes new envelopes
@@ -61,7 +61,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(4)) {
         try io.writeAllStdout(
-            \\jelly palace add-room <palace> --name <string>
+            \\dreamball palace add-room <palace> --name <string>
             \\                      [--mythos <string>] [--mythos-file <path>]
             \\                      [--archiform <name>]
             \\
@@ -113,7 +113,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     if (archiform_name) |af| {
         if (!isValidArchiform(af)) {
             try io.writeAllStderr(
-                "warning: unknown archiform — run 'jelly palace show --archiforms' for the list\n",
+                "warning: unknown archiform — run 'dreamball palace show --archiforms' for the list\n",
             );
             archiform_warning = true;
         }

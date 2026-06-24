@@ -4,7 +4,7 @@
   Omnispherical navigable 3-D view of a Memory Palace.
 
   Responsibilities:
-    • Decodes the palace field envelope via jelly.wasm (TC6 — no hand-written CBOR).
+    • Decodes the palace field envelope via dreamball.wasm (TC6 — no hand-written CBOR).
     • Validates decoded shape against Valibot DreamBallFieldSchema (AC1).
     • Renders each room as a Threlte mesh node placed at layout.position when
       the field envelope's ball.layout contains the room's child-fp; falls back
@@ -16,7 +16,7 @@
 
   CROSS-RUNTIME INVARIANT:
     No @ladybugdb/core or kuzu-wasm imports here. Palace envelope decode goes
-    through jelly.wasm exclusively. Store verbs (getPalace, roomsFor) are
+    through dreamball.wasm exclusively. Store verbs (getPalace, roomsFor) are
     consumed via the `store` prop (StoreAPI interface). Grep asserts this in
     PalaceLens.test.ts (AC1).
 
@@ -56,7 +56,7 @@
 
     /**
      * Raw bytes of the palace field envelope (.jelly CBOR).
-     * Decoded via jelly.wasm (TC6 / AC1). When null, layout falls
+     * Decoded via dreamball.wasm (TC6 / AC1). When null, layout falls
      * back to the deterministic grid for all rooms.
      */
     palaceBytes?: Uint8Array | null;
@@ -126,7 +126,7 @@
   // ─── Envelope decode (AC1) ────────────────────────────────────────────────
 
   /**
-   * Decode the palace envelope bytes via jelly.wasm, extract ball.layout
+   * Decode the palace envelope bytes via dreamball.wasm, extract ball.layout
    * placements from the field envelope's `contains` attribute, and populate
    * layoutByChildFp.
    *
@@ -137,7 +137,7 @@
   async function decodePalaceEnvelope(bytes: Uint8Array): Promise<void> {
     const result = await safeParseJelly(bytes);
     if (!result.success) {
-      decodeError = `jelly.wasm parse failed: ${result.issues?.[0]?.message ?? 'unknown error'}`;
+      decodeError = `dreamball.wasm parse failed: ${result.issues?.[0]?.message ?? 'unknown error'}`;
       return;
     }
 
@@ -290,7 +290,7 @@
 
   onMount(() => {
     (async () => {
-      // 1. Decode palace envelope via jelly.wasm (AC1 — TC6).
+      // 1. Decode palace envelope via dreamball.wasm (AC1 — TC6).
       if (palaceBytes) {
         await decodePalaceEnvelope(palaceBytes);
       }

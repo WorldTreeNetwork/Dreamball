@@ -21,9 +21,9 @@ zig-pkg/
 # Claude Code local harness state
 .claude/
 
-# jelly-server runtime data (generated; contains secret keys — never commit)
-jelly-server/data/
-jelly-server/node_modules/
+# dreamball-server runtime data (generated; contains secret keys — never commit)
+dreamball-server/data/
+dreamball-server/node_modules/
 
 # kuzu-wasm worker — emitted by bun run bootstrap (scripts/bootstrap-kuzu-wasm.ts)
 static/kuzu_wasm_worker.js

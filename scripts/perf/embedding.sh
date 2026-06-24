@@ -17,7 +17,7 @@
 #   bash scripts/perf/embedding.sh
 #   SKIP_PERF=1 bash scripts/perf/embedding.sh   # skip (CI fast path)
 #
-# Requires: bun, jelly-server not needed (JELLY_EMBED_MOCK=1 activates mock).
+# Requires: bun, dreamball-server not needed (JELLY_EMBED_MOCK=1 activates mock).
 
 set -euo pipefail
 

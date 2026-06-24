@@ -1,5 +1,5 @@
 /**
- * palace-add-room.ts — Bridge script invoked by `jelly palace add-room` (Zig → Bun).
+ * palace-add-room.ts — Bridge script invoked by `dreamball palace add-room` (Zig → Bun).
  *
  * Argv: <staging_path> <bundle_path>
  *

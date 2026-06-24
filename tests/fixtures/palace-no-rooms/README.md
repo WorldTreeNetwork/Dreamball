@@ -1,9 +1,9 @@
 # palace-no-rooms fixture
 
-Negative-test palace for `jelly verify` invariant (a) — "≥1 direct room".
+Negative-test palace for `dreamball verify` invariant (a) — "≥1 direct room".
 
 A valid `ball.*` palace minted WITHOUT any `ball.dreamball.field` of
-`field-kind: "room"` (and without the room-added action). `jelly verify`
+`field-kind: "room"` (and without the room-added action). `dreamball verify`
 reports:
 
 ```

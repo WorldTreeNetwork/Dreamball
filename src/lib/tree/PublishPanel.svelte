@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
 	import type { WishGarden } from './wishes.svelte.js';
-	import { downloadTreeBundle } from './jelly-export.js';
+	import { downloadTreeBundle } from './dreamball-export.js';
 	import { SFX } from './style/sfx.js';
 
 	interface Props {
@@ -44,8 +44,8 @@
 	{/if}
 	<details class="plant">
 		<summary>plant preview · how a recipient grows this</summary>
-		<pre class="cmd">$ jelly unseal wishing-tree.jelly --out tree.cbor
-$ jelly plant tree.cbor
+		<pre class="cmd">$ dreamball unseal wishing-tree.jelly --out tree.cbor
+$ dreamball plant tree.cbor
   ▸ scaffolding workspace…
   ▸ unsealing attachments → src/, docs/, scripts/
   ▸ writing package.json (svelte-kit + threlte)

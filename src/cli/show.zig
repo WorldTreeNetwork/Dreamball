@@ -1,4 +1,4 @@
-//! `jelly show <file> [--format=text|json]` — pretty-print a DreamBall or
+//! `dreamball show <file> [--format=text|json]` — pretty-print a DreamBall or
 //! identity envelope.
 
 const std = @import("std");
@@ -115,8 +115,8 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly show <file.jelly> [--format=text|json]
-            \\       jelly show --as-palace <palace> [--json] [--archiforms]
+            \\dreamball show <file.jelly> [--format=text|json]
+            \\       dreamball show --as-palace <palace> [--json] [--archiforms]
             \\
         );
         return 0;

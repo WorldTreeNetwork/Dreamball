@@ -1,10 +1,10 @@
 //! mythos-chain.zig — pure walk-to-genesis verifier utility.
 //!
-//! Exported for use by `jelly verify` (S3.6 `palace_verify.zig` imports
+//! Exported for use by `dreamball verify` (S3.6 `palace_verify.zig` imports
 //! this directly — no copy). See docs/PROTOCOL.md §13.8 mythos semantics
 //! and Story 3.4 AC6 / TC18.
 //!
-//! Canonical mythos (the kind managed by `jelly palace rename-mythos`) form
+//! Canonical mythos (the kind managed by `dreamball palace rename-mythos`) form
 //! a single append-only chain: genesis → successor → successor → …. Each
 //! successor carries a `predecessor` field that is the Blake3 fingerprint of
 //! the prior canonical mythos envelope. There MUST be exactly one genesis in

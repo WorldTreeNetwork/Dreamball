@@ -158,7 +158,7 @@ function parseKeyFile(raw: string, keyPath: string): HybridKeyPair {
   // calls the WASM decoder. For the buildSystemPrompt path we only need the
   // file to exist and be readable. Return a minimal stub shape.
   //
-  // A full parse requires the WASM module (jelly.wasm) which is not available
+  // A full parse requires the WASM module (dreamball.wasm) which is not available
   // in all environments; defer to S4.4 when oracle signing uses these bytes.
   const hexBytes = Buffer.from(raw).toString('hex');
   return {
@@ -173,7 +173,7 @@ function parseKeyFile(raw: string, keyPath: string): HybridKeyPair {
 //
 // S6.2 / Story 6.2: Real Ed25519 oracle-signed action for file-watcher events.
 // Migrated from oracleActionStub (sprint-001 sentinel) to real signActionEnvelope
-// call via jelly.wasm (D-023 / FR13 / SEC3). Ed25519-only per SEC6.
+// call via dreamball.wasm (D-023 / FR13 / SEC3). Ed25519-only per SEC6.
 
 export interface SignedAction {
   /** Blake3 fp of the signed action envelope (ActionLog PK) */

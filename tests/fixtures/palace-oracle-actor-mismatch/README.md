@@ -8,7 +8,7 @@ the oracle **envelope** fp (the content-address of the oracle agent envelope)
 rather than the key-derived oracle fp. AC10 compares an action actor against
 the fp derived from `<palace>.oracle.key`.
 
-**No `palace.oracle.key` is shipped with this fixture**, so `jelly verify`
+**No `palace.oracle.key` is shipped with this fixture**, so `dreamball verify`
 skips the AC10 provenance check entirely and the palace verifies as `palace ok`.
 The fixture exists to pin the structural arrangement that *would* fail AC10 if a
 real `oracle.key` with identity fp ≠ the envelope fp were present. It is not

@@ -19,7 +19,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 const SCHEMAS_DIR = join(REPO_ROOT, 'schemas');
 const PINS_DIR = join(SCHEMAS_DIR, '.pins');
-const WASM_PATH = join(REPO_ROOT, 'src', 'lib', 'wasm', 'jelly.wasm');
+const WASM_PATH = join(REPO_ROOT, 'src', 'lib', 'wasm', 'dreamball.wasm');
 
 interface JellyExports {
 	memory: WebAssembly.Memory;
@@ -35,7 +35,7 @@ async function getExports(): Promise<JellyExports> {
 	if (cachedExports) return cachedExports;
 	if (!existsSync(WASM_PATH)) {
 		throw new Error(
-			`schemas-verify: jelly.wasm not found at ${WASM_PATH}; run \`zig build wasm\`.`,
+			`schemas-verify: dreamball.wasm not found at ${WASM_PATH}; run \`zig build wasm\`.`,
 		);
 	}
 	const bytes = readFileSync(WASM_PATH);

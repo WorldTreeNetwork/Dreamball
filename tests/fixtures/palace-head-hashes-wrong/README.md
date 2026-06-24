@@ -1,11 +1,11 @@
 # palace-head-hashes-wrong fixture
 
-Negative-test palace for `jelly verify` invariant (e) — "timeline head-hashes
+Negative-test palace for `dreamball verify` invariant (e) — "timeline head-hashes
 are leaves".
 
 A valid `ball.*` palace whose `ball.timeline` lists, as a head-hash, the MINT
 action — which is referenced as a `parent-hash` by the room-added action and is
-therefore NOT a leaf. `jelly verify` reports:
+therefore NOT a leaf. `dreamball verify` reports:
 
 ```
 error: head-hash <fp> is not a leaf — it is referenced as parent by another action (invariant e)

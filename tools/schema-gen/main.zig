@@ -24,7 +24,7 @@
 //! Per NFR8 (validate-on-publish, not validate-on-decode): the
 //! generated TS in `src/lib/generated/` does NOT call `Valibot.parse`
 //! / `safeParse` at decode-time. The `schemas.ts` file exports
-//! validators for use at publish boundaries (jelly-server ingest,
+//! validators for use at publish boundaries (dreamball-server ingest,
 //! mint-time authoring); decode paths take the raw CBOR-derived
 //! object directly.
 //!

@@ -1,4 +1,4 @@
-//! `jelly verify <palace>` — palace **structural** invariant checker.
+//! `dreamball verify <palace>` — palace **structural** invariant checker.
 //!
 //! When the target is a palace bundle (detected by field-kind == "palace"),
 //! verify.zig routes here. Six invariants are checked:
