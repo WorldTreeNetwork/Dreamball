@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-CLI="$REPO_DIR/zig-out/bin/dreamball"
+DREAMBALL="$REPO_DIR/zig-out/bin/dreamball"
 WORK="$(mktemp -d -t dreamball-smoke.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 

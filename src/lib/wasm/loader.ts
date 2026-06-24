@@ -247,7 +247,7 @@ async function getInstance(): Promise<WasmExports> {
 }
 
 /**
- * Parse a `.ball` byte array (bare CBOR envelope, sealed JELY wrapper,
+ * Parse a `.ball` byte array (bare CBOR envelope, sealed BALL wrapper,
  * or canonical JSON text) into a **fully validated** DreamBall.
  *
  * The WASM parser does the heavy lifting (CBOR → JSON); Valibot validates

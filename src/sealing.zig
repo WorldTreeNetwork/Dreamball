@@ -7,7 +7,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-pub const MAGIC: [4]u8 = .{ 'J', 'E', 'L', 'Y' };
+pub const MAGIC: [4]u8 = .{ 'B', 'A', 'L', 'L' };
 pub const VERSION: u8 = 1;
 
 pub const Flags = packed struct(u8) {

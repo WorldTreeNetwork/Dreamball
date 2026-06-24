@@ -366,7 +366,7 @@ A DragonBall is a DreamBall that has been **compressed and optionally encrypted*
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- **Magic:** ASCII `"BALL"` (0x4A 0x45 0x4C 0x59).
+- **Magic:** ASCII `"BALL"` (0x42 0x41 0x4C 0x4C).
 - **Version byte:** `1`.
 - **Flags byte (bitfield):**
 
