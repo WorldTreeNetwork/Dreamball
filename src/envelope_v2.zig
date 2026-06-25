@@ -405,6 +405,180 @@ fn writeMemoryConnection(w: *std.Io.Writer, e: v2.MemoryConnection) !void {
     }
 }
 
+/// Decode a `ball.memory` envelope produced by `encodeMemory`.
+///
+/// Mirrors the encoder exactly: an envelope whose attribute list carries
+/// repeatable ("node", <MemoryNode envelope>) / ("connection",
+/// <MemoryConnection envelope>) pairs plus an optional ("last-updated", …).
+/// The node/connection attribute *values* are inline nested envelopes, so
+/// they are consumed from the shared cursor via `readMemoryNode` /
+/// `readMemoryConnection`. Nodes and connections accumulate into
+/// `ArrayListUnmanaged`s (the file's Zig-0.16 idiom) and are returned as
+/// owned slices. Memory carries floats (lookup value, connection strength)
+/// so the canonicality gate is the float-allowing variant.
+pub fn decodeMemory(allocator: Allocator, bytes: []const u8) !v2.Memory {
+    try assertCanonicalAllowFloats(bytes);
+    var cursor: usize = 0;
+    const attr_count = try readEnvelopeHeader(bytes, &cursor);
+    try skipCoreMap(bytes, &cursor);
+
+    var nodes_list = std.ArrayListUnmanaged(v2.MemoryNode).empty;
+    defer nodes_list.deinit(allocator);
+    var conns_list = std.ArrayListUnmanaged(v2.MemoryConnection).empty;
+    defer conns_list.deinit(allocator);
+    var last_updated: ?i64 = null;
+
+    var aii: u64 = 0;
+    while (aii < attr_count) : (aii += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return mapDecodeError(e);
+        if (arr_n != 2) return DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
+        if (std.mem.eql(u8, key, "node")) {
+            const n = try readMemoryNode(allocator, bytes, &cursor);
+            try nodes_list.append(allocator, n);
+        } else if (std.mem.eql(u8, key, "connection")) {
+            const c = try readMemoryConnection(bytes, &cursor);
+            try conns_list.append(allocator, c);
+        } else if (std.mem.eql(u8, key, "last-updated")) {
+            dcbor.expectTag(bytes, &cursor, dcbor.Tag.epoch_time) catch |e| return mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, &cursor) catch |e| return mapDecodeError(e);
+            last_updated = @intCast(ts);
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch |e| return mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .nodes = try nodes_list.toOwnedSlice(allocator),
+        .connections = try conns_list.toOwnedSlice(allocator),
+        .last_updated = last_updated,
+    };
+}
+
+/// Consume one inline `ball.memory-node` envelope from the shared cursor.
+/// The `lookups` slice is owned by `allocator`.
+fn readMemoryNode(allocator: Allocator, bytes: []const u8, cursor: *usize) !v2.MemoryNode {
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.envelope) catch |e| return mapDecodeError(e);
+    const array_count = dcbor.readArrayHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+    if (array_count == 0) return DecodeError.MissingField;
+    const attr_count = array_count - 1;
+
+    // Core map: "id"(2), "type"(4), "format-version"(14)
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.leaf) catch |e| return mapDecodeError(e);
+    const core_n = dcbor.readMapHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+    var id_opt: ?u64 = null;
+    var ci: u64 = 0;
+    while (ci < core_n) : (ci += 1) {
+        const k = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+        if (std.mem.eql(u8, k, "id")) {
+            id_opt = dcbor.readUint(bytes, cursor) catch |e| return mapDecodeError(e);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return mapDecodeError(e);
+        }
+    }
+
+    var content: ?[]const u8 = null;
+    var created: ?i64 = null;
+    var last_recalled: ?i64 = null;
+    var lookups_list = std.ArrayListUnmanaged(v2.MemoryNode.LookupEntry).empty;
+    defer lookups_list.deinit(allocator);
+
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+        if (arr_n != 2) return DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+        if (std.mem.eql(u8, key, "content")) {
+            content = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+        } else if (std.mem.eql(u8, key, "lookup")) {
+            const inner_n = dcbor.readArrayHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+            if (inner_n != 2) return DecodeError.InvalidValue;
+            const name = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+            const value = dcbor.readAnyFloat(bytes, cursor) catch |e| return mapDecodeError(e);
+            try lookups_list.append(allocator, .{ .name = name, .value = value });
+        } else if (std.mem.eql(u8, key, "created")) {
+            dcbor.expectTag(bytes, cursor, dcbor.Tag.epoch_time) catch |e| return mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, cursor) catch |e| return mapDecodeError(e);
+            created = @intCast(ts);
+        } else if (std.mem.eql(u8, key, "last-recalled")) {
+            dcbor.expectTag(bytes, cursor, dcbor.Tag.epoch_time) catch |e| return mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, cursor) catch |e| return mapDecodeError(e);
+            last_recalled = @intCast(ts);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .id = id_opt orelse return DecodeError.MissingField,
+        .content = content,
+        .lookups = try lookups_list.toOwnedSlice(allocator),
+        .created = created,
+        .last_recalled = last_recalled,
+    };
+}
+
+/// Consume one inline `ball.memory-connection` envelope from the shared cursor.
+fn readMemoryConnection(bytes: []const u8, cursor: *usize) !v2.MemoryConnection {
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.envelope) catch |e| return mapDecodeError(e);
+    const array_count = dcbor.readArrayHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+    if (array_count == 0) return DecodeError.MissingField;
+    const attr_count = array_count - 1;
+
+    // Core map: "to"(2), "from"(4), "kind"(4), "type"(4), "format-version"(14)
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.leaf) catch |e| return mapDecodeError(e);
+    const core_n = dcbor.readMapHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+    var to_opt: ?u64 = null;
+    var from_opt: ?u64 = null;
+    var kind_opt: ?v2.MemoryConnectionKind = null;
+    var ci: u64 = 0;
+    while (ci < core_n) : (ci += 1) {
+        const k = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+        if (std.mem.eql(u8, k, "to")) {
+            to_opt = dcbor.readUint(bytes, cursor) catch |e| return mapDecodeError(e);
+        } else if (std.mem.eql(u8, k, "from")) {
+            from_opt = dcbor.readUint(bytes, cursor) catch |e| return mapDecodeError(e);
+        } else if (std.mem.eql(u8, k, "kind")) {
+            const s = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+            if (std.mem.eql(u8, s, "semantic")) {
+                kind_opt = .semantic;
+            } else if (std.mem.eql(u8, s, "emotional")) {
+                kind_opt = .emotional;
+            } else if (std.mem.eql(u8, s, "temporal")) {
+                kind_opt = .temporal;
+            } else if (std.mem.eql(u8, s, "other")) {
+                kind_opt = .other;
+            } else return DecodeError.InvalidValue;
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return mapDecodeError(e);
+        }
+    }
+
+    var strength: ?f64 = null;
+    var label: ?[]const u8 = null;
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+        if (arr_n != 2) return DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+        if (std.mem.eql(u8, key, "strength")) {
+            strength = dcbor.readAnyFloat(bytes, cursor) catch |e| return mapDecodeError(e);
+        } else if (std.mem.eql(u8, key, "label")) {
+            label = dcbor.readText(bytes, cursor) catch |e| return mapDecodeError(e);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .from = from_opt orelse return DecodeError.MissingField,
+        .to = to_opt orelse return DecodeError.MissingField,
+        .kind = kind_opt orelse return DecodeError.MissingField,
+        .strength = strength orelse return DecodeError.MissingField,
+        .label = label,
+    };
+}
+
 pub fn encodeKnowledgeGraph(allocator: Allocator, kg: v2.KnowledgeGraph) ![]u8 {
     var ai = std.Io.Writer.Allocating.init(allocator);
     errdefer ai.deinit();
@@ -2331,6 +2505,71 @@ test "encodeMemory produces well-formed envelope" {
     defer allocator.free(bytes);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "First memory") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "temporal") != null);
+}
+
+test "encodeMemory -> decodeMemory round-trip" {
+    const allocator = std.testing.allocator;
+    const lookups = [_]v2.MemoryNode.LookupEntry{
+        .{ .name = "emotional", .value = 0.75 },
+        .{ .name = "recency", .value = 0.5 },
+    };
+    const nodes = [_]v2.MemoryNode{
+        .{
+            .id = 7,
+            .content = "A vivid recollection",
+            .lookups = &lookups,
+            .created = 1_700_000_000,
+            .last_recalled = 1_700_000_500,
+        },
+        .{ .id = 9 }, // minimal node
+    };
+    const connections = [_]v2.MemoryConnection{
+        .{ .from = 7, .to = 9, .kind = .emotional, .strength = 0.42, .label = "echoes" },
+    };
+    const m: v2.Memory = .{
+        .nodes = &nodes,
+        .connections = &connections,
+        .last_updated = 1_700_000_999,
+    };
+
+    const bytes = try encodeMemory(allocator, m);
+    defer allocator.free(bytes);
+
+    const got = try decodeMemory(allocator, bytes);
+    defer {
+        for (got.nodes) |n| allocator.free(n.lookups);
+        allocator.free(got.nodes);
+        allocator.free(got.connections);
+    }
+
+    // Nodes
+    try std.testing.expectEqual(@as(usize, 2), got.nodes.len);
+    try std.testing.expectEqual(@as(u64, 7), got.nodes[0].id);
+    try std.testing.expectEqualStrings("A vivid recollection", got.nodes[0].content.?);
+    try std.testing.expectEqual(@as(i64, 1_700_000_000), got.nodes[0].created.?);
+    try std.testing.expectEqual(@as(i64, 1_700_000_500), got.nodes[0].last_recalled.?);
+    try std.testing.expectEqual(@as(usize, 2), got.nodes[0].lookups.len);
+    try std.testing.expectEqualStrings("emotional", got.nodes[0].lookups[0].name);
+    try std.testing.expectEqual(@as(f64, 0.75), got.nodes[0].lookups[0].value);
+    try std.testing.expectEqualStrings("recency", got.nodes[0].lookups[1].name);
+    try std.testing.expectEqual(@as(f64, 0.5), got.nodes[0].lookups[1].value);
+
+    try std.testing.expectEqual(@as(u64, 9), got.nodes[1].id);
+    try std.testing.expect(got.nodes[1].content == null);
+    try std.testing.expectEqual(@as(usize, 0), got.nodes[1].lookups.len);
+    try std.testing.expect(got.nodes[1].created == null);
+    try std.testing.expect(got.nodes[1].last_recalled == null);
+
+    // Connections
+    try std.testing.expectEqual(@as(usize, 1), got.connections.len);
+    try std.testing.expectEqual(@as(u64, 7), got.connections[0].from);
+    try std.testing.expectEqual(@as(u64, 9), got.connections[0].to);
+    try std.testing.expectEqual(v2.MemoryConnectionKind.emotional, got.connections[0].kind);
+    try std.testing.expectEqual(@as(f64, 0.42), got.connections[0].strength);
+    try std.testing.expectEqualStrings("echoes", got.connections[0].label.?);
+
+    // Top-level
+    try std.testing.expectEqual(@as(i64, 1_700_000_999), got.last_updated.?);
 }
 
 test "encodeKnowledgeGraph emits triples" {
