@@ -13,8 +13,7 @@ A pushed `vX.Y.Z` tag produces a GitHub Release with:
 |-------|--------|-------|
 | `dreamball-vX.Y.Z-x86_64-linux-musl.tar.gz`  | `zig build cli` | static (musl) |
 | `dreamball-vX.Y.Z-aarch64-linux-musl.tar.gz` | `zig build cli` | static (musl) |
-| `dreamball-vX.Y.Z-aarch64-macos.tar.gz`      | `zig build cli` | native mac runner |
-| `dreamball-vX.Y.Z-x86_64-macos.tar.gz`       | `zig build cli` | native mac runner |
+| `dreamball-vX.Y.Z-aarch64-macos.tar.gz`      | `zig build cli` | native (Apple Silicon) |
 | `dreamball-vX.Y.Z.wasm` (+ `.sha256`, `.d.ts`, `.PROVENANCE.md`) | vendored `release/dreamball-wasm/` | size-gated, lockstep-verified |
 | `SHA256SUMS` | aggregated | covers every asset above |
 
