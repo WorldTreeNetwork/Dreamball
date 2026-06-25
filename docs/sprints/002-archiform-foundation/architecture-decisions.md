@@ -43,11 +43,17 @@ This file records all architecture decisions for sprint-002 (Archiform Foundatio
 
 ## D-018: JSON Schema as canonical source for field shapes
 
+> **⛔ SUPERSEDED 2026-06-25** by
+> [zig-canonical-supersedes-json-schema](../../decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
+> Zig (`protocol.zig` + `protocol_v2.zig`) is canonical for field shapes;
+> JSON Schema is a generated artifact. The federation premise was unbuilt
+> and the inversion never shipped. Disregard the decision below.
+
 **Date**: 2026-04-25 (promoted 2026-04-28)
 **Sprint**: sprint-002
 **Significance**: HIGH
 **Decided by**: user (standing decision)
-**Status**: accepted
+**Status**: SUPERSEDED 2026-06-25 (see banner above)
 **Source**: [docs/decisions/2026-04-25-json-schema-canonical.md](../../decisions/2026-04-25-json-schema-canonical.md)
 
 **Context**: Today `tools/schema-gen/main.zig` is canonical for all field shapes and emits TypeScript. With archiforms federated via aspects.sh (D-017), the canonical source must be language-neutral. Drives all of Cluster A (FR1, FR2, FR3, FR14).
@@ -277,6 +283,13 @@ For sprint-002, the contracts subject to this discipline:
 
 ## D-029: aspects.sh contract — vendor-first with deterministic local pin file format
 
+> **⚠️ PARTIALLY SUPERSEDED 2026-06-25** by
+> [zig-canonical-supersedes-json-schema](../../decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
+> The vendor-first + pin-file mechanism stands, but its *direction* flips:
+> `schemas/*.json` are now **generated outputs** (and golden fixtures),
+> not authored inputs. Pins gate that the generated schema matches the
+> committed fixture, not that an external source matches a vendored copy.
+
 **Date**: 2026-04-28
 **Sprint**: sprint-002
 **Significance**: HIGH
@@ -318,6 +331,13 @@ For sprint-002, the contracts subject to this discipline:
 ---
 
 ## D-030: `tools/schema-gen/main.zig` disposition — repurpose as JSON-Schema consumer entry point with shadow-generator phase
+
+> **⛔ SUPERSEDED 2026-06-25** by
+> [zig-canonical-supersedes-json-schema](../../decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
+> The codegen direction reverts: `main.zig` consumes the **Zig types**
+> (comptime `@typeInfo` reflection) and emits every other representation
+> including JSON Schema — it does not consume JSON Schema. Disregard the
+> "JSON-Schema consumer" framing below.
 
 **Date**: 2026-04-28
 **Sprint**: sprint-002

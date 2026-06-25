@@ -27,44 +27,52 @@
 
 ## The cross-runtime invariant
 
-**The wire format factors into two parts, each with one canonical
-location:**
+**Zig is the single canonical source for the whole wire format**, which
+factors into two parts, both Zig-canonical:
 
 1. **CBOR encoding algorithm — `src/*.zig`.** Canonical map ordering,
    integer width rules, bytes-vs-text discipline, golden test vectors.
    Every runtime must reproduce these bytes for the same logical value.
-2. **Field shapes — JSON Schema, vendored from aspects.sh.** Root types
-   (`schemas/root-X.Y.Z.json`) and archiform extensions
-   (`schemas/<archiform>-X.Y.Z.json`) are the canonical source. Zig
-   types, TS types, Valibot schemas, CBOR codecs, and
-   `src/memory-palace/schema.cypher` are all *derived* from them.
+2. **Field shapes — the Zig types** (`src/protocol.zig` +
+   `src/protocol_v2.zig`). These are the most expressive representation
+   (defaults, methods, exact types), so everything else is *generated
+   downward* from them: TS types, Valibot schemas, the CBOR codec
+   (`cbor.ts`), **JSON Schema** (`schemas/*.json` — now a generated
+   *artifact*, published to aspects.sh if/when federation exists), and
+   the Cypher DDL.
+
+This reverts D-018 (JSON-Schema-canonical). See
+[`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)
+for the why (the most-expressive-medium argument; aspects.sh unbuilt;
+the inversion never shipped).
 
 Concretely:
 
-- No TypeScript code encodes or decodes CBOR by hand — it goes through
-  the WASM module.
-- No hand-maintained schemas exist anywhere. `types.ts`, `schemas.ts`
-  (Valibot), `cbor.ts`, and `schema.cypher` are all generated.
-  Regenerate via `bun run codegen`.
+- No TypeScript code encodes or decodes CBOR *by hand* — it goes
+  through the WASM module or the **generated** `cbor.ts` (generated, so
+  it can't drift from the canonical Zig).
+- **To add or change a wire type, edit the Zig structs** in
+  `src/protocol*.zig`, then propagate to the generated outputs. JSON
+  Schema is an output, never hand-authored; do **not** add `x-cbor` /
+  `x-zig` extension keys (that was the retired JSON-Schema-canonical
+  authoring path).
 - The browser and server load the same `dreamball.wasm` binary.
   Host-supplied randomness via one `env.getRandomBytes` import is the
   entire runtime seam; see [`docs/VISION.md §14`](docs/VISION.md) and
   ADR-1 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-- Archiform-specific node and edge types (`Inscription`, `Room`,
-  `Aqueduct`) come from the vendored archiform schema, not hand-written
-  Zig.
 
-If you find yourself writing a second implementation of something the
-codegen pipeline already produces — stop. Regenerate from the JSON
-Schema source instead.
+If you find yourself writing a second hand-maintained implementation of
+a wire type — stop. The Zig types are canonical; the rest is generated
+from them.
 
-**Migration status (2026-04-25):** the codegen-direction inversion is
-sprint-002 work; see
-[`docs/decisions/2026-04-25-json-schema-canonical.md`](docs/decisions/2026-04-25-json-schema-canonical.md)
-and siblings. Until those stories land, `tools/schema-gen/main.zig`
-remains the de-facto source for root and Memory Palace types. The
-*direction* the codebase is moving is JSON-Schema-canonical — read the
-decision notes before adding new fields.
+**Transitional status (2026-06-25):** the real Zig→targets generator
+(comptime `@typeInfo` reflection; beads `Dreamball-m97.2`) is not built
+yet. Today the generators still emit hardcoded string bodies and the
+vendored `schemas/*.json` are kept consistent by a pin + byte-equivalence
+gate. Until `m97.2` lands: edit the Zig types as canonical, then update
+the generated TS/Valibot/`cbor.ts` **and** the JSON-Schema fixtures to
+match by hand. The *direction* is Zig-canonical with generation flowing
+outward — read the ADR before adding fields.
 
 ## Operating principle — document the why, not only the what
 
