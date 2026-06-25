@@ -498,13 +498,17 @@ pub fn stripSignatures(allocator: std.mem.Allocator, bytes: []const u8) StripErr
 // argument. Callers are expected to pass an arena allocator and free
 // everything in one `arena.deinit()` after consuming the result.
 //
-// Scope note: v2 MVP fully decodes the top-level DreamBall, Look, Feel,
-// Act, Asset, and Skill envelopes. Memory / knowledge-graph /
-// emotional-register / interaction-set / guild-policy assertions are
-// captured as raw CBOR-envelope byte slices inside the parent's
-// `raw_assertions` field (not yet surfaced on the typed struct) —
-// consumers who need them today can walk the bytes themselves. Full
-// decode for those lands next.
+// Scope note: this decoder fully decodes the top-level DreamBall, Look,
+// Feel, Act, Asset, and Skill envelopes (plus archiform-fp and the
+// scalar/list attributes). Memory / knowledge-graph / emotional-register
+// / interaction-set / guild-policy assertions are NOT decoded — they hit
+// the `else` branch of the assertion walk below and are skipped, i.e.
+// dropped from the typed struct (there is no `raw_assertions` passthrough
+// field; an earlier comment claiming one was stale). Finishing them is
+// tracked as Dreamball-m97 and is done by extending
+// `schemas/root-2.0.0.json` and regenerating via `bun run codegen`
+// (the JSON-Schema-canonical pipeline, D-018/D-030) — NOT by hand-adding
+// `decodeXFromEnvelope` functions here.
 // ============================================================================
 
 /// Walk a subject's CBOR map, decoding known keys into a DreamBall's

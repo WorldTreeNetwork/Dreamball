@@ -8,12 +8,20 @@
  * uncompressed (ReleaseSmall) / ~50 KB gzipped, including the vendored
  * ML-DSA-87 verify path (see `docs/known-gaps.md §1`).
  *
- * Caveat (v2 MVP scope): the Zig parser currently decodes the core
- * + signatures. Nested look / feel / act / memory / knowledge-graph /
- * emotional-register / interaction-set / guild-policy / etc. round-trip
- * as `__cborTag` wrappers inside the JSON until the full envelope
- * decoder lands in Zig. Once that lands, rebuild the WASM and the
- * browser side upgrades for free — the `.wasm` bytes are the interface.
+ * Decode scope (current): the Zig parser typed-decodes the core,
+ * signatures, `look`, `feel`, `act` (incl. nested `asset` / `skill`),
+ * and `archiform-fp`, plus the scalar/list attributes (name, dates,
+ * note, contains, derived-from, guilds). The remaining nested slots —
+ * `memory`, `knowledge-graph`, `emotional-register`, `interaction-set`,
+ * `guild-policy` — are NOT yet decoded: the decode walk skips unknown
+ * assertions, so today they are dropped from the JSON rather than
+ * surfaced (there is no raw-passthrough field). Finishing them is
+ * tracked as Dreamball-m97 and is done by extending
+ * `schemas/root-2.0.0.json` + regenerating (the JSON-Schema-canonical
+ * pipeline, D-018/D-030), not by hand-writing decoders. Once a slot
+ * lands and the WASM is rebuilt, the browser upgrades for free — the
+ * `.wasm` bytes are the interface, and the generated `cbor.ts` decode
+ * path regenerates from the same schema in lockstep.
  */
 
 import type { DreamBall } from '../generated/types.js';
