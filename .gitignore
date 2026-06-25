@@ -57,7 +57,6 @@ storybook-static
 .omc/
 palace.db
 
-# Beads / Dolt files (added by bd init)
-.dolt/
+# Beads files (added by bd init)
 *.db
 .beads-credential-key
