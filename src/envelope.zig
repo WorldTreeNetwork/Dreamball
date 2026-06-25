@@ -201,6 +201,300 @@ pub fn encodeAct(allocator: Allocator, a: protocol.Act) ![]u8 {
     return emitEnvelope(allocator, subj, asserts);
 }
 
+// ─── ball.memory slot codec ─────────────────────────────────────────────────
+//
+// The memory slot is a first-class DreamBall slot (beside look/feel/act).
+// Relocated here from envelope_v2.zig so `encodeDreamBall`/`decodeDreamBall`
+// can attach/parse it directly without crossing the v2 import boundary.
+// See docs/PROTOCOL.md §12.3.
+
+pub fn encodeMemory(allocator: Allocator, m: protocol.Memory) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+
+    const attribute_count: u64 = m.nodes.len + m.connections.len + @as(u64, if (m.last_updated != null) 1 else 0);
+    try zbor.builder.writeArray(w, 1 + attribute_count);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.memory");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    for (m.nodes) |n| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "node");
+        try writeMemoryNode(w, n);
+    }
+    for (m.connections) |c| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "connection");
+        try writeMemoryConnection(w, c);
+    }
+    if (m.last_updated) |t| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "last-updated");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
+    }
+    return ai.toOwnedSlice();
+}
+
+fn writeMemoryNode(w: *std.Io.Writer, n: protocol.MemoryNode) !void {
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    var attribute_count: u64 = 0;
+    if (n.content != null) attribute_count += 1;
+    attribute_count += n.lookups.len;
+    if (n.created != null) attribute_count += 1;
+    if (n.last_recalled != null) attribute_count += 1;
+    try zbor.builder.writeArray(w, 1 + attribute_count);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 3);
+    try zbor.builder.writeTextString(w, "id");
+    try zbor.builder.writeInt(w, @intCast(n.id));
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.memory-node");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    if (n.content) |c| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "content");
+        try zbor.builder.writeTextString(w, c);
+    }
+    for (n.lookups) |lk| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "lookup");
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, lk.name);
+        // Float: use 64-bit for simplicity. The protocol spec allows
+        // half/single floats; we use f64 as the widest canonical form.
+        try zbor.builder.writeFloat(w, lk.value);
+    }
+    if (n.created) |t| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "created");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
+    }
+    if (n.last_recalled) |t| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "last-recalled");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
+    }
+}
+
+fn writeMemoryConnection(w: *std.Io.Writer, e: protocol.MemoryConnection) !void {
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    var attribute_count: u64 = 1; // strength
+    if (e.label != null) attribute_count += 1;
+    try zbor.builder.writeArray(w, 1 + attribute_count);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    // dCBOR canonical order: len ascending, then lex for equal lengths.
+    // Keys: "to"(2), "from"(4), "kind"(4), "type"(4), "format-version"(14).
+    // At length 4, lex order is "from" < "kind" < "type".
+    try zbor.builder.writeMap(w, 5);
+    try zbor.builder.writeTextString(w, "to");
+    try zbor.builder.writeInt(w, @intCast(e.to));
+    try zbor.builder.writeTextString(w, "from");
+    try zbor.builder.writeInt(w, @intCast(e.from));
+    try zbor.builder.writeTextString(w, "kind");
+    try zbor.builder.writeTextString(w, e.kind.toWireString());
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.memory-connection");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    try zbor.builder.writeArray(w, 2);
+    try zbor.builder.writeTextString(w, "strength");
+    try zbor.builder.writeFloat(w, e.strength);
+    if (e.label) |lbl| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "label");
+        try zbor.builder.writeTextString(w, lbl);
+    }
+}
+
+/// Decode a `ball.memory` envelope produced by `encodeMemory`.
+///
+/// Mirrors the encoder exactly: an envelope whose attribute list carries
+/// repeatable ("node", <MemoryNode envelope>) / ("connection",
+/// <MemoryConnection envelope>) pairs plus an optional ("last-updated", …).
+/// The node/connection attribute *values* are inline nested envelopes, so
+/// they are consumed from the shared cursor via `readMemoryNode` /
+/// `readMemoryConnection`. Nodes and connections accumulate into
+/// `ArrayListUnmanaged`s (the file's Zig-0.16 idiom) and are returned as
+/// owned slices. Memory carries floats (lookup value, connection strength)
+/// so the canonicality gate is the float-allowing variant.
+pub fn decodeMemory(allocator: Allocator, bytes: []const u8) !protocol.Memory {
+    try dcbor.assertCanonicalAllowFloats(bytes);
+    var cursor: usize = 0;
+    const attr_count = try dcbor.readEnvelopeHeader(bytes, &cursor);
+    try dcbor.skipCoreMap(bytes, &cursor);
+
+    var nodes_list = std.ArrayListUnmanaged(protocol.MemoryNode).empty;
+    defer nodes_list.deinit(allocator);
+    var conns_list = std.ArrayListUnmanaged(protocol.MemoryConnection).empty;
+    defer conns_list.deinit(allocator);
+    var last_updated: ?i64 = null;
+
+    var aii: u64 = 0;
+    while (aii < attr_count) : (aii += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "node")) {
+            const n = try readMemoryNode(allocator, bytes, &cursor);
+            try nodes_list.append(allocator, n);
+        } else if (std.mem.eql(u8, key, "connection")) {
+            const c = try readMemoryConnection(bytes, &cursor);
+            try conns_list.append(allocator, c);
+        } else if (std.mem.eql(u8, key, "last-updated")) {
+            dcbor.expectTag(bytes, &cursor, dcbor.Tag.epoch_time) catch |e| return dcbor.mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            last_updated = @intCast(ts);
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .nodes = try nodes_list.toOwnedSlice(allocator),
+        .connections = try conns_list.toOwnedSlice(allocator),
+        .last_updated = last_updated,
+    };
+}
+
+/// Consume one inline `ball.memory-node` envelope from the shared cursor.
+/// The `lookups` slice is owned by `allocator`.
+fn readMemoryNode(allocator: Allocator, bytes: []const u8, cursor: *usize) !protocol.MemoryNode {
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.envelope) catch |e| return dcbor.mapDecodeError(e);
+    const array_count = dcbor.readArrayHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+    if (array_count == 0) return dcbor.DecodeError.MissingField;
+    const attr_count = array_count - 1;
+
+    // Core map: "id"(2), "type"(4), "format-version"(14)
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.leaf) catch |e| return dcbor.mapDecodeError(e);
+    const core_n = dcbor.readMapHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+    var id_opt: ?u64 = null;
+    var ci: u64 = 0;
+    while (ci < core_n) : (ci += 1) {
+        const k = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, k, "id")) {
+            id_opt = dcbor.readUint(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    var content: ?[]const u8 = null;
+    var created: ?i64 = null;
+    var last_recalled: ?i64 = null;
+    var lookups_list = std.ArrayListUnmanaged(protocol.MemoryNode.LookupEntry).empty;
+    defer lookups_list.deinit(allocator);
+
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "content")) {
+            content = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else if (std.mem.eql(u8, key, "lookup")) {
+            const inner_n = dcbor.readArrayHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            if (inner_n != 2) return dcbor.DecodeError.InvalidValue;
+            const name = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            const value = dcbor.readAnyFloat(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            try lookups_list.append(allocator, .{ .name = name, .value = value });
+        } else if (std.mem.eql(u8, key, "created")) {
+            dcbor.expectTag(bytes, cursor, dcbor.Tag.epoch_time) catch |e| return dcbor.mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            created = @intCast(ts);
+        } else if (std.mem.eql(u8, key, "last-recalled")) {
+            dcbor.expectTag(bytes, cursor, dcbor.Tag.epoch_time) catch |e| return dcbor.mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            last_recalled = @intCast(ts);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .id = id_opt orelse return dcbor.DecodeError.MissingField,
+        .content = content,
+        .lookups = try lookups_list.toOwnedSlice(allocator),
+        .created = created,
+        .last_recalled = last_recalled,
+    };
+}
+
+/// Consume one inline `ball.memory-connection` envelope from the shared cursor.
+fn readMemoryConnection(bytes: []const u8, cursor: *usize) !protocol.MemoryConnection {
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.envelope) catch |e| return dcbor.mapDecodeError(e);
+    const array_count = dcbor.readArrayHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+    if (array_count == 0) return dcbor.DecodeError.MissingField;
+    const attr_count = array_count - 1;
+
+    // Core map: "to"(2), "from"(4), "kind"(4), "type"(4), "format-version"(14)
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.leaf) catch |e| return dcbor.mapDecodeError(e);
+    const core_n = dcbor.readMapHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+    var to_opt: ?u64 = null;
+    var from_opt: ?u64 = null;
+    var kind_opt: ?protocol.MemoryConnectionKind = null;
+    var ci: u64 = 0;
+    while (ci < core_n) : (ci += 1) {
+        const k = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, k, "to")) {
+            to_opt = dcbor.readUint(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else if (std.mem.eql(u8, k, "from")) {
+            from_opt = dcbor.readUint(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else if (std.mem.eql(u8, k, "kind")) {
+            const s = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            if (std.mem.eql(u8, s, "semantic")) {
+                kind_opt = .semantic;
+            } else if (std.mem.eql(u8, s, "emotional")) {
+                kind_opt = .emotional;
+            } else if (std.mem.eql(u8, s, "temporal")) {
+                kind_opt = .temporal;
+            } else if (std.mem.eql(u8, s, "other")) {
+                kind_opt = .other;
+            } else return dcbor.DecodeError.InvalidValue;
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    var strength: ?f64 = null;
+    var label: ?[]const u8 = null;
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "strength")) {
+            strength = dcbor.readAnyFloat(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else if (std.mem.eql(u8, key, "label")) {
+            label = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .from = from_opt orelse return dcbor.DecodeError.MissingField,
+        .to = to_opt orelse return dcbor.DecodeError.MissingField,
+        .kind = kind_opt orelse return dcbor.DecodeError.MissingField,
+        .strength = strength orelse return dcbor.DecodeError.MissingField,
+        .label = label,
+    };
+}
+
 pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     var subj = PairList.init(allocator);
     defer subj.deinit();
@@ -239,6 +533,10 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     if (db.act) |a| {
         const bytes = try encodeAct(allocator, a);
         try asserts.addRawOwned("act", bytes);
+    }
+    if (db.memory) |m| {
+        const bytes = try encodeMemory(allocator, m);
+        try asserts.addRawOwned("memory", bytes);
     }
 
     if (db.field_kind) |fk| try asserts.addText("field-kind", fk);
@@ -287,7 +585,10 @@ const readUint = dcbor.readUint;
 /// Decode subject-only round-trip companion for `encodeDreamBall`. Reads the
 /// subject map whether or not assertions follow.
 pub fn decodeDreamBallSubject(bytes: []const u8) !protocol.DreamBall {
-    try dcbor.verifyCanonical(bytes);
+    // Allow floats: a DreamBall may carry a `memory` slot, whose lookup
+    // values and connection strengths are floats under the §12.2 exception.
+    // The whole-envelope gate runs over those bytes even in subject-only mode.
+    try dcbor.verifyCanonicalAllowFloats(bytes);
 
     var cursor: usize = 0;
     try expectTag(bytes, &cursor, dcbor.Tag.envelope);
@@ -842,7 +1143,11 @@ fn decodeActFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.Act 
 /// Full DreamBall decoder — subject + every assertion we know how to
 /// interpret. Unknown assertions are rejected (fail-loud).
 pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamBall {
-    try dcbor.verifyCanonical(env_bytes);
+    // Allow floats: the `memory` slot carries float lookup values and
+    // connection strengths under the §12.2 exception, embedded inline in the
+    // DreamBall envelope. look/feel/act carry no floats, so this only widens
+    // acceptance for the float-bearing memory assertion.
+    try dcbor.verifyCanonicalAllowFloats(env_bytes);
 
     var cursor: usize = 0;
     const assertion_count = try enterEnvelope(env_bytes, &cursor);
@@ -920,6 +1225,11 @@ pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamB
             const sub = env_bytes[cursor .. cursor + len];
             cursor += len;
             out.act = try decodeActFromEnvelope(arena, sub);
+        } else if (std.mem.eql(u8, pred, "memory")) {
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
+            out.memory = try decodeMemory(arena, sub);
         } else if (std.mem.eql(u8, pred, "archiform-fp")) {
             // FR5 / Story 2.3 — round-trip the genesis envelope's
             // archiform_fp attribute. 32-byte blake3 of the archiform
@@ -1003,6 +1313,87 @@ test "encodeLook emits envelope with nested asset" {
     // Tag 200 envelope, then array header (subject + assertions).
     try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
     try std.testing.expectEqual(@as(u8, 0xC8), bytes[1]);
+}
+
+test "encodeMemory produces well-formed envelope" {
+    const allocator = std.testing.allocator;
+    const nodes = [_]protocol.MemoryNode{
+        .{ .id = 1, .content = "First memory" },
+        .{ .id = 2, .content = "Second memory" },
+    };
+    const connections = [_]protocol.MemoryConnection{
+        .{ .from = 1, .to = 2, .kind = .temporal, .strength = 0.8 },
+    };
+    const m: protocol.Memory = .{ .nodes = &nodes, .connections = &connections };
+    const bytes = try encodeMemory(allocator, m);
+    defer allocator.free(bytes);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "First memory") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "temporal") != null);
+}
+
+test "encodeMemory -> decodeMemory round-trip" {
+    const allocator = std.testing.allocator;
+    const lookups = [_]protocol.MemoryNode.LookupEntry{
+        .{ .name = "emotional", .value = 0.75 },
+        .{ .name = "recency", .value = 0.5 },
+    };
+    const nodes = [_]protocol.MemoryNode{
+        .{
+            .id = 7,
+            .content = "A vivid recollection",
+            .lookups = &lookups,
+            .created = 1_700_000_000,
+            .last_recalled = 1_700_000_500,
+        },
+        .{ .id = 9 }, // minimal node
+    };
+    const connections = [_]protocol.MemoryConnection{
+        .{ .from = 7, .to = 9, .kind = .emotional, .strength = 0.42, .label = "echoes" },
+    };
+    const m: protocol.Memory = .{
+        .nodes = &nodes,
+        .connections = &connections,
+        .last_updated = 1_700_000_999,
+    };
+
+    const bytes = try encodeMemory(allocator, m);
+    defer allocator.free(bytes);
+
+    const got = try decodeMemory(allocator, bytes);
+    defer {
+        for (got.nodes) |n| allocator.free(n.lookups);
+        allocator.free(got.nodes);
+        allocator.free(got.connections);
+    }
+
+    // Nodes
+    try std.testing.expectEqual(@as(usize, 2), got.nodes.len);
+    try std.testing.expectEqual(@as(u64, 7), got.nodes[0].id);
+    try std.testing.expectEqualStrings("A vivid recollection", got.nodes[0].content.?);
+    try std.testing.expectEqual(@as(i64, 1_700_000_000), got.nodes[0].created.?);
+    try std.testing.expectEqual(@as(i64, 1_700_000_500), got.nodes[0].last_recalled.?);
+    try std.testing.expectEqual(@as(usize, 2), got.nodes[0].lookups.len);
+    try std.testing.expectEqualStrings("emotional", got.nodes[0].lookups[0].name);
+    try std.testing.expectEqual(@as(f64, 0.75), got.nodes[0].lookups[0].value);
+    try std.testing.expectEqualStrings("recency", got.nodes[0].lookups[1].name);
+    try std.testing.expectEqual(@as(f64, 0.5), got.nodes[0].lookups[1].value);
+
+    try std.testing.expectEqual(@as(u64, 9), got.nodes[1].id);
+    try std.testing.expect(got.nodes[1].content == null);
+    try std.testing.expectEqual(@as(usize, 0), got.nodes[1].lookups.len);
+    try std.testing.expect(got.nodes[1].created == null);
+    try std.testing.expect(got.nodes[1].last_recalled == null);
+
+    // Connections
+    try std.testing.expectEqual(@as(usize, 1), got.connections.len);
+    try std.testing.expectEqual(@as(u64, 7), got.connections[0].from);
+    try std.testing.expectEqual(@as(u64, 9), got.connections[0].to);
+    try std.testing.expectEqual(protocol.MemoryConnectionKind.emotional, got.connections[0].kind);
+    try std.testing.expectEqual(@as(f64, 0.42), got.connections[0].strength);
+    try std.testing.expectEqualStrings("echoes", got.connections[0].label.?);
+
+    // Top-level
+    try std.testing.expectEqual(@as(i64, 1_700_000_999), got.last_updated.?);
 }
 
 test "stripSignatures recovers the canonical unsigned bytes" {
@@ -1127,6 +1518,62 @@ test "decodeDreamBall full round-trip — populated envelope" {
     try std.testing.expectEqual(@as(usize, 1), decoded.guilds.len);
     try std.testing.expectEqual(@as(usize, 1), decoded.signatures.len);
     try std.testing.expectEqualStrings("ed25519", decoded.signatures[0].alg);
+}
+
+test "decodeDreamBall round-trips the memory slot" {
+    // Regression for the memory-slot wiring: `DreamBall.memory` must
+    // encode/decode inline through `encodeDreamBall`/`decodeDreamBall`
+    // exactly like look/feel/act.
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const lookups = [_]protocol.MemoryNode.LookupEntry{
+        .{ .name = "emotional", .value = 0.9 },
+    };
+    const nodes = [_]protocol.MemoryNode{
+        .{ .id = 1, .content = "the first dream", .lookups = &lookups, .created = 1_700_000_000 },
+        .{ .id = 2, .content = "the second dream" },
+    };
+    const connections = [_]protocol.MemoryConnection{
+        .{ .from = 1, .to = 2, .kind = .temporal, .strength = 0.6, .label = "then" },
+    };
+    const memory = protocol.Memory{
+        .nodes = &nodes,
+        .connections = &connections,
+        .last_updated = 1_700_000_999,
+    };
+
+    const db = protocol.DreamBall{
+        .stage = .dreamball,
+        .dreamball_type = .agent,
+        .identity = [_]u8{3} ** 32,
+        .genesis_hash = [_]u8{4} ** 32,
+        .revision = 1,
+        .memory = memory,
+    };
+
+    const bytes = try encodeDreamBall(gpa, db);
+    defer gpa.free(bytes);
+
+    const decoded = try decodeDreamBall(arena, bytes);
+    try std.testing.expect(decoded.memory != null);
+    const m = decoded.memory.?;
+    try std.testing.expectEqual(@as(usize, 2), m.nodes.len);
+    try std.testing.expectEqual(@as(u64, 1), m.nodes[0].id);
+    try std.testing.expectEqualStrings("the first dream", m.nodes[0].content.?);
+    try std.testing.expectEqual(@as(usize, 1), m.nodes[0].lookups.len);
+    try std.testing.expectEqualStrings("emotional", m.nodes[0].lookups[0].name);
+    try std.testing.expectEqual(@as(f64, 0.9), m.nodes[0].lookups[0].value);
+    try std.testing.expectEqual(@as(i64, 1_700_000_000), m.nodes[0].created.?);
+    try std.testing.expectEqual(@as(usize, 1), m.connections.len);
+    try std.testing.expectEqual(@as(u64, 1), m.connections[0].from);
+    try std.testing.expectEqual(@as(u64, 2), m.connections[0].to);
+    try std.testing.expectEqual(protocol.MemoryConnectionKind.temporal, m.connections[0].kind);
+    try std.testing.expectEqual(@as(f64, 0.6), m.connections[0].strength);
+    try std.testing.expectEqualStrings("then", m.connections[0].label.?);
+    try std.testing.expectEqual(@as(i64, 1_700_000_999), m.last_updated.?);
 }
 
 test "second-pass round-trip preserves attributes (grow path)" {

@@ -121,6 +121,12 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
         try writeAct(allocator, &buf, a);
     }
 
+    if (db.memory) |m| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "memory");
+        try writeMemory(&buf, m);
+    }
+
     if (db.guilds.len > 0) {
         try buf.writeByte(',');
         try writeKey(&buf, "guild");
@@ -417,6 +423,93 @@ fn writeAct(allocator: Allocator, buf: *Buf, a: protocol.Act) !void {
         try buf.writeByte(',');
         try writeKey(buf, "note");
         try writeEscapedString(buf, n);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders the `memory` slot matching the generated TS `Memory` shape
+// (src/lib/generated/types.ts): { nodes, connections, 'last-updated'? }.
+// Timestamps render via writeRfc3339, the same form look/feel/act dates use.
+fn writeMemory(buf: *Buf, m: protocol.Memory) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "nodes");
+    try buf.writeByte('[');
+    for (m.nodes, 0..) |n, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeMemoryNode(buf, n);
+    }
+    try buf.writeByte(']');
+
+    try buf.writeByte(',');
+    try writeKey(buf, "connections");
+    try buf.writeByte('[');
+    for (m.connections, 0..) |c, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeMemoryConnection(buf, c);
+    }
+    try buf.writeByte(']');
+
+    if (m.last_updated) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "last-updated");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeMemoryNode(buf: *Buf, n: protocol.MemoryNode) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "id");
+    try buf.print("{d}", .{n.id});
+    if (n.content) |c| {
+        try buf.writeByte(',');
+        try writeKey(buf, "content");
+        try writeEscapedString(buf, c);
+    }
+    if (n.lookups.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(buf, "lookups");
+        try buf.writeByte('{');
+        for (n.lookups, 0..) |lk, i| {
+            if (i > 0) try buf.writeByte(',');
+            try writeEscapedString(buf, lk.name);
+            try buf.writeByte(':');
+            try buf.print("{d}", .{lk.value});
+        }
+        try buf.writeByte('}');
+    }
+    if (n.created) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "created");
+        try writeRfc3339(buf, t);
+    }
+    if (n.last_recalled) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "last-recalled");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeMemoryConnection(buf: *Buf, c: protocol.MemoryConnection) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "from");
+    try buf.print("{d}", .{c.from});
+    try buf.writeByte(',');
+    try writeKey(buf, "to");
+    try buf.print("{d}", .{c.to});
+    try buf.writeByte(',');
+    try writeKey(buf, "kind");
+    try buf.writeByte('"');
+    try buf.writeAll(c.kind.toWireString());
+    try buf.writeByte('"');
+    try buf.writeByte(',');
+    try writeKey(buf, "strength");
+    try buf.print("{d}", .{c.strength});
+    if (c.label) |lbl| {
+        try buf.writeByte(',');
+        try writeKey(buf, "label");
+        try writeEscapedString(buf, lbl);
     }
     try buf.writeByte('}');
 }

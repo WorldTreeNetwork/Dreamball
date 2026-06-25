@@ -599,6 +599,19 @@ A directed graph of memory nodes with labeled connections. Connections are typed
 
 `ball.memory-connection` core: `{ "type": "ball.memory-connection", "format-version": 2, "from": <u64>, "to": <u64>, "kind": "semantic"|"emotional"|"temporal"|... }`. Attributes include `strength` (0.0–1.0) and `label` (text).
 
+> **Implementation note (2026-06-25).** `memory` is a first-class
+> `DreamBall` slot, modelled exactly like `look` / `feel` / `act`: the
+> `Memory` type lives in `src/protocol.zig` beside its siblings, its codec
+> (`encodeMemory` / `decodeMemory`) lives in `src/envelope.zig`, and
+> `DreamBall.memory` is attached/parsed inline in `encodeDreamBall` /
+> `decodeDreamBall`. It used to live under the `protocol_v2` / `envelope_v2`
+> split; per
+> [`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)
+> (Zig is canonical) the artificial v1/v2 split for this slot was removed.
+> The shared envelope decode helpers were hoisted down to `src/dcbor.zig`
+> to break the `envelope_v2 → envelope` import cycle. **The wire format above
+> is unchanged** — this was a module-layout refactor only.
+
 ### 12.4 `ball.knowledge-graph`
 
 Triple-shaped ambient knowledge. Each triple is `[from, label, to]` — `from` and `label` are short text strings; `to` is either a text value or a fingerprint reference. (This replaces the RDF "subject, predicate, object" naming; the data model is the same, the words match our vocabulary.)

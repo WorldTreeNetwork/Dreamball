@@ -121,15 +121,13 @@ test "golden bytes: all-zeros seed node (core only)" {
 
 test "golden bytes: ball.memory-connection canonical ordering" {
     const allocator = std.testing.allocator;
-    const v2 = @import("protocol_v2.zig");
-    const envelope_v2 = @import("envelope_v2.zig");
-    const m: v2.Memory = .{
+    const m: protocol.Memory = .{
         .nodes = &.{},
-        .connections = &[_]v2.MemoryConnection{
+        .connections = &[_]protocol.MemoryConnection{
             .{ .from = 1, .to = 2, .kind = .temporal, .strength = 0.5 },
         },
     };
-    const bytes = try envelope_v2.encodeMemory(allocator, m);
+    const bytes = try envelope.encodeMemory(allocator, m);
     defer allocator.free(bytes);
     const hex = blake3Hex(bytes);
     std.testing.expectEqualSlices(u8, GOLDEN_MEMORY_CONNECTION_BLAKE3, &hex) catch |err| {

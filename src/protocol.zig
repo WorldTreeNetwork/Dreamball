@@ -151,6 +151,60 @@ pub const Act = struct {
     note: ?[]const u8 = null,
 };
 
+// ─── ball.memory slot ────────────────────────────────────────────────────────
+//
+// The `memory` slot is a first-class DreamBall slot, beside look/feel/act.
+// It used to live in protocol_v2.zig under the v1/v2 split; per
+// docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md (Zig is
+// canonical) it was promoted here to its sibling slots. See docs/PROTOCOL.md
+// §12.3. protocol_v2.zig re-exports these for back-compat.
+
+pub const MemoryConnectionKind = enum {
+    semantic,
+    emotional,
+    temporal,
+    other,
+
+    pub fn toWireString(self: MemoryConnectionKind) []const u8 {
+        return switch (self) {
+            .semantic => "semantic",
+            .emotional => "emotional",
+            .temporal => "temporal",
+            .other => "other",
+        };
+    }
+};
+
+pub const MemoryNode = struct {
+    id: u64,
+    /// Inline content (text) OR an asset fingerprint reference — one must be set.
+    content: ?[]const u8 = null,
+    /// Lookups: name → sort-key value. Supports named indices like an
+    /// "emotional" lookup that sorts memory by emotional salience.
+    lookups: []const LookupEntry = &.{},
+    created: ?i64 = null,
+    last_recalled: ?i64 = null,
+
+    pub const LookupEntry = struct {
+        name: []const u8,
+        value: f64,
+    };
+};
+
+pub const MemoryConnection = struct {
+    from: u64,
+    to: u64,
+    kind: MemoryConnectionKind,
+    strength: f64 = 1.0,
+    label: ?[]const u8 = null,
+};
+
+pub const Memory = struct {
+    nodes: []const MemoryNode = &.{},
+    connections: []const MemoryConnection = &.{},
+    last_updated: ?i64 = null,
+};
+
 pub const Signature = struct {
     /// "ed25519" or "ml-dsa-87"
     alg: []const u8,
@@ -182,6 +236,7 @@ pub const DreamBall = struct {
     look: ?Look = null,
     feel: ?Feel = null,
     act: ?Act = null,
+    memory: ?Memory = null,
     /// Fingerprints of Guilds claiming this DreamBall (per-slot policy
     /// resolution walks through these — see docs/PROTOCOL.md §12.7).
     guilds: []const Fingerprint = &.{},

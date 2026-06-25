@@ -516,6 +516,84 @@ pub inline fn openWriter(allocator: Allocator) std.Io.Writer.Allocating {
     return std.Io.Writer.Allocating.init(allocator);
 }
 
+// ─── Envelope decode helpers ────────────────────────────────────────────────
+//
+// Shared by every palace-composition decoder (envelope.zig, envelope_v2.zig).
+// These were originally defined in envelope_v2.zig, but DreamBall-slot decoders
+// in the lower-level envelope.zig need them too. envelope_v2.zig imports
+// envelope.zig (one-directional), so the helpers were hoisted DOWN to dcbor.zig
+// — which both import — to break the would-be import cycle. They are thin
+// wrappers over the cursor-based readers above (`verifyCanonical`, `expectTag`,
+// `readArrayHeader`, `readMapHeader`, `skipItem`, `ReadError`, `Tag`).
+
+pub const DecodeError = error{
+    Truncated,
+    NonCanonicalInteger,
+    UnexpectedMajorType,
+    UnexpectedTag,
+    UnsupportedItem,
+    MissingField,
+    InvalidValue,
+    TooManyItems,
+};
+
+pub fn mapDecodeError(e: ReadError) DecodeError {
+    return switch (e) {
+        error.Truncated => DecodeError.Truncated,
+        error.NonCanonicalInteger => DecodeError.NonCanonicalInteger,
+        error.UnexpectedMajorType => DecodeError.UnexpectedMajorType,
+        error.UnexpectedTag => DecodeError.UnexpectedTag,
+        error.UnsupportedItem => DecodeError.UnsupportedItem,
+    };
+}
+
+/// Canonicality gate for the palace-composition decoders.
+///
+/// Called at the top of every `decode*`, after outer-tag recognition but
+/// before any content parsing.  Rejects inputs that are not in dCBOR canonical
+/// form (smallest integer encoding AND canonical map-key ordering).  Without
+/// this check, byte-distinct encodings would decode to logically-equal structs
+/// but hash to different Blake3 fingerprints — breaking parent-hash chains and
+/// enabling malleability.  See Sprint-1 code review HIGH-1 (2026-04-24).
+///
+/// The palace-composition envelopes that DO carry floats under the §12.2
+/// exception (layout, aqueduct, trust-observation, memory) go through
+/// `assertCanonicalAllowFloats` instead; all others reject every major-7
+/// non-simple value per dCBOR.
+pub fn assertCanonical(bytes: []const u8) DecodeError!void {
+    verifyCanonical(bytes) catch |e| return mapDecodeError(e);
+}
+
+pub fn assertCanonicalAllowFloats(bytes: []const u8) DecodeError!void {
+    verifyCanonicalAllowFloats(bytes) catch |e| return mapDecodeError(e);
+}
+
+/// Advance cursor past the envelope outer tag+array header, returning attribute count.
+pub fn readEnvelopeHeader(bytes: []const u8, cursor: *usize) DecodeError!u64 {
+    expectTag(bytes, cursor, Tag.envelope) catch |e| return mapDecodeError(e);
+    const array_count = readArrayHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+    if (array_count == 0) return DecodeError.MissingField;
+    return array_count - 1; // subtract 1 for the core item
+}
+
+/// Skip past the core tag+map, verifying the type string and format-version fields.
+/// Leaves cursor after the core map (at the first attribute, if any).
+pub fn skipCoreMap(bytes: []const u8, cursor: *usize) DecodeError!void {
+    expectTag(bytes, cursor, Tag.leaf) catch |e| return mapDecodeError(e);
+    const n = readMapHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+    var i: u64 = 0;
+    while (i < n * 2) : (i += 1) {
+        skipItem(bytes, cursor) catch |e| return mapDecodeError(e);
+    }
+}
+
+/// Read the core map, returning pairs as needed by each decoder.
+/// Returns a simple struct with cursors advanced past the core.
+pub fn readCoreFields(bytes: []const u8, cursor: *usize) DecodeError!u64 {
+    expectTag(bytes, cursor, Tag.leaf) catch |e| return mapDecodeError(e);
+    return readMapHeader(bytes, cursor) catch |e| return mapDecodeError(e);
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 test "pairLt: shorter first, then lex" {
