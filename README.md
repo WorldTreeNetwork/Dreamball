@@ -184,6 +184,25 @@ published to GitHub Pages on main-branch merges.
 
 ---
 
+## Releases
+
+Releases are **tag-driven**: push a semver tag (`vX.Y.Z`, matching
+`package.json`'s `version`) and `.github/workflows/release.yml` builds and
+publishes a GitHub Release with cross-platform `dreamball` CLI tarballs
+(linux x86_64/aarch64 musl-static + macOS arm64/x86_64), the versioned
+`dreamball.wasm` bundle, and a `SHA256SUMS` manifest. The Svelte library is
+published to npm in lockstep when an `NPM_TOKEN` secret is set.
+
+```bash
+git tag -a v0.1.1 -m "dreamball 0.1.1"   # tag == package.json version
+git push origin v0.1.1
+```
+
+Full runbook (dry runs, npm setup, the version-sync rule):
+[`docs/ops/releasing.md`](docs/ops/releasing.md).
+
+---
+
 ## License
 
 TBD (matches recrypt's license once selected).

@@ -1,0 +1,256 @@
+name: Release
+
+# Releases are cut by pushing an annotated semver tag:
+#
+#     git tag -a v0.1.0 -m "dreamball 0.1.0"
+#     git push origin v0.1.0
+#
+# The tag is the single source of truth for the version number. The `guard`
+# job refuses to proceed unless the tag (`vX.Y.Z`) matches `package.json`'s
+# `version`, so a release can never ship a binary numbered differently from
+# the npm package. See docs/ops/releasing.md for the full runbook.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual dry run: builds + uploads workflow artifacts but never creates a
+  # GitHub Release and never publishes to npm (guarded on github.ref below).
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag to dry-run against (e.g. v0.1.0)'
+        required: false
+
+permissions:
+  contents: write   # create the GitHub Release + upload assets
+  id-token: write   # npm provenance / OIDC
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 0. Version guard — tag must equal package.json version (semver vX.Y.Z).
+  # ---------------------------------------------------------------------------
+  guard:
+    name: Verify tag matches package.json version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      is_tag: ${{ steps.v.outputs.is_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref='${{ github.ref }}'
+          if [[ "$ref" == refs/tags/* ]]; then
+            tag="${ref#refs/tags/}"
+            is_tag=true
+          else
+            tag='${{ github.event.inputs.ref }}'
+            is_tag=false
+            [[ -n "$tag" ]] || { echo "::error::workflow_dispatch requires an input 'ref' like v0.1.0"; exit 1; }
+          fi
+          echo "Tag under release: $tag"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$tag' is not a semver tag of the form vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          version="${tag#v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [[ "$version" != "$pkg" ]]; then
+            echo "::error::Tag version ($version) != package.json version ($pkg). Bump package.json (and build.zig.zon) before tagging."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "is_tag=$is_tag"   >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # 1. Cross-platform CLI binaries.
+  #    Linux targets are static (musl); macOS targets build on a mac runner.
+  # ---------------------------------------------------------------------------
+  cli:
+    name: CLI ${{ matrix.target }}
+    needs: guard
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-linux-musl }
+          - { os: ubuntu-latest, target: aarch64-linux-musl }
+          - { os: macos-latest,  target: aarch64-macos }
+          - { os: macos-latest,  target: x86_64-macos }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig 0.16.0
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Build dreamball CLI (ReleaseSafe)
+        shell: bash
+        run: |
+          set -euo pipefail
+          zig build cli -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --prefix zig-out
+          ls -l zig-out/bin
+
+      - name: Package tarball + checksum
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver='${{ needs.guard.outputs.version }}'
+          name="dreamball-v${ver}-${{ matrix.target }}"
+          stage="dist-release/${name}"
+          mkdir -p "$stage"
+          # Binary + the `ball` alias (a relative symlink, preserved in tar).
+          cp -a zig-out/bin/dreamball "$stage/"
+          cp -a zig-out/bin/ball "$stage/" 2>/dev/null || (cd "$stage" && ln -sf dreamball ball)
+          cp README.md "$stage/" 2>/dev/null || true
+          tar -C dist-release -czf "${name}.tar.gz" "${name}"
+          # Portable sha256 (sha256sum on linux, shasum on macOS).
+          if command -v sha256sum >/dev/null; then
+            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          else
+            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          fi
+          echo "asset=${name}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: |
+            ${{ steps.pkg.outputs.asset }}
+            ${{ steps.pkg.outputs.asset }}.sha256
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 2. dreamball.wasm bundle — rebuild, gate on size, prove the committed
+  #    vendored bundle matches, then stage it under the release version.
+  # ---------------------------------------------------------------------------
+  wasm:
+    name: WASM bundle
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig 0.16.0
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Build + size-gate dreamball.wasm
+        run: |
+          set -euo pipefail
+          zig build wasm
+          raw=$(wc -c < src/lib/wasm/dreamball.wasm)
+          gz=$(gzip -9c src/lib/wasm/dreamball.wasm | wc -c)
+          echo "dreamball.wasm: ${raw} bytes raw, ${gz} bytes gzipped"
+          test "$raw" -le 204800
+          test "$gz" -le 65536
+      - name: Verify vendored bundle is in lockstep with committed source
+        run: |
+          set -euo pipefail
+          (cd release/dreamball-wasm && sha256sum -c dreamball.wasm.sha256)
+          git cat-file blob HEAD:src/lib/wasm/dreamball.wasm > /tmp/committed-src.wasm
+          cmp /tmp/committed-src.wasm release/dreamball-wasm/dreamball.wasm
+      - name: Stage versioned wasm bundle
+        id: pkg
+        run: |
+          set -euo pipefail
+          ver='${{ needs.guard.outputs.version }}'
+          out="dist-release"
+          mkdir -p "$out"
+          cp release/dreamball-wasm/dreamball.wasm        "$out/dreamball-v${ver}.wasm"
+          cp release/dreamball-wasm/dreamball.d.ts        "$out/dreamball-v${ver}.d.ts"
+          cp release/dreamball-wasm/PROVENANCE.md         "$out/dreamball-v${ver}.PROVENANCE.md"
+          (cd "$out" && sha256sum "dreamball-v${ver}.wasm" > "dreamball-v${ver}.wasm.sha256")
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-bundle
+          path: dist-release/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 3. GitHub Release — only for real tag pushes. Aggregates every asset,
+  #    builds a combined SHA256SUMS, and auto-generates notes from commits.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [guard, cli, wasm]
+    if: needs.guard.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: incoming
+      - name: Flatten + combined SHA256SUMS
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          find incoming -type f \( -name '*.tar.gz' -o -name '*.wasm' -o -name '*.d.ts' -o -name '*.PROVENANCE.md' \) \
+            -exec cp {} assets/ \;
+          (cd assets && sha256sum * > SHA256SUMS)
+          ls -l assets
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: dreamball ${{ needs.guard.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: assets/*
+
+  # ---------------------------------------------------------------------------
+  # 4. npm publish — only for real tag pushes, and only if NPM_TOKEN is set.
+  # ---------------------------------------------------------------------------
+  npm:
+    name: Publish npm package
+    needs: [guard, release]
+    if: needs.guard.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard — NPM_TOKEN present
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::warning::NPM_TOKEN secret not set — skipping npm publish."
+            echo "skip=true" >> "$GITHUB_ENV"
+          fi
+      - name: Install Zig 0.16.0
+        if: env.skip != 'true'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Install Bun
+        if: env.skip != 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Setup Node (registry auth)
+        if: env.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+      - name: Build library
+        if: env.skip != 'true'
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          zig build wasm
+          bun run build
+      - name: Publish to npm (with provenance)
+        if: env.skip != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public

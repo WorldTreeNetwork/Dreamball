@@ -114,6 +114,16 @@ pub fn build(b: *std.Build) void {
     ball_alias.step.dependOn(&exe_install.step);
     b.getInstallStep().dependOn(&ball_alias.step);
 
+    // `cli` — install ONLY the dreamball CLI (+ the `ball` alias), without
+    // pulling in the wasm-host / fixture / schemagen helper artifacts that
+    // hang off the default install step. Release packaging cross-compiles
+    // this step per target (`zig build cli -Dtarget=… -Doptimize=ReleaseSafe`)
+    // so a release build stays fast and never has to cross-compile a host
+    // helper that isn't shipped. See .github/workflows/release.yml.
+    const cli_step = b.step("cli", "Build just the dreamball CLI for release packaging");
+    cli_step.dependOn(&exe_install.step);
+    cli_step.dependOn(&ball_alias.step);
+
     const run_step = b.step("run", "Run the dreamball CLI");
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
