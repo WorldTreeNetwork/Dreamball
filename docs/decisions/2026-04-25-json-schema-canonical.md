@@ -1,5 +1,14 @@
 # 2026-04-25 — JSON Schema as canonical source; codegen direction inverts
 
+> **⛔ SUPERSEDED 2026-06-25** by
+> [zig-canonical-supersedes-json-schema](./2026-06-25-zig-canonical-supersedes-json-schema.md).
+> The federation premise (aspects.sh) that justified inverting away from
+> Zig turned out to be unbuilt, and the inversion never shipped (no
+> generator emits from the schema). Zig is the most expressive medium and
+> is now canonical for both the encoding algorithm and field shapes; JSON
+> Schema is a *generated artifact*. Read the superseding ADR before acting
+> on anything below.
+
 Sprint: sprint-002 · Significance: HIGH · Sibling decisions:
 [archiform-registry](./2026-04-25-archiform-registry.md) ·
 [action-manifest](./2026-04-25-action-manifest.md) ·
