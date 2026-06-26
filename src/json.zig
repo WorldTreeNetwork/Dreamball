@@ -714,6 +714,22 @@ pub fn readDreamBall(arena: Allocator, json_text: []const u8) ImportError!protoc
     return dreamBallFromValue(arena, parsed);
 }
 
+/// Parse a standalone `ball.look` JSON object (the look slot only) into a
+/// Look. Used by `grow --set-look` to attach a scene to an existing,
+/// already-identified DreamBall and re-sign. Reuses the same `lookFromValue`
+/// decoder as the full-ball import path, so the asset/url shape stays
+/// identical to `import-json`.
+pub fn readLook(arena: Allocator, json_text: []const u8) ImportError!protocol.Look {
+    const parsed = std.json.parseFromSliceLeaky(
+        std.json.Value,
+        arena,
+        json_text,
+        .{},
+    ) catch return ImportError.InvalidJson;
+
+    return lookFromValue(arena, parsed);
+}
+
 fn dreamBallFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.DreamBall {
     const obj = switch (v) {
         .object => |o| o,

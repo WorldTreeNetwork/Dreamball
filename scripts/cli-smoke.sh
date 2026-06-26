@@ -62,6 +62,20 @@ echo "==> grow (bump revision)"
 grep -q "revision=1" grow.out
 "$DREAMBALL" verify seed.ball  # must still verify after re-signing
 
+echo "==> grow --set-look (attach a signed scene slot)"
+cat > scene-look.json <<'LOOK'
+{ "type": "ball.look", "format-version": 1,
+  "asset": [ { "type": "ball.asset", "media-type": "model/gltf-binary",
+    "hash": "b58:4BD39XqhhpB6NwRN71Q24qeoc2Uyyibrhq3o7qW3PCZi",
+    "url": ["https://example.test/scene.glb"] } ],
+  "background": "color:#0b1020" }
+LOOK
+"$DREAMBALL" grow seed.ball --key seed.ball.key --set-look scene-look.json --out scene-look.ball > /dev/null
+"$DREAMBALL" verify scene-look.ball                 # the signed scene ball must verify
+"$DREAMBALL" export-json scene-look.ball --out scene-look.json.out
+grep -q '"ball.look"' scene-look.json.out          # look slot encoded
+grep -q 'model/gltf-binary' scene-look.json.out    # asset survived the round-trip
+
 # --- v2 typed DreamBalls + Demo-D primitives ---
 echo "==> mint typed DreamBalls (all six types)"
 for t in avatar agent tool relic field guild; do
