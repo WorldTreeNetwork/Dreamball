@@ -287,83 +287,12 @@ pub fn encodeTransmission(
 }
 
 // ============================================================================
-// Minimal encoders for knowledge-graph / emotional-register / interaction-set.
-// v2 MVP uses them as nested envelopes inside Agent DreamBalls; the renderer
-// consumes them via the generated TS types. (The memory slot codec was
-// promoted to envelope.zig as a first-class DreamBall slot — see §12.3.)
+// The knowledge-graph / emotional-register / interaction-set / guild-policy
+// slot codecs were promoted to envelope.zig as first-class DreamBall slots
+// (beside encodeMemory/decodeMemory) — see §12.3-12.7 and
+// docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md. The memory
+// slot moved earlier in the same refactor.
 // ============================================================================
-
-pub fn encodeKnowledgeGraph(allocator: Allocator, kg: v2.KnowledgeGraph) ![]u8 {
-    var ai = std.Io.Writer.Allocating.init(allocator);
-    errdefer ai.deinit();
-    const w = &ai.writer;
-    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
-
-    var ac: u64 = kg.triples.len;
-    if (kg.source != null) ac += 1;
-    try zbor.builder.writeArray(w, 1 + ac);
-
-    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
-    try zbor.builder.writeMap(w, 2);
-    try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "ball.knowledge-graph");
-    try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
-
-    for (kg.triples) |t| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "triple");
-        try zbor.builder.writeArray(w, 3);
-        try zbor.builder.writeTextString(w, t.from);
-        try zbor.builder.writeTextString(w, t.label);
-        try zbor.builder.writeTextString(w, t.to);
-    }
-    if (kg.source) |s| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "source");
-        try zbor.builder.writeTextString(w, s);
-    }
-    return ai.toOwnedSlice();
-}
-
-pub fn encodeEmotionalRegister(allocator: Allocator, er: v2.EmotionalRegister) ![]u8 {
-    var ai = std.Io.Writer.Allocating.init(allocator);
-    errdefer ai.deinit();
-    const w = &ai.writer;
-    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
-
-    var ac: u64 = er.axes.len;
-    if (er.observed_at != null) ac += 1;
-    try zbor.builder.writeArray(w, 1 + ac);
-
-    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
-    try zbor.builder.writeMap(w, 2);
-    try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "ball.emotional-register");
-    try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
-
-    for (er.axes) |ax| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "axis");
-        try zbor.builder.writeMap(w, 4);
-        try zbor.builder.writeTextString(w, "max");
-        try zbor.builder.writeFloat(w, ax.max);
-        try zbor.builder.writeTextString(w, "min");
-        try zbor.builder.writeFloat(w, ax.min);
-        try zbor.builder.writeTextString(w, "name");
-        try zbor.builder.writeTextString(w, ax.name);
-        try zbor.builder.writeTextString(w, "value");
-        try zbor.builder.writeFloat(w, ax.value);
-    }
-    if (er.observed_at) |t| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "observed-at");
-        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
-        try zbor.builder.writeInt(w, @intCast(t));
-    }
-    return ai.toOwnedSlice();
-}
 
 // ============================================================================
 // §13.2 ball.layout — encoder + decoder
@@ -2148,30 +2077,8 @@ test "encodeTransmission includes the tool envelope inline" {
     try std.testing.expect(std.mem.indexOf(u8, bytes, &fake_tool_envelope) != null);
 }
 
-test "encodeKnowledgeGraph emits triples" {
-    const allocator = std.testing.allocator;
-    const triples = [_]v2.Triple{
-        .{ .from = "curiosity", .label = "inclines-toward", .to = "new-things" },
-    };
-    const kg: v2.KnowledgeGraph = .{ .triples = &triples, .source = "test" };
-    const bytes = try encodeKnowledgeGraph(allocator, kg);
-    defer allocator.free(bytes);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "curiosity") != null);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "inclines-toward") != null);
-}
-
-test "encodeEmotionalRegister emits axis names" {
-    const allocator = std.testing.allocator;
-    const axes = [_]v2.EmotionalAxis{
-        .{ .name = "curiosity", .value = 0.82 },
-        .{ .name = "warmth", .value = 0.55 },
-    };
-    const er: v2.EmotionalRegister = .{ .axes = &axes };
-    const bytes = try encodeEmotionalRegister(allocator, er);
-    defer allocator.free(bytes);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "curiosity") != null);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "warmth") != null);
-}
+// The encodeKnowledgeGraph / encodeEmotionalRegister tests moved to
+// envelope.zig alongside the relocated codecs (now first-class DreamBall slots).
 
 // ============================================================================
 // Canonicality enforcement on decode — HIGH-1 (2026-04-24 code review).

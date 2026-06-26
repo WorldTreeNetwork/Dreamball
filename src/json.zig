@@ -127,6 +127,35 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
         try writeMemory(&buf, m);
     }
 
+    if (db.knowledge_graph) |kg| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "knowledge-graph");
+        try writeKnowledgeGraph(&buf, kg);
+    }
+
+    if (db.emotional_register) |er| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "emotional-register");
+        try writeEmotionalRegister(&buf, er);
+    }
+
+    if (db.interaction_sets.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(&buf, "interaction-set");
+        try buf.writeByte('[');
+        for (db.interaction_sets, 0..) |is, i| {
+            if (i > 0) try buf.writeByte(',');
+            try writeInteractionSet(allocator, &buf, is);
+        }
+        try buf.writeByte(']');
+    }
+
+    if (db.policy) |p| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "policy");
+        try writeGuildPolicy(&buf, p);
+    }
+
     if (db.guilds.len > 0) {
         try buf.writeByte(',');
         try writeKey(&buf, "guild");
@@ -512,6 +541,146 @@ fn writeMemoryConnection(buf: *Buf, c: protocol.MemoryConnection) !void {
         try writeEscapedString(buf, lbl);
     }
     try buf.writeByte('}');
+}
+
+// Renders the `knowledge-graph` slot matching the generated TS `KnowledgeGraph`
+// shape (src/lib/generated/types.ts): { triples: [{from,label,to}], source? }.
+fn writeKnowledgeGraph(buf: *Buf, kg: protocol.KnowledgeGraph) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "triples");
+    try buf.writeByte('[');
+    for (kg.triples, 0..) |t, i| {
+        if (i > 0) try buf.writeByte(',');
+        try buf.writeByte('{');
+        try writeKey(buf, "from");
+        try writeEscapedString(buf, t.from);
+        try buf.writeByte(',');
+        try writeKey(buf, "label");
+        try writeEscapedString(buf, t.label);
+        try buf.writeByte(',');
+        try writeKey(buf, "to");
+        try writeEscapedString(buf, t.to);
+        try buf.writeByte('}');
+    }
+    try buf.writeByte(']');
+    if (kg.source) |s| {
+        try buf.writeByte(',');
+        try writeKey(buf, "source");
+        try writeEscapedString(buf, s);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders the `emotional-register` slot matching the generated TS
+// `EmotionalRegister` shape: { axes: [{name,value,min,max}], 'observed-at'? }.
+fn writeEmotionalRegister(buf: *Buf, er: protocol.EmotionalRegister) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "axes");
+    try buf.writeByte('[');
+    for (er.axes, 0..) |ax, i| {
+        if (i > 0) try buf.writeByte(',');
+        try buf.writeByte('{');
+        try writeKey(buf, "name");
+        try writeEscapedString(buf, ax.name);
+        try buf.writeByte(',');
+        try writeKey(buf, "value");
+        try buf.print("{d}", .{ax.value});
+        try buf.writeByte(',');
+        try writeKey(buf, "min");
+        try buf.print("{d}", .{ax.min});
+        try buf.writeByte(',');
+        try writeKey(buf, "max");
+        try buf.print("{d}", .{ax.max});
+        try buf.writeByte('}');
+    }
+    try buf.writeByte(']');
+    if (er.observed_at) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "observed-at");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders one `interaction-set` element matching the generated TS
+// `InteractionSet` shape: { 'set-id', interactions: [...], created? }.
+fn writeInteractionSet(allocator: Allocator, buf: *Buf, is: protocol.InteractionSet) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "set-id");
+    try writeB58(allocator, buf, &is.set_id);
+    try buf.writeByte(',');
+    try writeKey(buf, "interactions");
+    try buf.writeByte('[');
+    for (is.interactions, 0..) |it, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeInteraction(allocator, buf, it);
+    }
+    try buf.writeByte(']');
+    if (is.created) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "created");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeInteraction(allocator: Allocator, buf: *Buf, it: protocol.Interaction) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "turn");
+    try buf.print("{d}", .{it.turn});
+    try buf.writeByte(',');
+    try writeKey(buf, "actor");
+    try writeB58(allocator, buf, &it.actor.bytes);
+    try buf.writeByte(',');
+    try writeKey(buf, "kind");
+    try buf.writeByte('"');
+    try buf.writeAll(it.kindString());
+    try buf.writeByte('"');
+    if (it.content) |c| {
+        try buf.writeByte(',');
+        try writeKey(buf, "content");
+        try writeEscapedString(buf, c);
+    }
+    if (it.timestamp) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "timestamp");
+        try writeRfc3339(buf, t);
+    }
+    if (it.outcome) |o| {
+        try buf.writeByte(',');
+        try writeKey(buf, "outcome");
+        try writeEscapedString(buf, o);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders the `policy` slot matching the generated TS `GuildPolicy` shape:
+// { public: [], 'guild-only': [], 'admin-only': [], note? }.
+fn writeGuildPolicy(buf: *Buf, p: protocol.GuildPolicy) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "public");
+    try writeStringArray(buf, p.public);
+    try buf.writeByte(',');
+    try writeKey(buf, "guild-only");
+    try writeStringArray(buf, p.guild_only);
+    try buf.writeByte(',');
+    try writeKey(buf, "admin-only");
+    try writeStringArray(buf, p.admin_only);
+    if (p.note) |n| {
+        try buf.writeByte(',');
+        try writeKey(buf, "note");
+        try writeEscapedString(buf, n);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeStringArray(buf: *Buf, items: []const []const u8) !void {
+    try buf.writeByte('[');
+    for (items, 0..) |s, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeEscapedString(buf, s);
+    }
+    try buf.writeByte(']');
 }
 
 // ============================================================================

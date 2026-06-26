@@ -46,83 +46,24 @@ pub const MemoryConnection = protocol.MemoryConnection;
 pub const Memory = protocol.Memory;
 
 // ============================================================================
-// §12.4 ball.knowledge-graph
+// §12.4 ball.knowledge-graph / §12.5 ball.emotional-register /
+// §12.6 ball.interaction-set / §12.7 ball.guild-policy
 // ============================================================================
 
-pub const Triple = struct {
-    from: []const u8,
-    label: []const u8,
-    /// Either a text value or a fingerprint reference to another DreamBall.
-    to: []const u8,
-};
-
-pub const KnowledgeGraph = struct {
-    triples: []const Triple = &.{},
-    source: ?[]const u8 = null,
-};
-
-// ============================================================================
-// §12.5 ball.emotional-register
-// ============================================================================
-
-pub const EmotionalAxis = struct {
-    name: []const u8,
-    value: f64,
-    min: f64 = 0.0,
-    max: f64 = 1.0,
-};
-
-pub const EmotionalRegister = struct {
-    axes: []const EmotionalAxis = &.{},
-    observed_at: ?i64 = null,
-};
-
-// ============================================================================
-// §12.6 ball.interaction-set
-// ============================================================================
-
-pub const InteractionKind = enum { speak, listen, act, receive };
-
-pub const Interaction = struct {
-    turn: u32,
-    actor: Fingerprint,
-    kind: InteractionKind,
-    content: ?[]const u8 = null,
-    timestamp: ?i64 = null,
-    outcome: ?[]const u8 = null,
-
-    pub fn kindString(self: Interaction) []const u8 {
-        return switch (self.kind) {
-            .speak => "speak",
-            .listen => "listen",
-            .act => "act",
-            .receive => "receive",
-        };
-    }
-};
-
-pub const InteractionSet = struct {
-    /// Content-addressable id for the set (16 random bytes at creation time).
-    set_id: [16]u8,
-    interactions: []const Interaction = &.{},
-    created: ?i64 = null,
-};
-
-// ============================================================================
-// §12.7 ball.guild-policy
-// ============================================================================
-
-pub const GuildPolicy = struct {
-    public: []const []const u8 = &.{ "look", "thumbnail" },
-    guild_only: []const []const u8 = &.{
-        "memory",
-        "knowledge-graph",
-        "emotional-register",
-        "interaction-set",
-    },
-    admin_only: []const []const u8 = &.{"secret"},
-    note: ?[]const u8 = null,
-};
+// These four slots are now first-class DreamBall slots living in protocol.zig
+// beside look/feel/act/memory (see
+// docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md, Zig is
+// canonical). Re-exported here so existing `v2.KnowledgeGraph` / `v2.Triple` /
+// `v2.EmotionalAxis` / `v2.Interaction` / `v2.GuildPolicy` / etc. references
+// across the codebase keep compiling.
+pub const Triple = protocol.Triple;
+pub const KnowledgeGraph = protocol.KnowledgeGraph;
+pub const EmotionalAxis = protocol.EmotionalAxis;
+pub const EmotionalRegister = protocol.EmotionalRegister;
+pub const InteractionKind = protocol.InteractionKind;
+pub const Interaction = protocol.Interaction;
+pub const InteractionSet = protocol.InteractionSet;
+pub const GuildPolicy = protocol.GuildPolicy;
 
 // ============================================================================
 // §12.8 ball.secret-ref

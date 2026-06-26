@@ -205,6 +205,81 @@ pub const Memory = struct {
     last_updated: ?i64 = null,
 };
 
+// ─── ball.knowledge-graph slot (§12.4) ──────────────────────────────────────
+//
+// First-class DreamBall slot, promoted here from protocol_v2.zig beside its
+// siblings per docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md
+// (Zig is canonical). protocol_v2.zig re-exports these for back-compat.
+
+pub const Triple = struct {
+    from: []const u8,
+    label: []const u8,
+    /// Either a text value or a fingerprint reference to another DreamBall.
+    to: []const u8,
+};
+
+pub const KnowledgeGraph = struct {
+    triples: []const Triple = &.{},
+    source: ?[]const u8 = null,
+};
+
+// ─── ball.emotional-register slot (§12.5) ────────────────────────────────────
+
+pub const EmotionalAxis = struct {
+    name: []const u8,
+    value: f64,
+    min: f64 = 0.0,
+    max: f64 = 1.0,
+};
+
+pub const EmotionalRegister = struct {
+    axes: []const EmotionalAxis = &.{},
+    observed_at: ?i64 = null,
+};
+
+// ─── ball.interaction-set slot (§12.6) ───────────────────────────────────────
+
+pub const InteractionKind = enum { speak, listen, act, receive };
+
+pub const Interaction = struct {
+    turn: u32,
+    actor: Fingerprint,
+    kind: InteractionKind,
+    content: ?[]const u8 = null,
+    timestamp: ?i64 = null,
+    outcome: ?[]const u8 = null,
+
+    pub fn kindString(self: Interaction) []const u8 {
+        return switch (self.kind) {
+            .speak => "speak",
+            .listen => "listen",
+            .act => "act",
+            .receive => "receive",
+        };
+    }
+};
+
+pub const InteractionSet = struct {
+    /// Content-addressable id for the set (16 random bytes at creation time).
+    set_id: [16]u8,
+    interactions: []const Interaction = &.{},
+    created: ?i64 = null,
+};
+
+// ─── ball.guild-policy slot (§12.7) ──────────────────────────────────────────
+
+pub const GuildPolicy = struct {
+    public: []const []const u8 = &.{ "look", "thumbnail" },
+    guild_only: []const []const u8 = &.{
+        "memory",
+        "knowledge-graph",
+        "emotional-register",
+        "interaction-set",
+    },
+    admin_only: []const []const u8 = &.{"secret"},
+    note: ?[]const u8 = null,
+};
+
 pub const Signature = struct {
     /// "ed25519" or "ml-dsa-87"
     alg: []const u8,
@@ -237,6 +312,15 @@ pub const DreamBall = struct {
     feel: ?Feel = null,
     act: ?Act = null,
     memory: ?Memory = null,
+    knowledge_graph: ?KnowledgeGraph = null,
+    emotional_register: ?EmotionalRegister = null,
+    /// REPEATABLE on the wire (TS `'interaction-set'?: InteractionSet[]`) — a
+    /// DreamBall may carry multiple interaction-set envelopes. Held as a slice;
+    /// encode emits one `interaction-set` assertion per element, decode appends.
+    interaction_sets: []const InteractionSet = &.{},
+    /// §12.7 per-slot read/write policy, attached as a first-class `guild-policy`
+    /// assertion. Distinct from the policy embedded inside a Guild envelope.
+    policy: ?GuildPolicy = null,
     /// Fingerprints of Guilds claiming this DreamBall (per-slot policy
     /// resolution walks through these — see docs/PROTOCOL.md §12.7).
     guilds: []const Fingerprint = &.{},

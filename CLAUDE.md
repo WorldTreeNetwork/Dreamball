@@ -106,7 +106,7 @@ Zig 0.16.0 + Bun. See `README.md` for the full command list.
 - `zig build` — compile library + `dreamball` CLI
 - `zig build test` — unit tests (≥ 51 passing)
 - `zig build smoke` — CLI end-to-end integration test
-- `zig build wasm` — produce `src/lib/wasm/dreamball.wasm` (≤ 200 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify)
+- `zig build wasm` — produce `src/lib/wasm/dreamball.wasm` (≤ 224 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify). **Gzipped (the over-the-wire cost) is the binding budget;** raw was relaxed 200→224 KB on 2026-06-25 for the five nested-envelope decoders (binary is already ReleaseSmall). Gzip headroom is now thin (~2.7 KB) — adding more decode paths needs size work, not another raw bump. See [`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
 - `zig build schemagen` — regenerate `src/lib/generated/*.ts`
 
 On Linux, all of the above default to `-Dtarget=x86_64-linux-musl`

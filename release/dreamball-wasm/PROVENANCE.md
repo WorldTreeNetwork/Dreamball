@@ -1,10 +1,10 @@
 # dreamball.wasm — provenance
 
 - **Protocol epoch:** ball/1 (package 0.1.0)
-- **Source commit:** `8859d32054871ead264ede8ad7dfcdcfd7449241`
+- **Source commit:** `a4fd58cde1404f0470857af955457f9530ea405c`
 - **Build:** `zig build wasm` (ML-DSA-87 verify linked; `-Dpq-wasm=true` default)
-- **SHA-256:** `f13e0c88e02950cd8ed1326ee49f4dff7cf0907bb06513b5a620457a89fa12c5`
-- **Size:** 177989 bytes raw, 51492 bytes gzipped (budget: ≤ 200 KB raw / ≤ 64 KB gzipped)
+- **SHA-256:** `2f06bd3d264234c2eee5cca20f00cb8eadc47ba24c012c52e6814afc0861db15`
+- **Size:** 215794 bytes raw, 62608 bytes gzipped (budget: ≤ 224 KB raw / ≤ 64 KB gzipped)
 
 Vendor this directory into the consumer (e.g. the web/ client repo). The
 binary's only host requirement is one import: `env.getRandomBytes(ptr, len)`

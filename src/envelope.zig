@@ -495,6 +495,488 @@ fn readMemoryConnection(bytes: []const u8, cursor: *usize) !protocol.MemoryConne
     };
 }
 
+// ─── ball.knowledge-graph slot codec (§12.4) ────────────────────────────────
+//
+// First-class DreamBall slot. Encoder relocated here from envelope_v2.zig;
+// decoder written to mirror it. Triples ride as repeatable ("triple",
+// [from, label, to]) attribute pairs; an optional ("source", text) follows.
+
+pub fn encodeKnowledgeGraph(allocator: Allocator, kg: protocol.KnowledgeGraph) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+
+    var ac: u64 = kg.triples.len;
+    if (kg.source != null) ac += 1;
+    try zbor.builder.writeArray(w, 1 + ac);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.knowledge-graph");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    for (kg.triples) |t| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "triple");
+        try zbor.builder.writeArray(w, 3);
+        try zbor.builder.writeTextString(w, t.from);
+        try zbor.builder.writeTextString(w, t.label);
+        try zbor.builder.writeTextString(w, t.to);
+    }
+    if (kg.source) |s| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "source");
+        try zbor.builder.writeTextString(w, s);
+    }
+    return ai.toOwnedSlice();
+}
+
+/// Decode a `ball.knowledge-graph` envelope produced by `encodeKnowledgeGraph`.
+/// Triple string fields are slices into `bytes` (must outlive the result), the
+/// same lifetime discipline as `decodeMemory`. No floats → plain canonical gate.
+pub fn decodeKnowledgeGraph(allocator: Allocator, bytes: []const u8) !protocol.KnowledgeGraph {
+    try dcbor.assertCanonical(bytes);
+    var cursor: usize = 0;
+    const attr_count = try dcbor.readEnvelopeHeader(bytes, &cursor);
+    try dcbor.skipCoreMap(bytes, &cursor);
+
+    var triples_list = std.ArrayListUnmanaged(protocol.Triple).empty;
+    defer triples_list.deinit(allocator);
+    var source: ?[]const u8 = null;
+
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "triple")) {
+            const inner_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            if (inner_n != 3) return dcbor.DecodeError.InvalidValue;
+            const from = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            const label = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            const to = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            try triples_list.append(allocator, .{ .from = from, .label = label, .to = to });
+        } else if (std.mem.eql(u8, key, "source")) {
+            source = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .triples = try triples_list.toOwnedSlice(allocator),
+        .source = source,
+    };
+}
+
+// ─── ball.emotional-register slot codec (§12.5) ──────────────────────────────
+//
+// First-class DreamBall slot. Encoder relocated here from envelope_v2.zig;
+// decoder written to mirror it. Each axis rides as ("axis", {max,min,name,value})
+// — the inner map keys are emitted in dCBOR canonical order (len asc, lex). Axis
+// values are floats (§12.2 exception) → the float-allowing canonical gate.
+
+pub fn encodeEmotionalRegister(allocator: Allocator, er: protocol.EmotionalRegister) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+
+    var ac: u64 = er.axes.len;
+    if (er.observed_at != null) ac += 1;
+    try zbor.builder.writeArray(w, 1 + ac);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.emotional-register");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    for (er.axes) |ax| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "axis");
+        // Keys sorted (len asc, lex): "max"(3) < "min"(3) < "name"(4) < "value"(5).
+        try zbor.builder.writeMap(w, 4);
+        try zbor.builder.writeTextString(w, "max");
+        try zbor.builder.writeFloat(w, ax.max);
+        try zbor.builder.writeTextString(w, "min");
+        try zbor.builder.writeFloat(w, ax.min);
+        try zbor.builder.writeTextString(w, "name");
+        try zbor.builder.writeTextString(w, ax.name);
+        try zbor.builder.writeTextString(w, "value");
+        try zbor.builder.writeFloat(w, ax.value);
+    }
+    if (er.observed_at) |t| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "observed-at");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
+    }
+    return ai.toOwnedSlice();
+}
+
+/// Decode a `ball.emotional-register` envelope produced by
+/// `encodeEmotionalRegister`. Axis names are slices into `bytes`.
+pub fn decodeEmotionalRegister(allocator: Allocator, bytes: []const u8) !protocol.EmotionalRegister {
+    try dcbor.assertCanonicalAllowFloats(bytes);
+    var cursor: usize = 0;
+    const attr_count = try dcbor.readEnvelopeHeader(bytes, &cursor);
+    try dcbor.skipCoreMap(bytes, &cursor);
+
+    var axes_list = std.ArrayListUnmanaged(protocol.EmotionalAxis).empty;
+    defer axes_list.deinit(allocator);
+    var observed_at: ?i64 = null;
+
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "axis")) {
+            const map_n = dcbor.readMapHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            var name_opt: ?[]const u8 = null;
+            var value_opt: ?f64 = null;
+            var min: f64 = 0.0;
+            var max: f64 = 1.0;
+            var mi: u64 = 0;
+            while (mi < map_n) : (mi += 1) {
+                const mk = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+                if (std.mem.eql(u8, mk, "name")) {
+                    name_opt = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+                } else if (std.mem.eql(u8, mk, "value")) {
+                    value_opt = dcbor.readAnyFloat(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+                } else if (std.mem.eql(u8, mk, "min")) {
+                    min = dcbor.readAnyFloat(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+                } else if (std.mem.eql(u8, mk, "max")) {
+                    max = dcbor.readAnyFloat(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+                } else {
+                    dcbor.skipItem(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+                }
+            }
+            try axes_list.append(allocator, .{
+                .name = name_opt orelse return dcbor.DecodeError.MissingField,
+                .value = value_opt orelse return dcbor.DecodeError.MissingField,
+                .min = min,
+                .max = max,
+            });
+        } else if (std.mem.eql(u8, key, "observed-at")) {
+            dcbor.expectTag(bytes, &cursor, dcbor.Tag.epoch_time) catch |e| return dcbor.mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            observed_at = @intCast(ts);
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .axes = try axes_list.toOwnedSlice(allocator),
+        .observed_at = observed_at,
+    };
+}
+
+// ─── ball.interaction-set slot codec (§12.6) ────────────────────────────────
+//
+// First-class DreamBall slot — REPEATABLE on the DreamBall (TS
+// `'interaction-set'?: InteractionSet[]`). No prior encoder existed; both the
+// encoder and decoder are written here, mirroring `encodeMemory`/`decodeMemory`.
+// The 16-byte `set-id` rides in the core map; interactions ride as repeatable
+// ("interaction", <ball.interaction envelope>) attribute pairs. No floats.
+
+pub fn encodeInteractionSet(allocator: Allocator, is: protocol.InteractionSet) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+
+    const ac: u64 = is.interactions.len + @as(u64, if (is.created != null) 1 else 0);
+    try zbor.builder.writeArray(w, 1 + ac);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    // Core keys sorted (len asc, lex): "type"(4), "set-id"(6), "format-version"(14).
+    try zbor.builder.writeMap(w, 3);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.interaction-set");
+    try zbor.builder.writeTextString(w, "set-id");
+    try zbor.builder.writeByteString(w, &is.set_id);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    for (is.interactions) |it| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "interaction");
+        try writeInteraction(w, it);
+    }
+    if (is.created) |t| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "created");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
+    }
+    return ai.toOwnedSlice();
+}
+
+fn writeInteraction(w: *std.Io.Writer, it: protocol.Interaction) !void {
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    var attribute_count: u64 = 0;
+    if (it.content != null) attribute_count += 1;
+    if (it.outcome != null) attribute_count += 1;
+    if (it.timestamp != null) attribute_count += 1;
+    try zbor.builder.writeArray(w, 1 + attribute_count);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    // Core keys sorted (len asc, lex): "kind"(4) < "turn"(4) < "type"(4) < "actor"(5) < "format-version"(14).
+    try zbor.builder.writeMap(w, 5);
+    try zbor.builder.writeTextString(w, "kind");
+    try zbor.builder.writeTextString(w, it.kindString());
+    try zbor.builder.writeTextString(w, "turn");
+    try zbor.builder.writeInt(w, @intCast(it.turn));
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.interaction");
+    try zbor.builder.writeTextString(w, "actor");
+    try zbor.builder.writeByteString(w, &it.actor.bytes);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    // Attribute pairs (array elements — order is not canonicality-checked, but
+    // we emit them sorted for tidiness): "content"(7), "outcome"(7), "timestamp"(9).
+    if (it.content) |c| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "content");
+        try zbor.builder.writeTextString(w, c);
+    }
+    if (it.outcome) |o| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "outcome");
+        try zbor.builder.writeTextString(w, o);
+    }
+    if (it.timestamp) |t| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "timestamp");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(t));
+    }
+}
+
+/// Decode a `ball.interaction-set` envelope produced by `encodeInteractionSet`.
+/// Interaction string fields are slices into `bytes`.
+pub fn decodeInteractionSet(allocator: Allocator, bytes: []const u8) !protocol.InteractionSet {
+    try dcbor.assertCanonical(bytes);
+    var cursor: usize = 0;
+    const attr_count = try dcbor.readEnvelopeHeader(bytes, &cursor);
+
+    // Core map carries the 16-byte set-id.
+    dcbor.expectTag(bytes, &cursor, dcbor.Tag.leaf) catch |e| return dcbor.mapDecodeError(e);
+    const core_n = dcbor.readMapHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+    var set_id_opt: ?[16]u8 = null;
+    var ci: u64 = 0;
+    while (ci < core_n) : (ci += 1) {
+        const k = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, k, "set-id")) {
+            const b = dcbor.readBytes(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            if (b.len != 16) return dcbor.DecodeError.InvalidValue;
+            var sid: [16]u8 = undefined;
+            @memcpy(&sid, b);
+            set_id_opt = sid;
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    var inter_list = std.ArrayListUnmanaged(protocol.Interaction).empty;
+    defer inter_list.deinit(allocator);
+    var created: ?i64 = null;
+
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "interaction")) {
+            const it = try readInteraction(bytes, &cursor);
+            try inter_list.append(allocator, it);
+        } else if (std.mem.eql(u8, key, "created")) {
+            dcbor.expectTag(bytes, &cursor, dcbor.Tag.epoch_time) catch |e| return dcbor.mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            created = @intCast(ts);
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .set_id = set_id_opt orelse return dcbor.DecodeError.MissingField,
+        .interactions = try inter_list.toOwnedSlice(allocator),
+        .created = created,
+    };
+}
+
+/// Consume one inline `ball.interaction` envelope from the shared cursor.
+fn readInteraction(bytes: []const u8, cursor: *usize) !protocol.Interaction {
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.envelope) catch |e| return dcbor.mapDecodeError(e);
+    const array_count = dcbor.readArrayHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+    if (array_count == 0) return dcbor.DecodeError.MissingField;
+    const attr_count = array_count - 1;
+
+    dcbor.expectTag(bytes, cursor, dcbor.Tag.leaf) catch |e| return dcbor.mapDecodeError(e);
+    const core_n = dcbor.readMapHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+    var turn_opt: ?u32 = null;
+    var actor_opt: ?Fingerprint = null;
+    var kind_opt: ?protocol.InteractionKind = null;
+    var ci: u64 = 0;
+    while (ci < core_n) : (ci += 1) {
+        const k = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, k, "turn")) {
+            turn_opt = @intCast(dcbor.readUint(bytes, cursor) catch |e| return dcbor.mapDecodeError(e));
+        } else if (std.mem.eql(u8, k, "actor")) {
+            const b = dcbor.readBytes(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            if (b.len != 32) return dcbor.DecodeError.InvalidValue;
+            var fp: Fingerprint = undefined;
+            @memcpy(&fp.bytes, b);
+            actor_opt = fp;
+        } else if (std.mem.eql(u8, k, "kind")) {
+            const s = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            if (std.mem.eql(u8, s, "speak")) {
+                kind_opt = .speak;
+            } else if (std.mem.eql(u8, s, "listen")) {
+                kind_opt = .listen;
+            } else if (std.mem.eql(u8, s, "act")) {
+                kind_opt = .act;
+            } else if (std.mem.eql(u8, s, "receive")) {
+                kind_opt = .receive;
+            } else return dcbor.DecodeError.InvalidValue;
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    var content: ?[]const u8 = null;
+    var outcome: ?[]const u8 = null;
+    var timestamp: ?i64 = null;
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "content")) {
+            content = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else if (std.mem.eql(u8, key, "outcome")) {
+            outcome = dcbor.readText(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else if (std.mem.eql(u8, key, "timestamp")) {
+            dcbor.expectTag(bytes, cursor, dcbor.Tag.epoch_time) catch |e| return dcbor.mapDecodeError(e);
+            const ts = dcbor.readUint(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+            timestamp = @intCast(ts);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .turn = turn_opt orelse return dcbor.DecodeError.MissingField,
+        .actor = actor_opt orelse return dcbor.DecodeError.MissingField,
+        .kind = kind_opt orelse return dcbor.DecodeError.MissingField,
+        .content = content,
+        .timestamp = timestamp,
+        .outcome = outcome,
+    };
+}
+
+// ─── ball.guild-policy slot codec (§12.7) ───────────────────────────────────
+//
+// First-class DreamBall slot, attached as a `guild-policy` assertion (distinct
+// from the policy map embedded inside a Guild envelope by `encodeGuild`). No
+// standalone encoder existed; both encoder and decoder are written here per the
+// §12.7 wire shape: repeatable ("public"|"guild-only"|"admin-only", text) pairs
+// plus an optional ("note", text). No floats.
+
+pub fn encodeGuildPolicy(allocator: Allocator, p: protocol.GuildPolicy) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+
+    var ac: u64 = p.public.len + p.guild_only.len + p.admin_only.len;
+    if (p.note != null) ac += 1;
+    try zbor.builder.writeArray(w, 1 + ac);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 2);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, "ball.guild-policy");
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(protocol.FORMAT_VERSION_V2));
+
+    for (p.public) |s| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "public");
+        try zbor.builder.writeTextString(w, s);
+    }
+    for (p.guild_only) |s| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "guild-only");
+        try zbor.builder.writeTextString(w, s);
+    }
+    for (p.admin_only) |s| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "admin-only");
+        try zbor.builder.writeTextString(w, s);
+    }
+    if (p.note) |n| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "note");
+        try zbor.builder.writeTextString(w, n);
+    }
+    return ai.toOwnedSlice();
+}
+
+/// Decode a `ball.guild-policy` envelope produced by `encodeGuildPolicy`. Slot
+/// strings are slices into `bytes`; the three slot lists are owned by `allocator`.
+pub fn decodeGuildPolicy(allocator: Allocator, bytes: []const u8) !protocol.GuildPolicy {
+    try dcbor.assertCanonical(bytes);
+    var cursor: usize = 0;
+    const attr_count = try dcbor.readEnvelopeHeader(bytes, &cursor);
+    try dcbor.skipCoreMap(bytes, &cursor);
+
+    var public_list = std.ArrayListUnmanaged([]const u8).empty;
+    defer public_list.deinit(allocator);
+    var guild_list = std.ArrayListUnmanaged([]const u8).empty;
+    defer guild_list.deinit(allocator);
+    var admin_list = std.ArrayListUnmanaged([]const u8).empty;
+    defer admin_list.deinit(allocator);
+    var note: ?[]const u8 = null;
+
+    var ai: u64 = 0;
+    while (ai < attr_count) : (ai += 1) {
+        const arr_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (arr_n != 2) return dcbor.DecodeError.InvalidValue;
+        const key = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        if (std.mem.eql(u8, key, "public")) {
+            const s = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            try public_list.append(allocator, s);
+        } else if (std.mem.eql(u8, key, "guild-only")) {
+            const s = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            try guild_list.append(allocator, s);
+        } else if (std.mem.eql(u8, key, "admin-only")) {
+            const s = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+            try admin_list.append(allocator, s);
+        } else if (std.mem.eql(u8, key, "note")) {
+            note = dcbor.readText(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch |e| return dcbor.mapDecodeError(e);
+        }
+    }
+
+    return .{
+        .public = try public_list.toOwnedSlice(allocator),
+        .guild_only = try guild_list.toOwnedSlice(allocator),
+        .admin_only = try admin_list.toOwnedSlice(allocator),
+        .note = note,
+    };
+}
+
 pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     var subj = PairList.init(allocator);
     defer subj.deinit();
@@ -537,6 +1019,24 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     if (db.memory) |m| {
         const bytes = try encodeMemory(allocator, m);
         try asserts.addRawOwned("memory", bytes);
+    }
+    if (db.knowledge_graph) |kg| {
+        const bytes = try encodeKnowledgeGraph(allocator, kg);
+        try asserts.addRawOwned("knowledge-graph", bytes);
+    }
+    if (db.emotional_register) |er| {
+        const bytes = try encodeEmotionalRegister(allocator, er);
+        try asserts.addRawOwned("emotional-register", bytes);
+    }
+    // Repeatable: one "interaction-set" assertion per element. PairList.sort is
+    // stable, so multiple equal keys keep their insertion order on the wire.
+    for (db.interaction_sets) |is| {
+        const bytes = try encodeInteractionSet(allocator, is);
+        try asserts.addRawOwned("interaction-set", bytes);
+    }
+    if (db.policy) |p| {
+        const bytes = try encodeGuildPolicy(allocator, p);
+        try asserts.addRawOwned("guild-policy", bytes);
     }
 
     if (db.field_kind) |fk| try asserts.addText("field-kind", fk);
@@ -1166,6 +1666,7 @@ pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamB
     var contains: std.ArrayList(Fingerprint) = .empty;
     var derived_from: std.ArrayList(Fingerprint) = .empty;
     var guilds: std.ArrayList(Fingerprint) = .empty;
+    var interaction_sets: std.ArrayList(protocol.InteractionSet) = .empty;
     var sigs: std.ArrayList(protocol.Signature) = .empty;
 
     var a_i: u64 = 0;
@@ -1230,6 +1731,27 @@ pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamB
             const sub = env_bytes[cursor .. cursor + len];
             cursor += len;
             out.memory = try decodeMemory(arena, sub);
+        } else if (std.mem.eql(u8, pred, "knowledge-graph")) {
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
+            out.knowledge_graph = try decodeKnowledgeGraph(arena, sub);
+        } else if (std.mem.eql(u8, pred, "emotional-register")) {
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
+            out.emotional_register = try decodeEmotionalRegister(arena, sub);
+        } else if (std.mem.eql(u8, pred, "interaction-set")) {
+            // Repeatable — append each decoded set in wire order.
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
+            try interaction_sets.append(arena, try decodeInteractionSet(arena, sub));
+        } else if (std.mem.eql(u8, pred, "guild-policy")) {
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
+            out.policy = try decodeGuildPolicy(arena, sub);
         } else if (std.mem.eql(u8, pred, "archiform-fp")) {
             // FR5 / Story 2.3 — round-trip the genesis envelope's
             // archiform_fp attribute. 32-byte blake3 of the archiform
@@ -1254,6 +1776,7 @@ pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamB
     out.contains = try contains.toOwnedSlice(arena);
     out.derived_from = try derived_from.toOwnedSlice(arena);
     out.guilds = try guilds.toOwnedSlice(arena);
+    out.interaction_sets = try interaction_sets.toOwnedSlice(arena);
     out.signatures = try sigs.toOwnedSlice(arena);
 
     return out;
@@ -1574,6 +2097,222 @@ test "decodeDreamBall round-trips the memory slot" {
     try std.testing.expectEqual(@as(f64, 0.6), m.connections[0].strength);
     try std.testing.expectEqualStrings("then", m.connections[0].label.?);
     try std.testing.expectEqual(@as(i64, 1_700_000_999), m.last_updated.?);
+}
+
+// ─── knowledge-graph slot ────────────────────────────────────────────────────
+
+test "encodeKnowledgeGraph emits triples" {
+    const allocator = std.testing.allocator;
+    const triples = [_]protocol.Triple{
+        .{ .from = "curiosity", .label = "inclines-toward", .to = "new-things" },
+    };
+    const kg: protocol.KnowledgeGraph = .{ .triples = &triples, .source = "test" };
+    const bytes = try encodeKnowledgeGraph(allocator, kg);
+    defer allocator.free(bytes);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "curiosity") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "inclines-toward") != null);
+}
+
+test "encodeKnowledgeGraph -> decodeKnowledgeGraph round-trip" {
+    const allocator = std.testing.allocator;
+    const triples = [_]protocol.Triple{
+        .{ .from = "curiosity", .label = "inclines-toward", .to = "new-things" },
+        .{ .from = "haiku", .label = "requires", .to = "5-7-5 syllables" },
+    };
+    const kg: protocol.KnowledgeGraph = .{ .triples = &triples, .source = "hand-curated v0" };
+    const bytes = try encodeKnowledgeGraph(allocator, kg);
+    defer allocator.free(bytes);
+
+    const got = try decodeKnowledgeGraph(allocator, bytes);
+    defer allocator.free(got.triples);
+    try std.testing.expectEqual(@as(usize, 2), got.triples.len);
+    try std.testing.expectEqualStrings("curiosity", got.triples[0].from);
+    try std.testing.expectEqualStrings("inclines-toward", got.triples[0].label);
+    try std.testing.expectEqualStrings("new-things", got.triples[0].to);
+    try std.testing.expectEqualStrings("haiku", got.triples[1].from);
+    try std.testing.expectEqualStrings("5-7-5 syllables", got.triples[1].to);
+    try std.testing.expectEqualStrings("hand-curated v0", got.source.?);
+
+    // Minimal (no triples, no source).
+    const empty: protocol.KnowledgeGraph = .{};
+    const eb = try encodeKnowledgeGraph(allocator, empty);
+    defer allocator.free(eb);
+    const eg = try decodeKnowledgeGraph(allocator, eb);
+    defer allocator.free(eg.triples);
+    try std.testing.expectEqual(@as(usize, 0), eg.triples.len);
+    try std.testing.expect(eg.source == null);
+}
+
+// ─── emotional-register slot ─────────────────────────────────────────────────
+
+test "encodeEmotionalRegister -> decodeEmotionalRegister round-trip" {
+    const allocator = std.testing.allocator;
+    const axes = [_]protocol.EmotionalAxis{
+        .{ .name = "curiosity", .value = 0.82 },
+        .{ .name = "warmth", .value = 0.55, .min = -1.0, .max = 1.0 },
+    };
+    const er: protocol.EmotionalRegister = .{ .axes = &axes, .observed_at = 1_700_000_321 };
+    const bytes = try encodeEmotionalRegister(allocator, er);
+    defer allocator.free(bytes);
+
+    const got = try decodeEmotionalRegister(allocator, bytes);
+    defer allocator.free(got.axes);
+    try std.testing.expectEqual(@as(usize, 2), got.axes.len);
+    try std.testing.expectEqualStrings("curiosity", got.axes[0].name);
+    try std.testing.expectEqual(@as(f64, 0.82), got.axes[0].value);
+    try std.testing.expectEqual(@as(f64, 0.0), got.axes[0].min);
+    try std.testing.expectEqual(@as(f64, 1.0), got.axes[0].max);
+    try std.testing.expectEqualStrings("warmth", got.axes[1].name);
+    try std.testing.expectEqual(@as(f64, 0.55), got.axes[1].value);
+    try std.testing.expectEqual(@as(f64, -1.0), got.axes[1].min);
+    try std.testing.expectEqual(@as(i64, 1_700_000_321), got.observed_at.?);
+
+    // Minimal.
+    const empty: protocol.EmotionalRegister = .{};
+    const eb = try encodeEmotionalRegister(allocator, empty);
+    defer allocator.free(eb);
+    const eg = try decodeEmotionalRegister(allocator, eb);
+    defer allocator.free(eg.axes);
+    try std.testing.expectEqual(@as(usize, 0), eg.axes.len);
+    try std.testing.expect(eg.observed_at == null);
+}
+
+// ─── interaction-set slot ────────────────────────────────────────────────────
+
+test "encodeInteractionSet -> decodeInteractionSet round-trip" {
+    const allocator = std.testing.allocator;
+    const interactions = [_]protocol.Interaction{
+        .{
+            .turn = 1,
+            .actor = .{ .bytes = [_]u8{0xAA} ** 32 },
+            .kind = .speak,
+            .content = "hello there",
+            .timestamp = 1_700_000_100,
+            .outcome = "acknowledged",
+        },
+        .{ .turn = 2, .actor = .{ .bytes = [_]u8{0xBB} ** 32 }, .kind = .listen },
+    };
+    const is: protocol.InteractionSet = .{
+        .set_id = [_]u8{0x11} ** 16,
+        .interactions = &interactions,
+        .created = 1_700_000_999,
+    };
+    const bytes = try encodeInteractionSet(allocator, is);
+    defer allocator.free(bytes);
+
+    const got = try decodeInteractionSet(allocator, bytes);
+    defer allocator.free(got.interactions);
+    try std.testing.expectEqualSlices(u8, &([_]u8{0x11} ** 16), &got.set_id);
+    try std.testing.expectEqual(@as(usize, 2), got.interactions.len);
+    try std.testing.expectEqual(@as(u32, 1), got.interactions[0].turn);
+    try std.testing.expectEqualSlices(u8, &([_]u8{0xAA} ** 32), &got.interactions[0].actor.bytes);
+    try std.testing.expectEqual(protocol.InteractionKind.speak, got.interactions[0].kind);
+    try std.testing.expectEqualStrings("hello there", got.interactions[0].content.?);
+    try std.testing.expectEqual(@as(i64, 1_700_000_100), got.interactions[0].timestamp.?);
+    try std.testing.expectEqualStrings("acknowledged", got.interactions[0].outcome.?);
+    try std.testing.expectEqual(@as(u32, 2), got.interactions[1].turn);
+    try std.testing.expectEqual(protocol.InteractionKind.listen, got.interactions[1].kind);
+    try std.testing.expect(got.interactions[1].content == null);
+    try std.testing.expect(got.interactions[1].outcome == null);
+    try std.testing.expectEqual(@as(i64, 1_700_000_999), got.created.?);
+
+    // Minimal (no interactions, no created).
+    const empty: protocol.InteractionSet = .{ .set_id = [_]u8{0x22} ** 16 };
+    const eb = try encodeInteractionSet(allocator, empty);
+    defer allocator.free(eb);
+    const eg = try decodeInteractionSet(allocator, eb);
+    defer allocator.free(eg.interactions);
+    try std.testing.expectEqual(@as(usize, 0), eg.interactions.len);
+    try std.testing.expect(eg.created == null);
+}
+
+// ─── guild-policy slot ───────────────────────────────────────────────────────
+
+test "encodeGuildPolicy -> decodeGuildPolicy round-trip" {
+    const allocator = std.testing.allocator;
+    const p: protocol.GuildPolicy = .{ .note = "default v2 policy" };
+    const bytes = try encodeGuildPolicy(allocator, p);
+    defer allocator.free(bytes);
+
+    const got = try decodeGuildPolicy(allocator, bytes);
+    defer {
+        allocator.free(got.public);
+        allocator.free(got.guild_only);
+        allocator.free(got.admin_only);
+    }
+    try std.testing.expectEqual(@as(usize, 2), got.public.len);
+    try std.testing.expectEqualStrings("look", got.public[0]);
+    try std.testing.expectEqualStrings("thumbnail", got.public[1]);
+    try std.testing.expectEqual(@as(usize, 4), got.guild_only.len);
+    try std.testing.expectEqualStrings("memory", got.guild_only[0]);
+    try std.testing.expectEqualStrings("interaction-set", got.guild_only[3]);
+    try std.testing.expectEqual(@as(usize, 1), got.admin_only.len);
+    try std.testing.expectEqualStrings("secret", got.admin_only[0]);
+    try std.testing.expectEqualStrings("default v2 policy", got.note.?);
+}
+
+// ─── all four slots through decodeDreamBall ──────────────────────────────────
+
+test "decodeDreamBall round-trips knowledge-graph / emotional-register / interaction-set / guild-policy" {
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const triples = [_]protocol.Triple{
+        .{ .from = "curiosity", .label = "inclines-toward", .to = "new-things" },
+    };
+    const axes = [_]protocol.EmotionalAxis{
+        .{ .name = "curiosity", .value = 0.82 },
+    };
+    const interactions = [_]protocol.Interaction{
+        .{ .turn = 1, .actor = .{ .bytes = [_]u8{0xCC} ** 32 }, .kind = .act, .content = "did a thing" },
+    };
+    const sets = [_]protocol.InteractionSet{
+        .{ .set_id = [_]u8{0x33} ** 16, .interactions = &interactions, .created = 1_700_000_500 },
+        .{ .set_id = [_]u8{0x44} ** 16 },
+    };
+
+    const db = protocol.DreamBall{
+        .stage = .dreamball,
+        .dreamball_type = .agent,
+        .identity = [_]u8{5} ** 32,
+        .genesis_hash = [_]u8{6} ** 32,
+        .revision = 1,
+        .knowledge_graph = .{ .triples = &triples, .source = "v0" },
+        .emotional_register = .{ .axes = &axes, .observed_at = 1_700_000_321 },
+        .interaction_sets = &sets,
+        .policy = .{ .note = "p" },
+    };
+
+    const bytes = try encodeDreamBall(gpa, db);
+    defer gpa.free(bytes);
+
+    const decoded = try decodeDreamBall(arena, bytes);
+
+    try std.testing.expect(decoded.knowledge_graph != null);
+    try std.testing.expectEqual(@as(usize, 1), decoded.knowledge_graph.?.triples.len);
+    try std.testing.expectEqualStrings("inclines-toward", decoded.knowledge_graph.?.triples[0].label);
+    try std.testing.expectEqualStrings("v0", decoded.knowledge_graph.?.source.?);
+
+    try std.testing.expect(decoded.emotional_register != null);
+    try std.testing.expectEqual(@as(usize, 1), decoded.emotional_register.?.axes.len);
+    try std.testing.expectEqual(@as(f64, 0.82), decoded.emotional_register.?.axes[0].value);
+    try std.testing.expectEqual(@as(i64, 1_700_000_321), decoded.emotional_register.?.observed_at.?);
+
+    // Repeatable interaction-set: both elements preserved, in order.
+    try std.testing.expectEqual(@as(usize, 2), decoded.interaction_sets.len);
+    try std.testing.expectEqualSlices(u8, &([_]u8{0x33} ** 16), &decoded.interaction_sets[0].set_id);
+    try std.testing.expectEqual(@as(usize, 1), decoded.interaction_sets[0].interactions.len);
+    try std.testing.expectEqual(protocol.InteractionKind.act, decoded.interaction_sets[0].interactions[0].kind);
+    try std.testing.expectEqualStrings("did a thing", decoded.interaction_sets[0].interactions[0].content.?);
+    try std.testing.expectEqual(@as(i64, 1_700_000_500), decoded.interaction_sets[0].created.?);
+    try std.testing.expectEqualSlices(u8, &([_]u8{0x44} ** 16), &decoded.interaction_sets[1].set_id);
+    try std.testing.expectEqual(@as(usize, 0), decoded.interaction_sets[1].interactions.len);
+
+    try std.testing.expect(decoded.policy != null);
+    try std.testing.expectEqualStrings("secret", decoded.policy.?.admin_only[0]);
+    try std.testing.expectEqualStrings("p", decoded.policy.?.note.?);
 }
 
 test "second-pass round-trip preserves attributes (grow path)" {

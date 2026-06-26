@@ -24,12 +24,17 @@ jobs:
         run: zig build test --summary all
       - name: zig build wasm
         run: zig build wasm
-      - name: Confirm dreamball.wasm ≤ 200 KB raw, ≤ 64 KB gzipped
+      - name: Confirm dreamball.wasm ≤ 224 KB raw, ≤ 64 KB gzipped
+        # gzipped (the over-the-wire cost) is the binding constraint at 64 KB.
+        # raw relaxed 200→224 KB on 2026-06-25 to fit the five nested-envelope
+        # decoders (memory/knowledge-graph/emotional-register/interaction-set/
+        # guild-policy) now compiled into the parse path; the binary is already
+        # ReleaseSmall. See ADR 2026-06-25-zig-canonical-supersedes-json-schema.
         run: |
           raw=$(wc -c < src/lib/wasm/dreamball.wasm)
           gz=$(gzip -9c src/lib/wasm/dreamball.wasm | wc -c)
           echo "dreamball.wasm is ${raw} bytes raw, ${gz} bytes gzipped"
-          test "$raw" -le 204800
+          test "$raw" -le 229376
           test "$gz" -le 65536
       - name: Vendor bundle consistency (no drift from committed wasm)
         # The depend-able release/dreamball-wasm/ bundle must stay in lockstep

@@ -626,6 +626,26 @@ Triple-shaped ambient knowledge. Each triple is `[from, label, to]` — `from` a
 ]
 ```
 
+> **Implementation note (2026-06-26).** `knowledge-graph`,
+> `emotional-register`, `interaction-set` (§12.6) and `guild-policy` (§12.7)
+> are first-class `DreamBall` slots, modelled exactly like `look` / `feel` /
+> `act` / `memory`: the value types (`KnowledgeGraph`, `EmotionalRegister`,
+> `InteractionSet`, `GuildPolicy`, …) live in `src/protocol.zig` beside their
+> siblings, their codecs (`encodeKnowledgeGraph`/`decodeKnowledgeGraph`,
+> `encodeEmotionalRegister`/`decodeEmotionalRegister`,
+> `encodeInteractionSet`/`decodeInteractionSet`,
+> `encodeGuildPolicy`/`decodeGuildPolicy`) live in `src/envelope.zig`, and
+> `encodeDreamBall`/`decodeDreamBall` attach/parse them inline. `interaction-set`
+> is **repeatable** on the `DreamBall` (`DreamBall.interaction_sets` is a slice,
+> emitting one `interaction-set` assertion per element); `guild-policy` rides as
+> the `guild-policy` assertion (distinct from the `policy` map embedded inside a
+> Guild envelope). These used to live under the `protocol_v2` / `envelope_v2`
+> split; per
+> [`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)
+> (Zig is canonical) the artificial v1/v2 split for these slots was removed.
+> **The wire formats in §12.4–12.7 are unchanged** — this was a module-layout
+> refactor plus the addition of the missing decoders.
+
 ### 12.5 `ball.emotional-register`
 
 Current value of named emotional axes. Axes are open — producers declare the axes they use.

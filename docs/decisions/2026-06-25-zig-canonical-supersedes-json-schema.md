@@ -154,6 +154,13 @@ revert does not read as foreclosing federation.
 - **Timing:** reverting now is cheap precisely because nothing is
   generated from the schema yet. Every story that finishes the inversion
   first raises the cost of this correction.
+- **wasm size budget (2026-06-25 follow-on).** Completing the five
+  nested-envelope decoders compiled them into the wasm parse path for the
+  first time, pushing the raw size to ~216 KB. The CI/release raw budget
+  was relaxed 200 → 224 KB; **gzipped (the over-the-wire cost) stays the
+  binding constraint at 64 KB** (currently ~62.6 KB, already ReleaseSmall).
+  Gzip headroom is now thin (~3 KB), so further decode paths (the
+  borderline field-bundle slots) need real size work, not another raw bump.
 
 ## Migration plan
 

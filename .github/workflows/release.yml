@@ -154,7 +154,9 @@ jobs:
           raw=$(wc -c < src/lib/wasm/dreamball.wasm)
           gz=$(gzip -9c src/lib/wasm/dreamball.wasm | wc -c)
           echo "dreamball.wasm: ${raw} bytes raw, ${gz} bytes gzipped"
-          test "$raw" -le 204800
+          # raw relaxed 200→224 KB on 2026-06-25 (nested-envelope decoders);
+          # gzipped 64 KB is the binding wire constraint. See ADR 2026-06-25.
+          test "$raw" -le 229376
           test "$gz" -le 65536
       - name: Verify vendored bundle is in lockstep with committed source
         run: |

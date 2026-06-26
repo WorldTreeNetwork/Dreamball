@@ -74,7 +74,7 @@ cat > "$OUT/PROVENANCE.md" <<PROV
 - **Source commit:** \`$COMMIT\`
 - **Build:** \`zig build wasm\` (ML-DSA-87 verify linked; \`-Dpq-wasm=true\` default)
 - **SHA-256:** \`$SHA\`
-- **Size:** ${RAW} bytes raw, ${GZ} bytes gzipped (budget: ≤ 200 KB raw / ≤ 64 KB gzipped)
+- **Size:** ${RAW} bytes raw, ${GZ} bytes gzipped (budget: ≤ 224 KB raw / ≤ 64 KB gzipped)
 
 Vendor this directory into the consumer (e.g. the web/ client repo). The
 binary's only host requirement is one import: \`env.getRandomBytes(ptr, len)\`
