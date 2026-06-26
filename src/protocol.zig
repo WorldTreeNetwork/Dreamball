@@ -103,15 +103,15 @@ pub const Stage = enum {
 pub const Asset = struct {
     media_type: []const u8,
     hash: [32]u8,
-    urls: []const []const u8 = &.{},
+    url: []const []const u8 = &.{},
     embedded: ?[]const u8 = null,
     size: ?u64 = null,
     note: ?[]const u8 = null,
 
     pub fn deinit(self: *Asset, allocator: Allocator) void {
         allocator.free(self.media_type);
-        for (self.urls) |u| allocator.free(u);
-        allocator.free(self.urls);
+        for (self.url) |u| allocator.free(u);
+        allocator.free(self.url);
         if (self.embedded) |e| allocator.free(e);
         if (self.note) |n| allocator.free(n);
         self.* = undefined;

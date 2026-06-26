@@ -255,11 +255,11 @@ fn writeAsset(allocator: Allocator, buf: *Buf, a: protocol.Asset) !void {
     try buf.writeByte(',');
     try writeKey(buf, "hash");
     try writeB58(allocator, buf, &a.hash);
-    if (a.urls.len > 0) {
+    if (a.url.len > 0) {
         try buf.writeByte(',');
         try writeKey(buf, "url");
         try buf.writeByte('[');
-        for (a.urls, 0..) |u, i| {
+        for (a.url, 0..) |u, i| {
             if (i > 0) try buf.writeByte(',');
             try writeEscapedString(buf, u);
         }
@@ -881,7 +881,7 @@ fn assetFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Asse
         };
         const urls = try arena.alloc([]const u8, arr.items.len);
         for (arr.items, 0..) |item, i| urls[i] = try dupeString(arena, try getString(item));
-        asset.urls = urls;
+        asset.url = urls;
     }
     if (obj.get("embedded")) |e| asset.embedded = try decodeB58Value(arena, e);
     if (obj.get("size")) |s| asset.size = switch (s) {
@@ -1077,7 +1077,7 @@ test "JSON export with nested look/feel/act" {
     const assets = [_]protocol.Asset{.{
         .media_type = "model/gltf-binary",
         .hash = [_]u8{0xAA} ** 32,
-        .urls = &urls,
+        .url = &urls,
     }};
     const look = protocol.Look{ .assets = &assets, .background = "color:#123" };
     const values = [_][]const u8{ "curiosity", "clarity" };

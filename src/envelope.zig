@@ -101,7 +101,7 @@ pub fn encodeAsset(allocator: Allocator, a: protocol.Asset) ![]u8 {
     var asserts = PairList.init(allocator);
     defer asserts.deinit();
     if (a.embedded) |e| try asserts.addBytes("embedded", e);
-    for (a.urls) |u| try asserts.addText("url", u);
+    for (a.url) |u| try asserts.addText("url", u);
     if (a.size) |s| try asserts.addUint("size", s);
     if (a.note) |n| try asserts.addText("note", n);
     asserts.sort();
@@ -1422,7 +1422,7 @@ fn decodeAssetFromEnvelope(arena: Allocator, env_bytes: []const u8) !protocol.As
     return .{
         .media_type = media_type,
         .hash = hash,
-        .urls = try urls.toOwnedSlice(arena),
+        .url = try urls.toOwnedSlice(arena),
         .embedded = embedded,
         .size = size,
         .note = note,
@@ -1828,7 +1828,7 @@ test "encodeLook emits envelope with nested asset" {
     const allocator = std.testing.allocator;
     const urls = [_][]const u8{"https://cdn.example/a.glb"};
     const assets = [_]protocol.Asset{
-        .{ .media_type = "model/gltf-binary", .hash = [_]u8{0xAB} ** 32, .urls = &urls },
+        .{ .media_type = "model/gltf-binary", .hash = [_]u8{0xAB} ** 32, .url = &urls },
     };
     const look = protocol.Look{ .assets = &assets, .background = "color:#000" };
     const bytes = try encodeLook(allocator, look);
@@ -1965,7 +1965,7 @@ test "decodeDreamBall full round-trip — populated envelope" {
     const assets = [_]protocol.Asset{.{
         .media_type = "model/gltf-binary",
         .hash = [_]u8{0xAA} ** 32,
-        .urls = &urls,
+        .url = &urls,
     }};
     const look = protocol.Look{ .assets = &assets, .background = "color:#123" };
 
@@ -2368,7 +2368,7 @@ test "populated round-trip — envelope with all slots + signatures" {
     const la = [_]protocol.Asset{.{
         .media_type = "model/gltf-binary",
         .hash = [_]u8{0xAA} ** 32,
-        .urls = &urls,
+        .url = &urls,
     }};
     const look = protocol.Look{ .assets = &la, .background = "color:#123" };
 

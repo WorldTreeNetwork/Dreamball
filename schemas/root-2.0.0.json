@@ -121,7 +121,8 @@
         "hash": {
           "$ref": "#/$defs/Bytes32"
         },
-        "urls": {
+        "url": {
+          "$comment": "JSON key is singular `url`, an array — it projects the repeated CBOR `url` attribute (one assertion per location), so it matches the wire key and the JSON import/export. The in-memory Zig struct field is `urls`.",
           "type": "array",
           "items": { "type": "string", "x-cbor": "text-string" },
           "x-cbor": "array-of-text-string",
