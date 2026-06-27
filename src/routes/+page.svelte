@@ -28,6 +28,7 @@
 			<li><a href="/demo/unlock">Scenario 2 — Unlock a Relic</a></li>
 			<li><a href="/demo/wearer">Scenario 3 — Wearer + Observer</a></li>
 			<li><a href="/demo/splat">Bonus — Gaussian Splat Lens</a></li>
+			<li><a href="/demo/star">★ Star Tamagotchi — first character DreamBall (glTF in a ball)</a></li>
 		</ul>
 	</section>
 
