@@ -289,6 +289,10 @@ To keep this doc honest:
   Consumers pick the highest-revision signed variant they trust.
 - **Not a replacement for recrypt.** Encryption and proxy-recryption live in
   recrypt; DragonBalls delegate to it for sealed transport.
+- **Not a network or sync engine.** DreamBall is a wire-format container,
+  not transport. It does not move bytes between peers, resolve CRDT
+  conflicts, or run a sync protocol — consumers own the network, recrypt
+  owns sealed transport. Network-agnosticism is load-bearing; see §17.
 
 ---
 
@@ -825,6 +829,13 @@ Sections currently in motion:
   application: the composer-as-DreamBall. Expect revisions as the
   Sapling → Agent Tree → Forest phases land and the Soulskin shader
   states are validated against a live agent.
+- §17 (the open type system) — added 2026-06-26 when the first external
+  consumer (World-Tree) revealed the protocol is still closed to
+  third-party type authors. Expect this to drive the next protocol
+  additions (the generic signed-op envelope; a consumer
+  schema-registration path; the renderer-dispatch contract) and,
+  eventually, the extraction of Memory Palace from monolithic code into
+  a first-class DreamBall-type + renderer module.
 
 ---
 
@@ -875,3 +886,104 @@ See [`docs/products/wishing-tree/PHASES.md`](products/wishing-tree/PHASES.md)
 for the phased R&D plan (Sapling → Agent Tree → Forest → World Tree
 → Self-Planting Seed) and the UI style (retro sci-fi 80s 8-bit,
 palette-locked, CRT-optional).
+
+---
+
+## 17. The open type system — the protocol must be authorable by its consumers
+
+> Added 2026-06-26, triggered by onboarding the first real external
+> consumer (World-Tree `web/`). This is the section the rest of the
+> document was implicitly assuming and had not yet written down.
+
+World-Tree is the first project to consume DreamBall in earnest —
+local-first multiplayer for a social 3D space, built on SvelteKit +
+Bun. They wanted exactly what this document promises: store their own
+durable, signed state (a kanban op log, 3D object transforms, avatars)
+as DreamBalls, with verifiability first-class and the same WASM core in
+the browser and on the server. They hit a wall almost immediately.
+
+What they found was a raw Ed25519 signing primitive
+(`signActionEnvelope` — sign these bytes, get 64 bytes back) and a
+**closed** `ball.action`: a fixed core map, a closed 9-value `action-kind`
+enum (`palace-minted`, `room-added`, `move`, …), no payload field, no
+logical clock. Every one of those kinds is Memory-Palace-shaped. There
+was no way for them to define their *own* type and no way to carry their
+*own* typed payload as a first-class DreamBall. The honest diagnosis is
+not "we're missing an export." It's that **the protocol has quietly been
+a closed system**: the schema is ours, the renderers are ours, the action
+vocabulary is ours. The six-type taxonomy (§10) and the compositions
+(§15 Memory Palace, §16 Wishing Tree) are all types *we* authored.
+
+That is the gap, and it is the product. The rest of this vision —
+"aspects are for minds" (§7), "composition beats curation" (§5), one
+binary two runtimes (§14) — only pays off if **the people building on
+DreamBall can define their own types**, not merely instantiate ours. A
+universal verifiable container that only its authors can extend is not
+universal; it is a product with a plugin wishlist.
+
+**What "open" means concretely.** Define a type once — a Zig schema, now
+the single canonical source per the
+[2026-06-25 Zig-canonical ADR](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)
+— and get the whole pipeline for free: a verifiable Gordian envelope
+derived from that schema, typed encode/decode/validation over canonical
+dCBOR, and renderer dispatch by field-presence. The author can be us or a
+third party; the machinery is identical. A DreamBall *type* is a contract
+— these fields, this shape — and a *renderer* is anything that recognises
+the contract and draws it. Image, GLTF, HDRI-environment, text: each is a
+renderer keyed on the presence of certain fields (§12 already frames
+rendering as lenses; this names the dispatch rule). New type, new
+renderer, no core change.
+
+**Memory Palace, reframed.** This reframes §15. The palace is not "the
+first composition" in the sense of a privileged built-in; it is the
+**reference implementation of the open type system** — the proof that a
+rich, multi-type, rendered application can be expressed *as DreamBall
+types* rather than *as code that happens to use DreamBall*. Today it is
+monolithically woven into the codebase; that is a debt, not a design. The
+target is that the palace's Room / Aqueduct / Inscription / Mythos are
+authored through exactly the mechanism a third party uses to author their
+own `kanban-card` or `object3d` type. If our own flagship cannot be
+expressed that way, the open system is not real yet.
+
+**The first brick.** The minimum that opens the door is a **generic
+signed-op envelope** — open kind, typed body, a logical clock, and
+`parent_hashes` — so a consumer can carry an arbitrary typed payload as a
+signed, causally-ordered DreamBall. That is what turns `signActionEnvelope`
+from "sign these bytes" into "author a first-class action of your own
+type." Everything else builds outward from there:
+
+- **Now:** the typed-container + define-your-own-type data layer,
+  including the generic-op envelope. A consumer can define a type and
+  author / sign / verify instances carrying their own payload.
+- **Next:** renderer-dispatch-by-field-presence as a *named* contract;
+  ergonomics for registering a consumer type.
+- **Eventually:** Memory Palace extracted into a first-class
+  DreamBall-type + renderer module; a genuine type/renderer ecosystem
+  with authors beyond us.
+
+**Anti-vision — how we lose the plot.** Three guardrails, because this is
+the section most likely to drift:
+
+1. **If DreamBall starts absorbing the network.** It is a verifiable
+   wire-format container, not transport. The moment it grows a sync
+   protocol, becomes "a CRDT engine," or moves bytes between peers, we
+   have lost the plot. Network-agnosticism is load-bearing, not
+   incidental — consumers own the network, and recrypt owns sealed
+   transport (§8).
+2. **If we keep privileging our own types.** If Memory Palace and the
+   Wishing Tree stay special-cased monolithic code while third parties
+   get "the open path," the open path is a fiction. Our types must be the
+   reference implementation of the same mechanism, not exceptions to it.
+   Eat our own dog food.
+3. **If we over-fit to one consumer.** World-Tree's kanban — last-writer-
+   wins, a particular HLC shape, their merge rules — is a probe to find
+   where we are useful, explicitly **not** the ideal use case. The generic
+   envelope must stay domain-neutral. The day the protocol encodes
+   "kanban" we have mistaken the probe for the destination.
+
+World-Tree's kanban is a probe, not the destination — a way to find where
+we are useful by watching a real consumer push on real edges. The product
+it revealed is not "support kanban." It is *let anyone define a DreamBall
+type and get a verifiable, renderable, typed container for it.* That is the
+universal substrate this whole document has been describing. The first
+consumer simply showed us the door we had not opened.
