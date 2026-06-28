@@ -20,6 +20,8 @@
 	import type { Asset, DreamBall } from '../generated/types.js';
 	import { isSplatAsset } from '../splat/media-types.js';
 	import AvatarModel from './AvatarModel.svelte';
+	import StudioEnvironment from './StudioEnvironment.svelte';
+	import BloomEffect from './BloomEffect.svelte';
 
 	interface Props {
 		ball: DreamBall;
@@ -54,8 +56,7 @@
 	const meshAsset = $derived(ball.look?.asset?.find(isMeshAsset));
 	const modelUrl = $derived(meshAsset?.url?.[0]);
 
-	// Show the placeholder until the mesh is fitted & ready (or when there's
-	// no mesh asset / it failed to load).
+	// Track mesh load state for the fallback decision + e2e signals.
 	let modelReady = $state(false);
 	let modelError: string | null = $state(null);
 	// Reset readiness whenever the target URL changes.
@@ -65,7 +66,10 @@
 		modelError = null;
 	});
 
-	const showPlaceholder = $derived(!modelUrl || !modelReady);
+	// Show the crystal placeholder only when there's genuinely nothing to load
+	// (no mesh asset) or the load failed — NOT during a normal load, so a fast
+	// mesh never flashes a big crystal before appearing.
+	const showPlaceholder = $derived(!modelUrl || !!modelError);
 </script>
 
 <div
@@ -85,9 +89,18 @@
 				target={[0, 0, 0]}
 			/>
 		</T.PerspectiveCamera>
-		<T.DirectionalLight position={[3, 5, 2]} intensity={1.2} />
-		<T.DirectionalLight position={[-4, 2, -3]} intensity={0.5} color="#a0c8ff" />
-		<T.AmbientLight intensity={0.45} />
+		<!-- Image-based studio lighting so PBR meshes catch light + reflect. -->
+		<StudioEnvironment intensity={1.1} exposure={1.1} />
+		<!-- Additive bloom so the star glows. Takes over the render loop.
+		     Higher threshold + modest strength = a glow concentrated on the
+		     bright highlights/edges, not a full-frame haze. -->
+		<BloomEffect strength={0.32} radius={0.35} threshold={0.9} />
+		<!-- Three-point key/fill/rim on top of the IBL for shape + a soft edge. -->
+		<T.DirectionalLight position={[3, 5, 4]} intensity={1.6} />
+		<T.DirectionalLight position={[-4, 2, -3]} intensity={0.7} color="#a8c4ff" />
+		<T.DirectionalLight position={[0, 3, -5]} intensity={0.8} color="#ffd9f0" />
+		<T.HemisphereLight intensity={0.5} groundColor="#1a0a2e" />
+		<T.AmbientLight intensity={0.25} />
 
 		{#if modelUrl}
 			{#key modelUrl}

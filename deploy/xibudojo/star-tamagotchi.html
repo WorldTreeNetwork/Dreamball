@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Star Tamagotchi · DreamBall</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #1a0a2e; overflow: hidden; }
+  body { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #e9ddff; }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  #stage > div { width: min(92vw, 92vh); }
+  #hud {
+    position: fixed; top: 16px; left: 16px; max-width: 340px; z-index: 10;
+    background: rgba(17,8,32,.72); border: 1px solid #3a2a5e; border-radius: 12px;
+    padding: 14px 16px; backdrop-filter: blur(8px); box-shadow: 0 8px 30px rgba(0,0,0,.4);
+  }
+  #hud h1 { margin: 0 0 2px; font-size: 1rem; color: #f5c2e7; letter-spacing: .3px; }
+  #hud .sub { color: #9b8bc4; margin: 0 0 10px; font-size: .78rem; }
+  .kv { margin: .15rem 0; } .kv b { color: #cba6f7; }
+  .pill { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .72rem; margin-top: 6px; }
+  .ok { background: #14331f; color: #a6e3a1; border: 1px solid #2c6e49; }
+  .bad { background: #3a1420; color: #f38ba8; border: 1px solid #6e2c3f; }
+  .muted { color: #9b8bc4; }
+  #hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); color: #9b8bc4; font-size: .72rem; opacity: .8; z-index: 10; }
+  code, .mono { font-family: ui-monospace, Menlo, monospace; } a { color: #89b4fa; }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="hud">
+    <h1>★ loading…</h1>
+    <p class="sub">rendered by the DreamBall Web lens · <code>dreamball-renderer.js</code></p>
+    <div id="meta" class="muted">decoding <code>/vendor/star-tamagotchi.ball</code>…</div>
+    <div id="badges"></div>
+  </div>
+  <div id="hint">drag to orbit · scroll to zoom</div>
+
+  <!--
+    The renderer rides alongside dreamball.wasm: this page ships no three.js of
+    its own. The bundle below is the vendored Web lens built from the DreamBall
+    repo (Svelte + Threlte + three + AvatarLens + the wasm decoder, one file). It
+    decodes + verifies the signed .ball and renders look.asset.
+
+    The src is CONTENT-HASHED (stamped by scripts/deploy-renderer.sh from the
+    build manifest), so the host's immutable cache header is correct: a new build
+    is a new URL and this page (served no-cache) always points at the current one.
+  -->
+  <script type="module">
+    import { mountDreamBall } from '/vendor/__RENDERER__';
+
+    const meta = document.getElementById('meta');
+    const badges = document.getElementById('badges');
+    const h1 = document.querySelector('#hud h1');
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+    try {
+      const h = await mountDreamBall(document.getElementById('stage'), '/vendor/star-tamagotchi.ball');
+      const ball = h.ball;
+      const asset = (ball.look?.asset || []).find((a) => a['media-type'] === 'model/gltf-binary');
+      const url = asset && (Array.isArray(asset.url) ? asset.url[0] : asset.url);
+
+      h1.textContent = '★ ' + (ball.name || 'DreamBall');
+      meta.innerHTML =
+        '<div class="kv"><b>type</b> ' + esc(ball.type) + '</div>' +
+        '<div class="kv"><b>stage</b> ' + esc(ball.stage || '—') + ' &nbsp; <b>rev</b> ' + esc(ball.revision) + '</div>' +
+        '<div class="kv"><b>identity</b> <span class="muted mono">' + esc((ball.identity || '').slice(0, 22)) + '…</span></div>' +
+        (url ? '<div class="kv"><b>asset</b> <a href="' + esc(url) + '" target="_blank" rel="noreferrer">' + esc(url.split('/').pop()) + '</a></div>' : '');
+      badges.innerHTML = '<span class="pill ' + (h.verified ? 'ok' : 'bad') + '">' +
+        (h.verified ? '✓ ' : '✗ ') + esc(h.verifyStatus) + '</span>';
+    } catch (e) {
+      h1.textContent = '★ error';
+      meta.innerHTML = '<span class="pill bad">error</span> ' + esc(e && e.message || e);
+    }
+  </script>
+</body>
+</html>
