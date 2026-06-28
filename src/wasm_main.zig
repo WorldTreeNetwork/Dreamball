@@ -723,6 +723,75 @@ export fn authorAction(
     return packResult(signed);
 }
 
+/// Verify a signed v4 `ball.action` envelope (the consumer-facing read seam for
+/// the open-type system; FR9, D-042/D-043). Mirrors `verifyBall` exactly, just
+/// for an action envelope instead of a DreamBall:
+///
+///   1. `envelope.stripSignatures` reconstructs the canonical UNSIGNED bytes
+///      (every `signed` attribute removed) and captures the signatures. This is
+///      the SAME bytes a producer signs (`encodeActionV4` output) — we never
+///      recompute from parsed fields (D-042 / PROTOCOL.md §16.7).
+///   2. `envelope_v2.decodeAction` reads the core map to recover `actor` — the
+///      32-byte Ed25519 public key. The verification key is ALWAYS this decoded
+///      `actor`; there is no caller-supplied key parameter (D-042).
+///   3. Each `ed25519` signature is checked against the unsigned bytes with
+///      `actor` as the public key.
+///
+/// Ed25519-only: non-`ed25519` `signed` attributes (e.g. `ml-dsa-87`) are
+/// skipped, not rejected — the browser holds no PQ key (PROTOCOL.md §2.3),
+/// matching the write-op policy above and `verifyBall`'s no-PQ branch.
+///
+/// Returns:
+///   2  — v4 envelope parsed and at least one Ed25519 signature verified
+///   1  — v4 envelope parsed but no Ed25519 signature present (draft / unsigned)
+///   0  — verification failed (signature mismatch, tampered bytes, wrong key,
+///        or malformed signature length)
+///   -1 / 0xFFFFFFFF — parse error (use resultErr for diagnostic)
+export fn verifyAction(input_ptr: u32, input_len: u32) i32 {
+    const input_bytes: []const u8 = @as([*]const u8, @ptrFromInt(input_ptr))[0..input_len];
+    const alloc_ = fba_state.allocator();
+
+    // Reconstruct unsigned bytes + collect signatures (verifyBall pattern).
+    const stripped = envelope.stripSignatures(alloc_, input_bytes) catch |e| {
+        setErr("verifyAction: stripSignatures failed: {t}", .{e});
+        return -1;
+    };
+
+    // Recover the actor (Ed25519 public key) from the core map. decodeAction
+    // already skips `signed` attributes, so the signed envelope decodes as-is.
+    const decoded = envelope_v2.decodeAction(alloc_, input_bytes) catch |e| {
+        setErr("verifyAction: decodeAction failed: {t}", .{e});
+        return -1;
+    };
+
+    const pk = Ed25519.PublicKey.fromBytes(decoded.action.actor) catch {
+        setErr("verifyAction: actor is not a valid Ed25519 public key", .{});
+        return -1;
+    };
+
+    var have_ed = false;
+    for (stripped.signatures) |sig| {
+        if (std.mem.eql(u8, sig.alg, "ed25519")) {
+            if (sig.value.len != Ed25519.Signature.encoded_length) {
+                setErr("verifyAction: malformed Ed25519 signature length", .{});
+                return 0;
+            }
+            var sig_arr: [Ed25519.Signature.encoded_length]u8 = undefined;
+            @memcpy(&sig_arr, sig.value);
+            const sig_obj = Ed25519.Signature.fromBytes(sig_arr);
+            sig_obj.verify(stripped.unsigned, pk) catch {
+                setErr("verifyAction: Ed25519 signature verification failed", .{});
+                return 0;
+            };
+            have_ed = true;
+        }
+        // Non-ed25519 attributes (e.g. ml-dsa-87) are skipped — the browser
+        // holds no PQ key; the native CLI is the PQ authority (PROTOCOL.md §2.3).
+    }
+
+    return if (have_ed) 2 else 1;
+}
+
 // ============================================================================
 // Inline KAT — verifies signActionEnvelope round-trips through verifyEd25519.
 // Uses a deterministic all-zeros seed so the expected signature is a fixed
@@ -916,6 +985,175 @@ test "authorAction rejects zero-length kind with diagnostic" {
     // kind_len = 0 short-circuits before any pointer is dereferenced.
     const result = authorAction(0, 0, 0, 0, 0, 0, 0, 0, 0);
     try std.testing.expectEqual(@as(u64, 0), result);
+}
+
+// ============================================================================
+// Inline KAT — verifyAction round-trips a signed v4 ball.action (return 2) and
+// rejects tampered body / kind / hlc, a wrong-key envelope (return 0), an
+// unsigned envelope (return 1), and zero-length input (return -1). Shares the
+// B1 authorAction fixture so the two seams are proven against the same bytes.
+// AC1–AC6, PROTOCOL.md §16.7/§17/§18, D-042/D-043.
+// ============================================================================
+
+/// Author the shared B1/B2 fixture into fba linear memory and return the SIGNED
+/// envelope slice (pointing into the bump buffer). Caller must NOT reset fba
+/// before it is done with the returned bytes.
+const VerifyKatFixture = struct {
+    kind: []const u8 = "worldtree.kanban-card.move",
+    body: [3]u8 = .{ 0x82, 0x01, 0x02 }, // canonical CBOR array [1, 2]
+    parent: [32]u8 = .{0x10} ** 32,
+    hlc_l: u64 = 1_700_000_000_000,
+    hlc_c: u64 = 7,
+};
+
+fn authorKatEnvelope(fx: VerifyKatFixture, seed: [Ed25519.KeyPair.seed_length]u8) []const u8 {
+    const kp = Ed25519.KeyPair.generateDeterministic(seed) catch unreachable;
+    const sk_bytes = kp.secret_key.toBytes();
+
+    const sk_slot = fba_state.allocator().alloc(u8, 64) catch unreachable;
+    @memcpy(sk_slot, &sk_bytes);
+    const kind_slot = fba_state.allocator().alloc(u8, fx.kind.len) catch unreachable;
+    @memcpy(kind_slot, fx.kind);
+    const body_slot = fba_state.allocator().alloc(u8, fx.body.len) catch unreachable;
+    @memcpy(body_slot, &fx.body);
+    const ph_slot = fba_state.allocator().alloc(u8, 32) catch unreachable;
+    @memcpy(ph_slot, &fx.parent);
+
+    const result = authorAction(
+        @intCast(@intFromPtr(kind_slot.ptr)),
+        @intCast(kind_slot.len),
+        @intCast(@intFromPtr(body_slot.ptr)),
+        @intCast(body_slot.len),
+        @intCast(@intFromPtr(ph_slot.ptr)),
+        1,
+        fx.hlc_l,
+        fx.hlc_c,
+        @intCast(@intFromPtr(sk_slot.ptr)),
+    );
+    std.debug.assert(result != 0);
+    const env_ptr = @as(usize, @intCast(result >> 32));
+    const env_len = @as(usize, @intCast(result & 0xFFFFFFFF));
+    return @as([*]const u8, @ptrFromInt(env_ptr))[0..env_len];
+}
+
+/// Copy `src` into a fresh fba slot so it can be mutated in place before
+/// handing it to `verifyAction`.
+fn mutableCopy(src: []const u8) []u8 {
+    const slot = fba_state.allocator().alloc(u8, src.len) catch unreachable;
+    @memcpy(slot, src);
+    return slot;
+}
+
+fn callVerify(bytes: []const u8) i32 {
+    return verifyAction(@intCast(@intFromPtr(bytes.ptr)), @intCast(bytes.len));
+}
+
+test "verifyAction KAT — valid signed v4 action verifies (return 2)" {
+    fba_state.reset();
+    const env = authorKatEnvelope(.{}, .{0} ** Ed25519.KeyPair.seed_length);
+    try std.testing.expectEqual(@as(i32, 2), callVerify(env));
+}
+
+test "verifyAction tamper — flipped body byte fails verification (return 0)" {
+    fba_state.reset();
+    const fx = VerifyKatFixture{};
+    const env = authorKatEnvelope(fx, .{0} ** Ed25519.KeyPair.seed_length);
+    const t = mutableCopy(env);
+
+    // The body byte string is `0x43 0x82 0x01 0x02` (3-byte bstr header + the
+    // canonical array [1,2]). Flip the trailing 0x02 → 0x03: the body stays
+    // canonical (decodeAction's inner body gate still passes), but the
+    // signed-over bytes change, so the signature must no longer verify.
+    const needle = [_]u8{ 0x43, 0x82, 0x01, 0x02 };
+    const idx = std.mem.indexOf(u8, t, &needle).?;
+    t[idx + 3] = 0x03;
+    try std.testing.expectEqual(@as(i32, 0), callVerify(t));
+}
+
+test "verifyAction tamper — flipped kind byte fails verification (return 0)" {
+    fba_state.reset();
+    const fx = VerifyKatFixture{};
+    const env = authorKatEnvelope(fx, .{0} ** Ed25519.KeyPair.seed_length);
+    const t = mutableCopy(env);
+
+    // Overwrite the first byte of the open kind ('w' → 'x'): same length, still
+    // valid UTF-8 text (decodeAction accepts it), but the core map is inside the
+    // signed region so verification fails.
+    const idx = std.mem.indexOf(u8, t, fx.kind).?;
+    std.debug.assert(t[idx] == 'w');
+    t[idx] = 'x';
+    try std.testing.expectEqual(@as(i32, 0), callVerify(t));
+}
+
+test "verifyAction tamper — flipped hlc byte fails verification (return 0)" {
+    fba_state.reset();
+    const fx = VerifyKatFixture{};
+    const env = authorKatEnvelope(fx, .{0} ** Ed25519.KeyPair.seed_length);
+    const t = mutableCopy(env);
+
+    // hlc encodes as [l, c] = `0x82 0x1b <8 BE bytes of l> <c>`. Locate the
+    // `0x82 0x1b` + l prefix and bump l's most-significant byte: l stays a
+    // canonical 8-byte uint (still > u32 range) so decodeAction succeeds, but the
+    // signed bytes change → verification fails.
+    var be8: [8]u8 = undefined;
+    std.mem.writeInt(u64, &be8, fx.hlc_l, .big);
+    var needle: [10]u8 = undefined;
+    needle[0] = 0x82;
+    needle[1] = 0x1b;
+    @memcpy(needle[2..10], &be8);
+    const idx = std.mem.indexOf(u8, t, &needle).?;
+    t[idx + 2] +%= 1; // bump the MSB of l (0x00 → 0x01)
+    try std.testing.expectEqual(@as(i32, 0), callVerify(t));
+}
+
+test "verifyAction wrong key — actor != signer fails verification (return 0)" {
+    fba_state.reset();
+    const fx = VerifyKatFixture{};
+
+    // Sign with seed A but bake seed B's public key into `actor`. decodeAction
+    // recovers actor = B; the signature was made by A over bytes carrying actor
+    // = B, so verifying it against B fails. Built directly via the v2 encoders
+    // (the WASM authorAction always derives actor from the signer, so a mismatch
+    // can only be constructed manually).
+    const kp_a = try Ed25519.KeyPair.generateDeterministic(.{0xAA} ** Ed25519.KeyPair.seed_length);
+    const kp_b = try Ed25519.KeyPair.generateDeterministic(.{0xBB} ** Ed25519.KeyPair.seed_length);
+
+    var parents = [_][32]u8{fx.parent};
+    const action = protocol_v2.Action{
+        .kind = fx.kind,
+        .parent_hashes = &parents,
+        .actor = kp_b.public_key.toBytes(), // actor = B
+        .body = &fx.body,
+        .hlc = .{ fx.hlc_l, fx.hlc_c },
+    };
+    const unsigned = try envelope_v2.encodeActionV4(fba_state.allocator(), action);
+    const sig = try kp_a.sign(unsigned, null); // signed by A — the wrong key
+    const sig_bytes = sig.toBytes();
+    const sigs = [_]protocol.Signature{.{ .alg = "ed25519", .value = &sig_bytes }};
+    const env = try envelope_v2.encodeActionV4Signed(fba_state.allocator(), action, &sigs);
+
+    try std.testing.expectEqual(@as(i32, 0), callVerify(env));
+}
+
+test "verifyAction unsigned envelope — no ed25519 sig present (return 1)" {
+    fba_state.reset();
+    const fx = VerifyKatFixture{};
+
+    var parents = [_][32]u8{fx.parent};
+    const action = protocol_v2.Action{
+        .kind = fx.kind,
+        .parent_hashes = &parents,
+        .actor = (try Ed25519.KeyPair.generateDeterministic(.{0} ** Ed25519.KeyPair.seed_length)).public_key.toBytes(),
+        .body = &fx.body,
+        .hlc = .{ fx.hlc_l, fx.hlc_c },
+    };
+    const unsigned = try envelope_v2.encodeActionV4(fba_state.allocator(), action);
+    try std.testing.expectEqual(@as(i32, 1), callVerify(unsigned));
+}
+
+test "verifyAction rejects zero-length input (return -1)" {
+    fba_state.reset();
+    try std.testing.expectEqual(@as(i32, -1), verifyAction(0, 0));
 }
 
 /// Blake3 hash — cross-runtime parity export (HIGH-2 fix, Sprint-1 code review).

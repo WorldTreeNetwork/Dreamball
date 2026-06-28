@@ -855,13 +855,22 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
     if (fv == v2.Action.format_version) {
         // v4 — open kind, mandatory HLC (§17), optional opaque body.
         decoded_kind = open_kind_opt orelse return DecodeError.MissingField;
+        // §18.1 — zero-length kind is a decode error.
+        if (decoded_kind.len == 0) return DecodeError.InvalidValue;
         if (!hlc_present) return DecodeError.MissingField;
         decoded_hlc = hlc;
         decoded_body = body_opt;
+        // D-041/D-043 — body well-formedness gate (defense in depth). The outer
+        // assertCanonical at entry walks past the body byte-string without
+        // inspecting its contents, so the inner bytes are checked here.
+        if (decoded_body) |b| try assertCanonical(b);
     } else if (fv == 3) {
         // v3 palace profile — closed `action-kind`, no HLC, no body. Preserve
         // the original closed-enum validation: the wire string must be one of
         // the 9 known palace verbs.
+        // §A5/AC5 — body is a v4-only concept; a "body" key in a v3 core map
+        // is a structural error (guards against cross-version body injection).
+        if (body_opt != null) return DecodeError.InvalidValue;
         const ak = action_kind_opt orelse return DecodeError.MissingField;
         const kinds = [_]v2.ActionKind{
             .palace_minted, .room_added, .avatar_inscribed, .aqueduct_created,
@@ -1989,6 +1998,232 @@ test "encodeActionV4 rejects a non-canonical body" {
     try std.testing.expectError(DecodeError.NonCanonicalInteger, encodeActionV4(allocator, a));
 }
 
+// ----------------------------------------------------------------------------
+// A3 — validation on decode (canonical body + required fields). These tests
+// hand-build v4 core maps directly so a malformed envelope can bypass the
+// encoder's own checks and reach decodeAction. The map keys are emitted in
+// dCBOR canonical order — hlc(3), body(4), kind(4), type(4), actor(5),
+// parent-hashes(13), format-version(14) — so the outer assertCanonical gate
+// passes and each test isolates the specific decode-side rule under test.
+// ----------------------------------------------------------------------------
+
+const A3CoreOpts = struct {
+    include_hlc: bool = true,
+    hlc_arity: u64 = 2,
+    include_kind: bool = true,
+    kind: []const u8 = "x.y.z",
+    body: ?[]const u8 = null,
+    include_actor: bool = true,
+    include_fv: bool = true,
+    fv: u64 = v2.Action.format_version,
+};
+
+/// Build a v4 `ball.action` envelope (zero attributes) with a hand-laid core
+/// map, in canonical key order, honouring `opts`. Used only by the A3 tests.
+fn buildA3V4Core(allocator: Allocator, opts: A3CoreOpts) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(w, 1); // core only, zero attributes
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    var n: u64 = 2; // "type" + "parent-hashes" always present
+    if (opts.include_hlc) n += 1;
+    if (opts.body != null) n += 1;
+    if (opts.include_kind) n += 1;
+    if (opts.include_actor) n += 1;
+    if (opts.include_fv) n += 1;
+    try zbor.builder.writeMap(w, n);
+
+    if (opts.include_hlc) {
+        try zbor.builder.writeTextString(w, "hlc");
+        try zbor.builder.writeArray(w, opts.hlc_arity);
+        var i: u64 = 0;
+        while (i < opts.hlc_arity) : (i += 1) try zbor.builder.writeInt(w, @as(u64, 0));
+    }
+    if (opts.body) |b| {
+        try zbor.builder.writeTextString(w, "body");
+        try zbor.builder.writeByteString(w, b);
+    }
+    if (opts.include_kind) {
+        try zbor.builder.writeTextString(w, "kind");
+        try zbor.builder.writeTextString(w, opts.kind);
+    }
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, v2.Action.type_string);
+    if (opts.include_actor) {
+        try zbor.builder.writeTextString(w, "actor");
+        try zbor.builder.writeByteString(w, &([_]u8{0} ** 32));
+    }
+    try zbor.builder.writeTextString(w, "parent-hashes");
+    try zbor.builder.writeArray(w, 0);
+    if (opts.include_fv) {
+        try zbor.builder.writeTextString(w, "format-version");
+        try zbor.builder.writeInt(w, opts.fv);
+    }
+    return ai.toOwnedSlice();
+}
+
+test "A3: v4 empty kind is a decode error" {
+    const allocator = std.testing.allocator;
+    // §18.1 — zero-length kind. The envelope is otherwise canonical and
+    // complete, so only the empty-kind rule can reject it.
+    const bytes = try buildA3V4Core(allocator, .{ .kind = "" });
+    defer allocator.free(bytes);
+    try assertCanonical(bytes); // outer envelope is canonical; rejection is decode-side
+    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
+}
+
+test "A3: v4 non-canonical body is rejected" {
+    const allocator = std.testing.allocator;
+    // Body bytes = uint 0 in non-minimal 2-byte form (0x18 0x00). Wrapped in a
+    // byte string, the outer assertCanonical walks past it without inspecting
+    // the inner bytes, so the decode-side body gate is the only thing that can
+    // catch it (D-041/D-043).
+    const bad_body = [_]u8{ 0x18, 0x00 };
+    const bytes = try buildA3V4Core(allocator, .{ .body = &bad_body });
+    defer allocator.free(bytes);
+    try assertCanonical(bytes); // outer envelope passes — body is opaque here
+    try std.testing.expectError(DecodeError.NonCanonicalInteger, decodeAction(allocator, bytes));
+}
+
+test "A3: v4 absent body decodes cleanly after A3" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    const a = v2.Action{
+        .kind = "myapp.thing.do",
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x01} ** 32,
+        .hlc = .{ 7, 1 },
+    };
+    const bytes = try encodeActionV4(allocator, a);
+    defer allocator.free(bytes);
+    // The `if (decoded_body) |b|` guard must not misfire on a null body.
+    const result = try decodeAction(allocator, bytes);
+    defer allocator.free(result.parent_hashes);
+    defer allocator.free(result.deps);
+    defer allocator.free(result.nacks);
+    try std.testing.expectEqual(@as(?[]const u8, null), result.action.body);
+    try std.testing.expectEqualStrings("myapp.thing.do", result.action.kind);
+}
+
+test "A3: v4 canonical body passes decode" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    // Minimal known-good canonical CBOR body: the integer 1 (0x01).
+    const body = [_]u8{0x01};
+    const a = v2.Action{
+        .kind = "myapp.thing.do",
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x01} ** 32,
+        .body = &body,
+        .hlc = .{ 7, 1 },
+    };
+    const bytes = try encodeActionV4(allocator, a);
+    defer allocator.free(bytes);
+    const result = try decodeAction(allocator, bytes);
+    defer allocator.free(result.parent_hashes);
+    defer allocator.free(result.deps);
+    defer allocator.free(result.nacks);
+    try std.testing.expect(result.action.body != null);
+    try std.testing.expectEqualSlices(u8, &body, result.action.body.?);
+}
+
+test "A3: v4 missing kind returns MissingField" {
+    const allocator = std.testing.allocator;
+    const bytes = try buildA3V4Core(allocator, .{ .include_kind = false });
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.MissingField, decodeAction(allocator, bytes));
+}
+
+test "A3: v4 missing actor returns MissingField" {
+    const allocator = std.testing.allocator;
+    const bytes = try buildA3V4Core(allocator, .{ .include_actor = false });
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.MissingField, decodeAction(allocator, bytes));
+}
+
+test "A3: v4 missing hlc returns MissingField" {
+    const allocator = std.testing.allocator;
+    const bytes = try buildA3V4Core(allocator, .{ .include_hlc = false });
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.MissingField, decodeAction(allocator, bytes));
+}
+
+test "A3: v4 missing format-version returns MissingField" {
+    const allocator = std.testing.allocator;
+    const bytes = try buildA3V4Core(allocator, .{ .include_fv = false });
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.MissingField, decodeAction(allocator, bytes));
+}
+
+test "A3: v4 hlc with 1 element returns InvalidValue" {
+    const allocator = std.testing.allocator;
+    const bytes = try buildA3V4Core(allocator, .{ .hlc_arity = 1 });
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
+}
+
+test "A3: v4 hlc with 3 elements returns InvalidValue" {
+    const allocator = std.testing.allocator;
+    const bytes = try buildA3V4Core(allocator, .{ .hlc_arity = 3 });
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
+}
+
+test "A3: unknown format-version (5) returns InvalidValue" {
+    const allocator = std.testing.allocator;
+    const bytes = try buildA3V4Core(allocator, .{ .fv = 5 });
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
+}
+
+test "A3: v3 valid action-kind still decodes" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    const a = v2.Action{
+        .kind = v2.ActionKind.palace_minted.toWireString(),
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x20} ** 32,
+        .hlc = .{ 0, 0 },
+    };
+    const bytes = try encodeAction(allocator, a); // v3 wire shape
+    defer allocator.free(bytes);
+    const result = try decodeAction(allocator, bytes);
+    defer allocator.free(result.parent_hashes);
+    defer allocator.free(result.deps);
+    defer allocator.free(result.nacks);
+    try std.testing.expectEqualStrings("palace-minted", result.action.kind);
+}
+
+test "A3: v3 unknown action-kind returns InvalidValue" {
+    const allocator = std.testing.allocator;
+    // Hand-built canonical v3 core map: type(4), actor(5), action-kind(11),
+    // parent-hashes(13), format-version(14), with a verb outside the closed enum.
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    defer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(w, 1); // core only
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 5);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, v2.Action.type_string);
+    try zbor.builder.writeTextString(w, "actor");
+    try zbor.builder.writeByteString(w, &([_]u8{0} ** 32));
+    try zbor.builder.writeTextString(w, "action-kind");
+    try zbor.builder.writeTextString(w, "unknown-verb");
+    try zbor.builder.writeTextString(w, "parent-hashes");
+    try zbor.builder.writeArray(w, 0);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @as(u64, 3));
+
+    const bytes = try ai.toOwnedSlice();
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
+}
+
 test "encodeAqueduct round-trip" {
     const allocator = std.testing.allocator;
     const aq = v2.Aqueduct{
@@ -2678,4 +2913,200 @@ test "MEDIUM-5: mutating an equal-length map-key pair causes verifyCanonical to 
         dcbor.ReadError.NonCanonicalInteger,
         dcbor.verifyCanonical(bytes),
     );
+}
+
+// ============================================================================
+// A5 — Broader tamper matrix + v3 golden regression guard.
+//
+// A2 and A3 already cover: happy paths, HLC arity (AC1–2), unknown
+// format-version (AC3), empty kind (AC4), missing-field matrix (AC9–12).
+// A5 adds the remaining non-duplicate cases:
+//   AC5  — body key in a v3 envelope (structural error, cross-version)
+//   AC6  — truncated byte stream
+//   AC7  — garbage bytes (not a valid envelope)
+//   AC8  — non-canonical v4 7-key map ordering
+//   AC13 — v3 golden fixtures round-trip (regression guard for A3 additions)
+// ============================================================================
+
+test "A5: decodeAction rejects body key in v3 envelope" {
+    // AC5 — "body" is v4-only; its presence in a v3 core map is a structural
+    // error (§A5/AC5).  The map is in canonical key order so assertCanonical
+    // passes; the rejection is in the v3 decode-side guard added alongside
+    // this test.
+    // Canonical key order: body(4), type(4), actor(5), action-kind(11),
+    //                      parent-hashes(13), format-version(14).
+    // At len 4: "body" (b=98) < "type" (t=116) lex.
+    const allocator = std.testing.allocator;
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    defer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(w, 1); // core only, zero attributes
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 6); // 5 normal v3 fields + "body"
+    try zbor.builder.writeTextString(w, "body");
+    try zbor.builder.writeByteString(w, &[_]u8{0x01}); // opaque byte, canonical CBOR uint(1)
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, v2.Action.type_string);
+    try zbor.builder.writeTextString(w, "actor");
+    try zbor.builder.writeByteString(w, &([_]u8{0x01} ** 32));
+    try zbor.builder.writeTextString(w, "action-kind");
+    try zbor.builder.writeTextString(w, v2.ActionKind.palace_minted.toWireString());
+    try zbor.builder.writeTextString(w, "parent-hashes");
+    try zbor.builder.writeArray(w, 0);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @as(u64, 3));
+    const bytes = try ai.toOwnedSlice();
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
+}
+
+test "A5: decodeAction rejects truncated core map" {
+    // AC6 — A valid v4 action truncated to half its byte length is incomplete
+    // CBOR; assertCanonical fires DecodeError.Truncated before any field
+    // parsing begins.
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    const a = v2.Action{
+        .kind = "x.y.z",
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x01} ** 32,
+        .hlc = .{ 1, 0 },
+    };
+    const full = try encodeActionV4(allocator, a);
+    defer allocator.free(full);
+    const half = full[0 .. full.len / 2];
+    try std.testing.expectError(DecodeError.Truncated, decodeAction(allocator, half));
+}
+
+test "A5: decodeAction rejects garbage bytes" {
+    // AC7 — Three raw CBOR uint values with no envelope tag.  The very first
+    // call, readEnvelopeHeader → expectTag, sees a non-tag major type and
+    // returns DecodeError.UnexpectedMajorType; any DecodeError is acceptable.
+    const allocator = std.testing.allocator;
+    const bad = [_]u8{ 0x00, 0x01, 0x02 }; // uint 0, uint 1, uint 2 — no tag
+    if (decodeAction(allocator, &bad)) |result| {
+        // Must not succeed.
+        allocator.free(result.parent_hashes);
+        allocator.free(result.deps);
+        allocator.free(result.nacks);
+        return error.TestExpectedDecodeError;
+    } else |_| {
+        // Any DecodeError is correct; UnexpectedMajorType fires first here.
+    }
+}
+
+test "A5: decodeAction rejects non-canonical v4 map key ordering" {
+    // AC8 — 7-key v4 core map (includes "body") with "type" emitted before
+    // "kind" at length 4.  Canonical len-4 order is "body" < "kind" < "type"
+    // (lex).  "type" before "kind" violates it; assertCanonical returns
+    // DecodeError.NonCanonicalInteger.  HIGH-1 covers the v3/5-key shape;
+    // this AC covers the v4/7-key shape explicitly.
+    const allocator = std.testing.allocator;
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    defer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(w, 1); // core only, zero attributes
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 7);
+    // Canonical len-3 first.
+    try zbor.builder.writeTextString(w, "hlc");
+    try zbor.builder.writeArray(w, 2);
+    try zbor.builder.writeInt(w, @as(u64, 1));
+    try zbor.builder.writeInt(w, @as(u64, 0));
+    // Len-4 keys emitted in violation order: body, TYPE, kind
+    // ("type" before "kind" is the violation; "kind"(k=107) < "type"(t=116)).
+    try zbor.builder.writeTextString(w, "body");
+    try zbor.builder.writeByteString(w, &[_]u8{0x01}); // opaque body, canonical uint(1)
+    try zbor.builder.writeTextString(w, "type"); // emitted too soon — violates body < kind < type
+    try zbor.builder.writeTextString(w, v2.Action.type_string);
+    try zbor.builder.writeTextString(w, "kind"); // should have come before "type"
+    try zbor.builder.writeTextString(w, "x.y.z");
+    // Remaining keys in canonical order.
+    try zbor.builder.writeTextString(w, "actor");
+    try zbor.builder.writeByteString(w, &([_]u8{0x01} ** 32));
+    try zbor.builder.writeTextString(w, "parent-hashes");
+    try zbor.builder.writeArray(w, 0);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, v2.Action.format_version);
+    const bytes = try ai.toOwnedSlice();
+    defer allocator.free(bytes);
+    try std.testing.expectError(DecodeError.NonCanonicalInteger, decodeAction(allocator, bytes));
+}
+
+test "A5: v3 golden fixtures decode correctly (regression guard)" {
+    // AC13 — Re-encode the three v3 golden action fixtures (src/golden.zig
+    // fixtures 4, 5, 5a) and decode them, verifying that A3's decode-side
+    // additions (empty-kind guard, body-on-v3 guard, body canonicality gate)
+    // do not accidentally break valid v3 paths.
+    const allocator = std.testing.allocator;
+
+    // Fixture 4 — palace_minted, single parent (actor = 0x01*32, parent = 0x10*32).
+    {
+        var parents = [_][32]u8{[_]u8{0x10} ** 32};
+        const a = v2.Action{
+            .kind = v2.ActionKind.palace_minted.toWireString(),
+            .actor = [_]u8{0x01} ** 32,
+            .parent_hashes = &parents,
+            .hlc = .{ 0, 0 },
+        };
+        const bytes = try encodeAction(allocator, a);
+        defer allocator.free(bytes);
+        const result = try decodeAction(allocator, bytes);
+        defer allocator.free(result.parent_hashes);
+        defer allocator.free(result.deps);
+        defer allocator.free(result.nacks);
+        try std.testing.expectEqualStrings("palace-minted", result.action.kind);
+        try std.testing.expectEqual(@as(u8, 0x01), result.action.actor[0]);
+        try std.testing.expectEqual(@as(usize, 1), result.parent_hashes.len);
+    }
+
+    // Fixture 5 — move, multi-parent (parents = [0x10*32, 0x11*32]).
+    {
+        var parents = [_][32]u8{
+            [_]u8{0x10} ** 32,
+            [_]u8{0x11} ** 32,
+        };
+        const a = v2.Action{
+            .kind = v2.ActionKind.move.toWireString(),
+            .actor = [_]u8{0x01} ** 32,
+            .parent_hashes = &parents,
+            .hlc = .{ 0, 0 },
+        };
+        const bytes = try encodeAction(allocator, a);
+        defer allocator.free(bytes);
+        const result = try decodeAction(allocator, bytes);
+        defer allocator.free(result.parent_hashes);
+        defer allocator.free(result.deps);
+        defer allocator.free(result.nacks);
+        try std.testing.expectEqualStrings("move", result.action.kind);
+        try std.testing.expectEqual(@as(u8, 0x01), result.action.actor[0]);
+        try std.testing.expectEqual(@as(usize, 2), result.parent_hashes.len);
+    }
+
+    // Fixture 5a — inscription_updated, 1 dep + 1 nack (actor = 0x01*32,
+    //              dep = 0x20*32, nack = 0x30*32).
+    {
+        var parents = [_][32]u8{[_]u8{0x10} ** 32};
+        var deps = [_]v2.ActionRef{[_]u8{0x20} ** 32};
+        var nacks = [_]v2.ActionRef{[_]u8{0x30} ** 32};
+        const a = v2.Action{
+            .kind = v2.ActionKind.inscription_updated.toWireString(),
+            .actor = [_]u8{0x01} ** 32,
+            .parent_hashes = &parents,
+            .hlc = .{ 0, 0 },
+            .deps = &deps,
+            .nacks = &nacks,
+        };
+        const bytes = try encodeAction(allocator, a);
+        defer allocator.free(bytes);
+        const result = try decodeAction(allocator, bytes);
+        defer allocator.free(result.parent_hashes);
+        defer allocator.free(result.deps);
+        defer allocator.free(result.nacks);
+        try std.testing.expectEqualStrings("inscription-updated", result.action.kind);
+        try std.testing.expectEqual(@as(u8, 0x01), result.action.actor[0]);
+        try std.testing.expectEqual(@as(usize, 1), result.parent_hashes.len);
+    }
 }

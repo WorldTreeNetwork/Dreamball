@@ -76,8 +76,13 @@ describe('round-trip parity: Action (CLI-path)', () => {
 		const bytes = loadFixture('action.cbor');
 		const decoded = decodeAction(bytes);
 		expect(decoded.type).toBe('ball.action');
-		expect(decoded['format-version']).toBe(3);
-		expect(decoded['action-kind']).toBe('palace-minted');
+		expect(decoded['format-version']).toBe(4);
+		// v4: open `kind` string (D-037) replaces the closed v3 action-kind enum.
+		expect(decoded.kind).toBe('worldtree.kanban-card.move');
+		// v4: mandatory HLC [l, c] (D-039), decoded from the bare uint array.
+		expect(decoded.hlc).toEqual([1700000000000, 7]);
+		// v4: opaque CBOR-in-CBOR body (D-043), surfaced Base58-tagged.
+		expect(decoded.body).toBeDefined();
 		expect(decoded['parent-hashes'].length).toBe(1);
 		const result = v.safeParse(ActionSchema, decoded);
 		expect(result.success).toBe(true);
@@ -213,13 +218,17 @@ describe('AC3: Valibot rejects malformed palace envelopes', () => {
 		expect(r.success).toBe(false);
 	});
 
-	it('ActionSchema rejects unknown action-kind', () => {
+	it('ActionSchema rejects a v4 action missing the mandatory hlc', () => {
+		// v4 `kind` is an open string, so there is no longer a closed-enum to
+		// reject; the structural guard is the required HLC (D-039). Omitting it
+		// must fail validation.
 		const r = v.safeParse(ActionSchema, {
 			type: 'ball.action',
-			'format-version': 3,
-			'action-kind': 'unknown-kind',
+			'format-version': 4,
+			kind: 'worldtree.kanban-card.move',
 			actor: 'b58:abc',
 			'parent-hashes': []
+			// missing hlc
 		});
 		expect(r.success).toBe(false);
 	});

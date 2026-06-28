@@ -70,14 +70,21 @@ pub fn main() !void {
     }
 
     // ── action ───────────────────────────────────────────────────────────────
+    // v4 ball.action (D-037/D-039/D-043): open `kind`, mandatory `hlc`, and an
+    // opaque CBOR-in-CBOR `body`. This exercises the v4 decode path in cbor.ts
+    // (the legacy v3 palace profile is still covered by encodeAction's inline
+    // Zig round-trip tests in src/envelope_v2.zig).
     {
         var parents = [_][32]u8{[_]u8{0x10} ** 32};
+        const body = [_]u8{ 0x82, 0x01, 0x02 }; // canonical CBOR: [1, 2]
         const a = v2.Action{
-            .action_kind = .palace_minted,
+            .kind = "worldtree.kanban-card.move",
             .actor = [_]u8{0x01} ** 32,
             .parent_hashes = &parents,
+            .hlc = .{ 1_700_000_000_000, 7 },
+            .body = &body,
         };
-        const bytes = try ev2.encodeAction(gpa, a);
+        const bytes = try ev2.encodeActionV4(gpa, a);
         defer gpa.free(bytes);
         try writeFixture(io, "fixtures/envelope_golden/action.cbor", bytes);
     }

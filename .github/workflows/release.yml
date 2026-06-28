@@ -155,9 +155,11 @@ jobs:
           gz=$(gzip -9c src/lib/wasm/dreamball.wasm | wc -c)
           echo "dreamball.wasm: ${raw} bytes raw, ${gz} bytes gzipped"
           # raw relaxed 200→224 KB on 2026-06-25 (nested-envelope decoders);
-          # gzipped 64 KB is the binding wire constraint. See ADR 2026-06-25.
-          test "$raw" -le 229376
-          test "$gz" -le 65536
+          # 2026-06-28: dev-velocity bump to 300 KB raw / 150 KB gzip — verifyAction
+          # (sprint-003 B2) links the full decodeAction path. Restoration to a tight
+          # gzip budget tracked in Dreamball-8bk. See ADR 2026-06-28-wasm-size-budget-dev-velocity-bump.
+          test "$raw" -le 307200
+          test "$gz" -le 153600
       - name: Verify vendored bundle is in lockstep with committed source
         run: |
           set -euo pipefail

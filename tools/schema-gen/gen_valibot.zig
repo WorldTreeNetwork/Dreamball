@@ -497,10 +497,12 @@ const BODY =
     \\
     \\export const ActionSchema = v.object({
     \\  type: v.literal('ball.action'),
-    \\  'format-version': v.literal(3),
-    \\  'action-kind': ActionKindSchema,
+    \\  'format-version': v.literal(4),
+    \\  kind: v.string(),
     \\  actor: Base58Schema,
     \\  'parent-hashes': v.array(Base58Schema),
+    \\  hlc: v.tuple([v.number(), v.number()]),
+    \\  body: v.optional(v.string()),
     \\  'target-fp': v.optional(Base58Schema),
     \\  timestamp: v.optional(v.number()),
     \\  deps: v.optional(v.array(Base58Schema)),

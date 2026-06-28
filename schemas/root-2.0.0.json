@@ -53,7 +53,7 @@
       "x-zig": "InteractionKind"
     },
     "ActionKind": {
-      "$comment": "Closed enum of 9 action kinds; wire form is the kebab-case string. Per src/protocol_v2.zig ActionKind.",
+      "$comment": "Convenience palette for palace authors (D-038). NOT the v4 wire type — Action.kind is an open string from v4 onward. This entry is kept as a documentation aid for palace-profile consumers.",
       "type": "string",
       "enum": [
         "palace-minted",
@@ -870,11 +870,26 @@
       "type": "object",
       "x-zig-type": "Action",
       "x-wire-type": "ball.action",
-      "x-format-version": 3,
-      "required": ["action-kind", "parent-hashes", "actor"],
+      "x-format-version": 4,
+      "required": ["kind", "hlc", "parent-hashes", "actor"],
       "additionalProperties": false,
       "properties": {
-        "action-kind": { "$ref": "#/$defs/ActionKind" },
+        "kind": {
+          "$comment": "Open kind string (D-037/D-038). Replaces the closed action-kind enum of v3. Palace authors use ActionKind.toWireString(); other consumers supply dot-namespaced verbs.",
+          "type": "string"
+        },
+        "hlc": {
+          "$comment": "Hybrid Logical Clock [l, c] (D-039). l = ms wall-clock, c = intra-l counter. Bare 2-element uint array in CBOR (no tag).",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "body": {
+          "$comment": "Opaque consumer CBOR payload (CBOR-in-CBOR, D-043). Absent when the action carries no payload.",
+          "type": ["string", "null"],
+          "x-optional": true
+        },
         "parent-hashes": {
           "type": "array",
           "items": { "$ref": "#/$defs/Bytes32" },

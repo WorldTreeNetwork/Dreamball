@@ -464,6 +464,11 @@ const BODY =
     \\  note?: string;
     \\}
     \\
+    \\/**
+    \\ * Palace-profile kind palette — convenience constants for the 9 known
+    \\ * palace verbs. From v4 onward the `Action.kind` wire field is an open
+    \\ * string; this union is a documentation aid, not an exhaustive type.
+    \\ */
     \\export type ActionKind =
     \\  | 'palace-minted'
     \\  | 'room-added'
@@ -478,10 +483,15 @@ const BODY =
     \\/** §13.3 ball.action — a single DAG node in a palace timeline. */
     \\export interface Action {
     \\  type: 'ball.action';
-    \\  'format-version': 3;
-    \\  'action-kind': ActionKind;
+    \\  'format-version': 4;
+    \\  /** Open kind string (D-037). Palace verbs via ActionKind; other consumers use dot-namespaced strings. */
+    \\  kind: string;
     \\  actor: Bytes32;
     \\  'parent-hashes': Bytes32[];
+    \\  /** Hybrid Logical Clock [l, c] (D-039): l = ms wall-clock, c = intra-l counter. */
+    \\  hlc: [number, number];
+    \\  /** Opaque consumer CBOR payload, Base58-tagged (CBOR-in-CBOR, D-043). */
+    \\  body?: string;
     \\  'target-fp'?: Bytes32;
     \\  timestamp?: number;
     \\  deps?: Bytes32[];

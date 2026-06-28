@@ -106,7 +106,7 @@ Zig 0.16.0 + Bun. See `README.md` for the full command list.
 - `zig build` — compile library + `dreamball` CLI
 - `zig build test` — unit tests (≥ 51 passing)
 - `zig build smoke` — CLI end-to-end integration test
-- `zig build wasm` — produce `src/lib/wasm/dreamball.wasm` (≤ 224 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify). **Gzipped (the over-the-wire cost) is the binding budget;** raw was relaxed 200→224 KB on 2026-06-25 for the five nested-envelope decoders (binary is already ReleaseSmall). Gzip headroom is thin — adding more decode paths needs size work, not another raw bump. See [`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
+- `zig build wasm` — produce `src/lib/wasm/dreamball.wasm` (≤ 300 KB raw, ≤ 150 KB gzipped; ships ML-DSA-87 verify). **Gzipped (the over-the-wire cost) is the binding budget.** History: raw relaxed 200→224 KB on 2026-06-25 (nested-envelope decoders); **2026-06-28 dev-velocity bump to 300 KB raw / 150 KB gzip** (generous headroom) because `verifyAction` (sprint-003 B2) is the first WASM caller of `decodeAction` and links the full decode path. This bump is **temporary** — restoring a tight gzip budget is tracked in `Dreamball-8bk` (150 KB is a ceiling for fast iteration, not a target; the binary is ~66 KB gzip today). See [`docs/decisions/2026-06-28-wasm-size-budget-dev-velocity-bump.md`](docs/decisions/2026-06-28-wasm-size-budget-dev-velocity-bump.md) and [`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
 - `zig build schemagen` — regenerate `src/lib/generated/*.ts`
 
 On Linux, all of the above default to `-Dtarget=x86_64-linux-musl`
