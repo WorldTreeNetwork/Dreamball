@@ -56,6 +56,48 @@ interface WasmExports {
 	) => bigint;
 	resultErrPtr: () => number;
 	resultErrLen: () => number;
+	// Added by B3 — authorAction wrapper
+	authorAction: (
+		kind_ptr: number,
+		kind_len: number,
+		body_ptr: number,
+		body_len: number,
+		parent_hashes_ptr: number,
+		parent_hashes_count: number,
+		hlc_l: bigint,
+		hlc_c: bigint,
+		secret_ptr: number
+	) => bigint;
+	// Added by B2 — B3 wraps this
+	verifyAction: (ptr: number, len: number) => number;
+	// Added by B3 (subsumes Dreamball-t2d)
+	mintDreamBall: (
+		type_id: number,
+		name_ptr: number,
+		name_len: number,
+		created: bigint
+	) => bigint;
+	growDreamBall: (
+		env_ptr: number,
+		env_len: number,
+		secret_ptr: number,
+		secret_len: number,
+		new_name_ptr: number,
+		new_name_len: number,
+		updated: bigint,
+		promote_to_dreamball: number
+	) => bigint;
+	joinGuildWasm: (
+		env_ptr: number,
+		env_len: number,
+		guild_env_ptr: number,
+		guild_env_len: number,
+		secret_ptr: number,
+		secret_len: number,
+		updated: bigint
+	) => bigint;
+	lastSecretPtr: () => number;
+	lastSecretLen: () => number;
 }
 
 export const VERIFY_OK = 2 as const;
@@ -210,6 +252,312 @@ export async function signActionEnvelope(
 		const msg = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
 		throw new Error(`signActionEnvelope: wasm returned 0: ${msg || '(no diagnostic)'}`);
 	}
+	const ptr = Number(packed >> 32n);
+	const len = Number(packed & 0xffffffffn);
+	return new Uint8Array(exp.memory.buffer, ptr, len).slice();
+}
+
+/**
+ * Author (encode + sign) an action envelope from JS.
+ *
+ * Marshals the nine WASM parameters via the bump allocator, concatenates
+ * parent hashes into a contiguous run, and returns the signed envelope bytes.
+ * The actor fingerprint is derived inside WASM as `secret[32..64]` (D-042) —
+ * it is NOT a separate parameter.
+ *
+ * @param opts.kind     Non-empty action kind string (e.g. "worldtree.kanban-card.move")
+ * @param opts.body     Optional body bytes (omit or pass undefined for no body)
+ * @param opts.parents  Array of parent content-hash digests, each exactly 32 bytes
+ * @param opts.hlc      HLC clock as [hlc_l, hlc_c] BigInts (u64 each)
+ * @param opts.secret   64-byte Ed25519 secret: [seed(32) || pub(32)] in Zig wire format
+ * @returns             Signed envelope bytes (CBOR) — copied out of bump arena
+ */
+export async function authorAction(opts: {
+	kind: string;
+	body?: Uint8Array;
+	parents: Uint8Array[];
+	hlc: [bigint, bigint];
+	secret: Uint8Array;
+}): Promise<Uint8Array> {
+	// JS-side pre-validation before touching WASM.
+	if (opts.secret.length !== 64) {
+		throw new Error(
+			`authorAction: secret must be 64 bytes, got ${opts.secret.length}`
+		);
+	}
+	if (opts.kind.length === 0) {
+		throw new Error('authorAction: kind must be non-empty');
+	}
+
+	const exp = await getInstance();
+	exp.reset();
+
+	// 1. kind
+	const kindBytes = new TextEncoder().encode(opts.kind);
+	const kindPtr = exp.alloc(kindBytes.byteLength);
+	if (kindPtr === 0) throw new Error('authorAction: alloc failed (input too large?)');
+	new Uint8Array(exp.memory.buffer, kindPtr, kindBytes.byteLength).set(kindBytes);
+
+	// 2. body (optional — pass 0,0 if absent)
+	let bodyPtr = 0;
+	let bodyLen = 0;
+	if (opts.body !== undefined && opts.body.length > 0) {
+		bodyPtr = exp.alloc(opts.body.length);
+		if (bodyPtr === 0) throw new Error('authorAction: alloc failed (input too large?)');
+		new Uint8Array(exp.memory.buffer, bodyPtr, opts.body.length).set(opts.body);
+		bodyLen = opts.body.length;
+	}
+
+	// 3. parent hashes — validate each is exactly 32 bytes, then concatenate
+	const parentCount = opts.parents.length;
+	let phPtr = 0;
+	if (parentCount > 0) {
+		for (let i = 0; i < parentCount; i++) {
+			if (opts.parents[i].length !== 32) {
+				throw new Error(
+					`authorAction: parent[${i}] must be 32 bytes, got ${opts.parents[i].length}`
+				);
+			}
+		}
+		const ph = new Uint8Array(parentCount * 32);
+		for (let i = 0; i < parentCount; i++) {
+			ph.set(opts.parents[i], i * 32);
+		}
+		phPtr = exp.alloc(ph.length);
+		if (phPtr === 0) throw new Error('authorAction: alloc failed (input too large?)');
+		new Uint8Array(exp.memory.buffer, phPtr, ph.length).set(ph);
+	}
+
+	// 4. secret (exactly 64 bytes; NO secret_len param — ABI takes ptr only)
+	const secretPtr = exp.alloc(64);
+	if (secretPtr === 0) throw new Error('authorAction: alloc failed (input too large?)');
+	new Uint8Array(exp.memory.buffer, secretPtr, 64).set(opts.secret);
+
+	// 5. call — hlc params are u64 → BigInt; parent_hashes_count is the count
+	//    of 32-byte hashes (not the byte length)
+	const packed = exp.authorAction(
+		kindPtr,
+		kindBytes.byteLength,
+		bodyPtr,
+		bodyLen,
+		phPtr,
+		parentCount,
+		opts.hlc[0],
+		opts.hlc[1],
+		secretPtr
+	);
+	if (packed === 0n) {
+		const ep = exp.resultErrPtr();
+		const el = exp.resultErrLen();
+		const msg = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
+		throw new Error(`authorAction: wasm returned 0: ${msg || '(no diagnostic)'}`);
+	}
+
+	// 6. unpack and copy out of bump arena before the next reset()
+	const ptr = Number(packed >> 32n);
+	const len = Number(packed & 0xffffffffn);
+	return new Uint8Array(exp.memory.buffer, ptr, len).slice();
+}
+
+/**
+ * Verify every signature on a signed action envelope.
+ *
+ * Mirrors `verifyBall` but targets the `verifyAction` WASM export (B2).
+ * The actor (verify key) is embedded in the envelope — no key parameter.
+ *
+ * Return codes follow the same 2/1/0/-1 convention as `verifyBall`:
+ * - `{ ok: true, hadEd25519: true, code: 2 }` — signature verified
+ * - `{ ok: true, hadEd25519: false, code: 1 }` — unsigned/draft (no signature)
+ * - `{ ok: false, code: 0, ... }` — signature verification failed
+ * - `{ ok: false, code: -1, ... }` — parse failure
+ */
+export async function verifyAction(envelope: Uint8Array): Promise<VerifyResult> {
+	const exp = await getInstance();
+	exp.reset();
+	const ptr = exp.alloc(envelope.length);
+	if (ptr === 0) return { ok: false, code: -1, reason: 'alloc failed (input too large?)' };
+	new Uint8Array(exp.memory.buffer, ptr, envelope.length).set(envelope);
+	const result = exp.verifyAction(ptr, envelope.length);
+	if (result === 2) return { ok: true, hadEd25519: true, code: 2 };
+	if (result === 1) return { ok: true, hadEd25519: false, code: 1 };
+	const ep = exp.resultErrPtr();
+	const el = exp.resultErrLen();
+	const reason = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
+	if (result === 0) return { ok: false, code: 0, reason };
+	return { ok: false, code: -1, reason };
+}
+
+/**
+ * Mint a new DreamBall and return its signed envelope bytes + the generated
+ * Ed25519 secret key.
+ *
+ * The WASM export generates a fresh Ed25519 keypair via `env.getRandomBytes`
+ * and stores the 64-byte secret in the WASM-internal `last_secret` buffer.
+ * This wrapper reads it out immediately (before any subsequent reset) and
+ * returns it alongside the signed envelope.
+ *
+ * @param opts.typeId   0=avatar 1=agent 2=tool 3=relic 4=field 5=guild 6=untyped(v1)
+ * @param opts.name     Optional display name
+ * @param opts.created  Unix seconds as BigInt (i64)
+ * @returns             `{ envelope, secret }` — both copied out of WASM memory
+ */
+export async function mintDreamBall(opts: {
+	typeId: number;
+	name?: string;
+	created: bigint;
+}): Promise<{ envelope: Uint8Array; secret: Uint8Array }> {
+	const exp = await getInstance();
+	exp.reset();
+
+	let namePtr = 0;
+	let nameLen = 0;
+	if (opts.name && opts.name.length > 0) {
+		const nameBytes = new TextEncoder().encode(opts.name);
+		namePtr = exp.alloc(nameBytes.byteLength);
+		if (namePtr === 0) throw new Error('mintDreamBall: alloc failed (input too large?)');
+		new Uint8Array(exp.memory.buffer, namePtr, nameBytes.byteLength).set(nameBytes);
+		nameLen = nameBytes.byteLength;
+	}
+
+	const packed = exp.mintDreamBall(opts.typeId, namePtr, nameLen, opts.created);
+	if (packed === 0n) {
+		const ep = exp.resultErrPtr();
+		const el = exp.resultErrLen();
+		const msg = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
+		throw new Error(`mintDreamBall: wasm returned 0: ${msg || '(no diagnostic)'}`);
+	}
+
+	const ptr = Number(packed >> 32n);
+	const len = Number(packed & 0xffffffffn);
+	const envelope = new Uint8Array(exp.memory.buffer, ptr, len).slice();
+
+	// Read the generated secret from the WASM-internal last_secret buffer.
+	// Must be read before the next reset() call.
+	const sPtr = exp.lastSecretPtr();
+	const sLen = exp.lastSecretLen();
+	const secret = new Uint8Array(exp.memory.buffer, sPtr, sLen).slice();
+
+	return { envelope, secret };
+}
+
+/**
+ * Grow a DreamBall — bump revision, set updated timestamp, optionally rename,
+ * re-sign, and return the updated signed envelope bytes.
+ *
+ * @param opts.envelope          Current signed DreamBall envelope (CBOR bytes)
+ * @param opts.secret            64-byte Ed25519 secret: [seed(32) || pub(32)]
+ * @param opts.newName           Optional new display name (omit to leave unchanged)
+ * @param opts.updated           Updated timestamp as Unix seconds BigInt (i64)
+ * @param opts.promoteToDreamball  If true, promote from seed→dreamball stage
+ */
+export async function growDreamBall(opts: {
+	envelope: Uint8Array;
+	secret: Uint8Array;
+	newName?: string;
+	updated: bigint;
+	promoteToDreamball?: boolean;
+}): Promise<Uint8Array> {
+	if (opts.secret.length !== 64) {
+		throw new Error(
+			`growDreamBall: secret must be 64 bytes, got ${opts.secret.length}`
+		);
+	}
+
+	const exp = await getInstance();
+	exp.reset();
+
+	const envPtr = exp.alloc(opts.envelope.length);
+	if (envPtr === 0) throw new Error('growDreamBall: alloc failed (input too large?)');
+	new Uint8Array(exp.memory.buffer, envPtr, opts.envelope.length).set(opts.envelope);
+
+	const secretPtr = exp.alloc(64);
+	if (secretPtr === 0) throw new Error('growDreamBall: alloc failed (input too large?)');
+	new Uint8Array(exp.memory.buffer, secretPtr, 64).set(opts.secret);
+
+	let newNamePtr = 0;
+	let newNameLen = 0;
+	if (opts.newName && opts.newName.length > 0) {
+		const newNameBytes = new TextEncoder().encode(opts.newName);
+		newNamePtr = exp.alloc(newNameBytes.byteLength);
+		if (newNamePtr === 0) throw new Error('growDreamBall: alloc failed (input too large?)');
+		new Uint8Array(exp.memory.buffer, newNamePtr, newNameBytes.byteLength).set(newNameBytes);
+		newNameLen = newNameBytes.byteLength;
+	}
+
+	const packed = exp.growDreamBall(
+		envPtr,
+		opts.envelope.length,
+		secretPtr,
+		64,
+		newNamePtr,
+		newNameLen,
+		opts.updated,
+		opts.promoteToDreamball ? 1 : 0
+	);
+	if (packed === 0n) {
+		const ep = exp.resultErrPtr();
+		const el = exp.resultErrLen();
+		const msg = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
+		throw new Error(`growDreamBall: wasm returned 0: ${msg || '(no diagnostic)'}`);
+	}
+
+	const ptr = Number(packed >> 32n);
+	const len = Number(packed & 0xffffffffn);
+	return new Uint8Array(exp.memory.buffer, ptr, len).slice();
+}
+
+/**
+ * Add a Guild membership to an existing DreamBall and return the re-signed
+ * envelope bytes.
+ *
+ * @param opts.envelope       Current signed DreamBall envelope (CBOR bytes)
+ * @param opts.guildEnvelope  Signed Guild DreamBall envelope (CBOR bytes)
+ * @param opts.secret         64-byte Ed25519 secret: [seed(32) || pub(32)]
+ * @param opts.updated        Updated timestamp as Unix seconds BigInt (i64)
+ */
+export async function joinGuild(opts: {
+	envelope: Uint8Array;
+	guildEnvelope: Uint8Array;
+	secret: Uint8Array;
+	updated: bigint;
+}): Promise<Uint8Array> {
+	if (opts.secret.length !== 64) {
+		throw new Error(
+			`joinGuild: secret must be 64 bytes, got ${opts.secret.length}`
+		);
+	}
+
+	const exp = await getInstance();
+	exp.reset();
+
+	const envPtr = exp.alloc(opts.envelope.length);
+	if (envPtr === 0) throw new Error('joinGuild: alloc failed (input too large?)');
+	new Uint8Array(exp.memory.buffer, envPtr, opts.envelope.length).set(opts.envelope);
+
+	const guildPtr = exp.alloc(opts.guildEnvelope.length);
+	if (guildPtr === 0) throw new Error('joinGuild: alloc failed (input too large?)');
+	new Uint8Array(exp.memory.buffer, guildPtr, opts.guildEnvelope.length).set(opts.guildEnvelope);
+
+	const secretPtr = exp.alloc(64);
+	if (secretPtr === 0) throw new Error('joinGuild: alloc failed (input too large?)');
+	new Uint8Array(exp.memory.buffer, secretPtr, 64).set(opts.secret);
+
+	const packed = exp.joinGuildWasm(
+		envPtr,
+		opts.envelope.length,
+		guildPtr,
+		opts.guildEnvelope.length,
+		secretPtr,
+		64,
+		opts.updated
+	);
+	if (packed === 0n) {
+		const ep = exp.resultErrPtr();
+		const el = exp.resultErrLen();
+		const msg = new TextDecoder().decode(new Uint8Array(exp.memory.buffer, ep, el));
+		throw new Error(`joinGuild: wasm returned 0: ${msg || '(no diagnostic)'}`);
+	}
+
 	const ptr = Number(packed >> 32n);
 	const len = Number(packed & 0xffffffffn);
 	return new Uint8Array(exp.memory.buffer, ptr, len).slice();

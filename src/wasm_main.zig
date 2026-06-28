@@ -727,14 +727,19 @@ export fn authorAction(
 /// the open-type system; FR9, D-042/D-043). Mirrors `verifyBall` exactly, just
 /// for an action envelope instead of a DreamBall:
 ///
-///   1. `envelope.stripSignatures` reconstructs the canonical UNSIGNED bytes
-///      (every `signed` attribute removed) and captures the signatures. This is
-///      the SAME bytes a producer signs (`encodeActionV4` output) — we never
-///      recompute from parsed fields (D-042 / PROTOCOL.md §16.7).
+///   1. `envelope.stripSignatures` captures the `signed` signatures. (Its
+///      `unsigned` reconstruction is NOT used as the verified-over bytes — see
+///      step 3 for why.)
 ///   2. `envelope_v2.decodeAction` reads the core map to recover `actor` — the
 ///      32-byte Ed25519 public key. The verification key is ALWAYS this decoded
 ///      `actor`; there is no caller-supplied key parameter (D-042).
-///   3. Each `ed25519` signature is checked against the unsigned bytes with
+///   3. The canonical unsigned bytes are recomputed by re-encoding the decoded
+///      action via `encodeActionV4` — the SAME entry point the producer signed
+///      over (`authorAction`/B1) and identical to C1's content_hash domain
+///      (D-042 / PROTOCOL.md §16.7). This differs from `stripSignatures.unsigned`,
+///      which collapses a signed-only envelope to subject-only form and drops the
+///      `0x81` array-of-1 header that is part of the signed bytes.
+///   4. Each `ed25519` signature is checked against those unsigned bytes with
 ///      `actor` as the public key.
 ///
 /// Ed25519-only: non-`ed25519` `signed` attributes (e.g. `ml-dsa-87`) are
@@ -764,6 +769,21 @@ export fn verifyAction(input_ptr: u32, input_len: u32) i32 {
         return -1;
     };
 
+    // Recompute the canonical unsigned bytes the producer actually signed by
+    // re-encoding the decoded action via `encodeActionV4` — the SAME entry
+    // point B1's `authorAction` signed over (D-042 / PROTOCOL.md §16.7), and
+    // identical to C1's content_hash domain. We deliberately do NOT use
+    // `stripped.unsigned`: `stripSignatures` collapses a signed-only envelope
+    // (new_count == 1) to its subject-only form (`d8c8 d8c9 …`), whereas
+    // `encodeActionV4` always wraps the subject in an array-of-1
+    // (`d8c8 81 d8c9 …`). The leading `0x81` array header is part of the
+    // signed-over bytes, so verifying against `stripped.unsigned` always
+    // failed. The signatures themselves still come from `stripSignatures`.
+    const unsigned = envelope_v2.encodeActionV4(alloc_, decoded.action) catch |e| {
+        setErr("verifyAction: encodeActionV4 failed: {t}", .{e});
+        return -1;
+    };
+
     const pk = Ed25519.PublicKey.fromBytes(decoded.action.actor) catch {
         setErr("verifyAction: actor is not a valid Ed25519 public key", .{});
         return -1;
@@ -779,7 +799,7 @@ export fn verifyAction(input_ptr: u32, input_len: u32) i32 {
             var sig_arr: [Ed25519.Signature.encoded_length]u8 = undefined;
             @memcpy(&sig_arr, sig.value);
             const sig_obj = Ed25519.Signature.fromBytes(sig_arr);
-            sig_obj.verify(stripped.unsigned, pk) catch {
+            sig_obj.verify(unsigned, pk) catch {
                 setErr("verifyAction: Ed25519 signature verification failed", .{});
                 return 0;
             };

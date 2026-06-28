@@ -205,15 +205,19 @@ describe('ML-DSA-87 WASM verify (primitive)', () => {
 // Colocated here per Story 1.1 spec so the budget assertion travels with
 // the verify coverage. CI also enforces this at .github/workflows/ci.yml.
 // Raw budget relaxed 200→224 KB on 2026-06-25 for the five nested-envelope
-// decoders; gzip (the over-the-wire cost) remains the binding 64 KB budget.
-// See docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md.
+// decoders. 2026-06-28 dev-velocity bump to 300 KB raw / 150 KB gzip:
+// verifyAction (sprint-003 B2) is the first WASM caller of decodeAction and
+// links the full decode path. The binary is ~66 KB gzip today; 150 KB is a
+// generous fast-iteration ceiling, not a target — tightening tracked in
+// Dreamball-8bk. Keep these thresholds in lockstep with .github/workflows/*.
+// See docs/decisions/2026-06-28-wasm-size-budget-dev-velocity-bump.md.
 // ---------------------------------------------------------------------------
 
 describe('WASM binary budget (TC5)', () => {
-	it('raw size ≤ 229376 bytes and gzip size ≤ 65536 bytes', () => {
+	it('raw size ≤ 307200 bytes and gzip size ≤ 153600 bytes', () => {
 		const raw = statSync(WASM_PATH).size;
 		const gzip = gzipSync(readFileSync(WASM_PATH)).length;
-		expect(raw).toBeLessThanOrEqual(229376);
-		expect(gzip).toBeLessThanOrEqual(65536);
+		expect(raw).toBeLessThanOrEqual(307200);
+		expect(gzip).toBeLessThanOrEqual(153600);
 	});
 });

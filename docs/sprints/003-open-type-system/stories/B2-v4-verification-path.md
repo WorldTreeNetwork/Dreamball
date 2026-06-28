@@ -292,3 +292,71 @@ verifyAction(input_ptr: u32, input_len: u32) -> i32
   bare tag-200 envelope; `stripSignatures` handles it directly).
 - **Do not ship the loader wrapper until the B2 size blocker is resolved** — the
   committed `dreamball.wasm` currently exceeds the gzip gate, so CI is red.
+
+---
+
+## Dev Agent Record — REOPEN fix (correctness bug)
+
+**Agent:** exec-B2fix (Opus 4.8)
+**Date:** 2026-06-28
+**Status:** Fixed and verified end-to-end. loader-smoke 7/7 PASS.
+
+### Root cause (confirmed)
+
+`verifyAction` verified the Ed25519 signature against `stripped.unsigned` — the
+`unsigned` reconstruction returned by `envelope.stripSignatures`. For a standard
+v4 action envelope whose only non-subject assertions are `signed` attributes
+(`new_count == 1`), `stripSignatures` emits the DreamBall **subject-only** form:
+`d8c8 d8c9 …` (tag200 wrapping tag201 directly). But the producer
+(`authorAction`/B1) signed the output of `encodeActionV4`, which ALWAYS wraps the
+subject in `writeArray(1 + ac)` → the **array-of-1** form `d8c8 81 d8c9 …`. The
+leading `0x81` array header is in the signed bytes but absent from the
+`stripSignatures` reconstruction, so `sig.verify(stripped.unsigned, pk)` checked
+the wrong byte string and returned `0` (FAIL) for every standard signed action.
+This was missed because the inline `wasm_main.zig` KAT blocks do not execute under
+`zig build test` (the gate gap B2 flagged); no gate ran `verifyAction` until B3's
+loader-smoke.
+
+### Fix (Option B)
+
+In `verifyAction` (`src/wasm_main.zig`), recompute the canonical unsigned bytes by
+re-encoding the decoded action — `envelope_v2.encodeActionV4(alloc_, decoded.action)`
+— and verify against those bytes instead of `stripped.unsigned`. This reproduces
+exactly the bytes `authorAction` signed (the array-of-1 unsigned form) and is
+identical to C1's `content_hash` domain. The signatures themselves still come from
+`stripped.signatures`. `encodeActionV4`, `encodeActionV4Signed`, `stripSignatures`,
+and the entire `envelope_v2.zig` encode path are UNTOUCHED — so C1's golden vector
+and the cross-runtime test are unaffected. `encodeActionV4`/`decodeAction` were
+already linked into the WASM, so the size delta is negligible.
+
+### Gates (all green)
+
+- `zig build` — exit 0.
+- `zig build wasm` — exit 0. raw **227 651** B ≤ 307 200 (300 KB); gzip **65 937** B
+  ≤ 153 600 (150 KB). Comfortable headroom under the relaxed budget.
+- `zig build test --summary all` — **222** pass (193+4+2+8+15), unchanged baseline.
+- `zig build smoke` — `all smoke checks passed`, exit 0.
+- `bun run scripts/loader-smoke.ts` — **7 passed, 0 failed**, including
+  `verifyAction(signed) → ok: true, code: 2` and
+  `verifyAction(tampered byte 0) → ok: false`:
+
+  ```
+  PASS  mintDreamBall returns envelope + 64-byte secret (avatar)
+  PASS  authorAction returns non-empty Uint8Array
+  PASS  verifyAction(signed) → ok: true, code: 2
+  PASS  verifyAction(tampered byte 0) → ok: false
+  PASS  authorAction guard: secret.length !== 64 → descriptive Error
+  PASS  authorAction guard: empty kind → descriptive Error
+  PASS  growDreamBall(minted envelope) → non-empty Uint8Array
+  loader-smoke: 7 passed, 0 failed
+  ```
+
+- `bun run test:unit -- --run --project server src/lib/wasm/verify.test.ts` —
+  7 passed (WASM budget test, now 300 KB/150 KB).
+- `bun run check` — 0 errors (1 pre-existing unrelated a11y warning).
+
+### File List
+
+- `src/wasm_main.zig` — `verifyAction`: unsigned-bytes source changed from
+  `stripped.unsigned` to `encodeActionV4(decoded.action)`; doc comment updated.
+- `docs/sprints/003-open-type-system/stories/B2-v4-verification-path.md` — this record.

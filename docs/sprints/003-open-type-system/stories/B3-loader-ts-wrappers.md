@@ -237,3 +237,124 @@ the smoke gate.
   mirroring `verifyBall`'s 2/1/0/-1 convention; adapt if B2 differs).
 - Blocks **B4** (Dreamball-0ii) — Vitest suite for authorAction round-trip
   requires the TS wrapper this story provides.
+
+## Dev Agent Record
+
+**Agent:** exec-B3 (aexec-B3-4e6f873939dbd3e1)
+**Date:** 2026-06-28
+
+### What was implemented
+
+- Extended `WasmExports` interface in `src/lib/wasm/loader.ts` with:
+  `authorAction` (9 params, returns bigint), `verifyAction` (ptr/len → number),
+  `mintDreamBall`, `growDreamBall`, `joinGuildWasm`, `lastSecretPtr`, `lastSecretLen`.
+- Implemented `authorAction` wrapper: JS pre-validation (secret.length, kind),
+  reset, alloc/copy for kind/body/parent-hashes/secret, parent concatenation
+  into contiguous `parentCount * 32` byte buffer (count passed, not byte length),
+  HLC as bigint pair, packed-u64 unpack with `.slice()`.
+- Implemented `verifyAction` wrapper: mirrors `verifyBall` exactly; uses
+  `VerifyResult` type; reads `resultErrPtr/Len` on non-2/1 codes.
+- Implemented `mintDreamBall` wrapper: returns `{ envelope, secret }` — reads
+  the generated secret from `lastSecretPtr()`/`lastSecretLen()` immediately
+  after the WASM call before next reset.
+- Implemented `growDreamBall` wrapper: secret pre-validation (64 bytes),
+  optional new name, `updated` as bigint (i64), `promoteToDreamball` flag.
+- Implemented `joinGuild` wrapper (calls `joinGuildWasm` export): two envelope
+  allocs, secret pre-validation, `updated` as bigint.
+- Created `scripts/loader-smoke.ts`: Bun-compatible WASM loading (direct
+  `WebAssembly.instantiate`, no Vite), exercises all new exports.
+
+### Gate results
+
+- `bun run check`: **0 errors** (svelte-check clean)
+- `bun run test:unit -- --run`: **736/737 pass**. 1 pre-existing failure:
+  `WASM binary gzip size ≤ 65536 bytes` (actual 66296 — B2 added 760 bytes
+  over budget; tracked in Dreamball-8bk, not introduced by B3). 1 unhandled
+  error: Playwright Chromium not installed in this env (unrelated).
+- `scripts/loader-smoke.ts`: **6/7 pass**. 1 failure: `verifyAction → ok: true`
+  (see blocker below).
+
+### Blocker
+
+**Blocker Type:** B2 WASM bug — `verifyAction` canonical bytes mismatch
+
+**Blocker Detail:**
+`verifyAction` fails signature verification (returns code=0, "Ed25519 signature
+verification failed") for ALL action envelopes, regardless of reset strategy.
+Confirmed by debug script: the failure occurs even when passing the raw pointer
+from `authorAction` directly to `verifyAction` without any reset.
+
+Root cause: `envelope.stripSignatures` (in `envelope.zig`) reconstructs unsigned
+bytes in **subject-only** form (`d8 c8 d8 c9 ...`) when only the `signed`
+attribute is stripped. But `encodeActionV4Signed` with zero non-signature
+attributes signs in **array-of-1** form (`d8 c8 81 d8 c9 ...`). The `81` array
+header is missing from the reconstruction, so `sig_obj.verify(stripped.unsigned, pk)`
+fails. The comment in `stripSignatures` acknowledges the subject-only form is
+correct for DreamBall envelopes — it is NOT correct for Action v4.
+
+Fix required (Zig, out of B3 scope): either (A) change `encodeActionV4Signed`
+to emit subject-only form when `ac == 0`, matching `stripSignatures` output; or
+(B) change `verifyAction` to re-encode unsigned bytes via `encodeActionV4` from
+decoded fields rather than relying on `stripSignatures`; or (C) add an explicit
+array-form path in `stripSignatures` for `new_count == 1` when the input was
+array form.
+
+Note: the `verifyAction KAT` tests in `wasm_main.zig` are NOT part of any
+`zig build test` step and are never run by CI, so this bug was not caught.
+
+### Handoff note for B4
+
+**Wrapper API (exact signatures):**
+
+```typescript
+// authorAction — throws on empty kind, secret.length !== 64, parent length !== 32, alloc failure
+export async function authorAction(opts: {
+  kind: string;           // non-empty
+  body?: Uint8Array;
+  parents: Uint8Array[];  // each exactly 32 bytes
+  hlc: [bigint, bigint];  // [hlc_l, hlc_c] u64 each
+  secret: Uint8Array;     // exactly 64 bytes: [seed(32) || pub(32)]
+}): Promise<Uint8Array>   // signed envelope bytes
+
+// verifyAction — same VerifyResult type as verifyBall
+export async function verifyAction(envelope: Uint8Array): Promise<VerifyResult>
+// { ok: true, hadEd25519: true, code: 2 }   — verified
+// { ok: true, hadEd25519: false, code: 1 }  — no signature (draft)
+// { ok: false, code: 0, reason: string }     — sig failed
+// { ok: false, code: -1, reason: string }    — parse error
+
+// mintDreamBall — typeId: 0=avatar 1=agent 2=tool 3=relic 4=field 5=guild 6=untyped
+export async function mintDreamBall(opts: {
+  typeId: number;
+  name?: string;
+  created: bigint;  // Unix seconds
+}): Promise<{ envelope: Uint8Array; secret: Uint8Array }>  // secret is 64 bytes
+
+// growDreamBall
+export async function growDreamBall(opts: {
+  envelope: Uint8Array;
+  secret: Uint8Array;       // 64 bytes
+  newName?: string;
+  updated: bigint;          // Unix seconds
+  promoteToDreamball?: boolean;
+}): Promise<Uint8Array>
+
+// joinGuild (calls joinGuildWasm export)
+export async function joinGuild(opts: {
+  envelope: Uint8Array;
+  guildEnvelope: Uint8Array;
+  secret: Uint8Array;       // 64 bytes
+  updated: bigint;          // Unix seconds
+}): Promise<Uint8Array>
+```
+
+**B4 notes:**
+- `authorAction` round-trip test must use a secret from `mintDreamBall` (not
+  all-zeros), because `secret[32..64]` must be the public key matching the seed
+  or `fromSecretKey` fails. Use `mintDreamBall` to obtain a valid keypair.
+- `verifyAction` tests are blocked on the B2 bug above. B4 should have a skipped
+  or conditional test until the bug is fixed.
+- The `verifyBall` wrapper pattern (existing, passing) is the exact model for
+  `verifyAction`; the two are byte-for-byte equivalent in structure.
+- `loader.ts` exports: `authorAction`, `verifyAction`, `mintDreamBall`,
+  `growDreamBall`, `joinGuild` — all async, all throw on error.
