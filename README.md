@@ -1,18 +1,34 @@
 # DreamBall
 
-> Signed, evolvable, lens-rendered aspects — NFT-style containers for
-> **look**, **feel**, and **act**. Open protocol, open implementation,
-> hybrid post-quantum signatures, same WASM parser in the browser and on
-> the server.
+> An open type system for **verifiable, signed, lens-rendered
+> containers**. Define a type once and get a tamper-evident envelope,
+> typed encode/decode over canonical CBOR, and renderer-by-field-presence
+> for free — for **your own** types, not just ours. Open protocol, open
+> implementation, hybrid post-quantum signatures, same WASM core in the
+> browser and on the server.
 
 **File extension:** `.ball` · **Media type:** `application/ball+cbor`
-**Sister project:** [recrypt](../recrypt/) (post-quantum trust anchor)
+**Sister project:** [recrypt](https://github.com/WorldTreeNetwork/recrypt) (post-quantum trust anchor)
 
 ---
 
 ## What it is
 
-A DreamBall is a protocol container with three axes:
+A DreamBall is a **verifiable typed container** — a signed, self-describing
+CBOR envelope that any runtime can read, verify, and render without a
+proprietary parser. The point of DreamBall is that **its consumers author
+the types**, not merely instantiate ours. Define a type once — a Zig schema,
+the single canonical source ([Zig-canonical
+ADR](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)) —
+and get the whole pipeline for free:
+
+- a tamper-evident Gordian envelope derived from the schema,
+- typed encode / decode / validation over canonical dCBOR,
+- **renderer dispatch by field-presence** — a renderer is anything that
+  recognises a type's fields and draws them (image, glTF, HDRI, text, a
+  3D scene). New type, new renderer, no core change.
+
+Every container is organised along three axes:
 
 | Axis       | What it holds                                                        |
 | ---------- | -------------------------------------------------------------------- |
@@ -20,7 +36,14 @@ A DreamBall is a protocol container with three axes:
 | **feel**   | personality — tone, values, voice, affective profile                 |
 | **act**    | executable layer — model ref, system prompt, skills, scripts         |
 
-Six MTG-style types change behaviour categorically:
+### The reference types
+
+DreamBall ships six MTG-style types as its **reference implementation** —
+the proof that a rich, multi-type, rendered application can be expressed
+*as DreamBall types* rather than as code that merely uses DreamBall. They
+are not privileged built-ins; the target is that they are authored through
+the same machinery a third party uses to define a `kanban-card` or
+`object3d` type:
 
 - **Avatar** — worn, visible to observers ("jelly bean" style)
 - **Agent** — instantiable with memory, knowledge graph, emotional register
@@ -28,6 +51,19 @@ Six MTG-style types change behaviour categorically:
 - **Relic** — sealed + encrypted, reveals on Guild key unlock
 - **Field** — omnispherical ambient layer
 - **Guild** — keyspace-backed group with per-slot policy
+
+> **Status (2026-06-26).** The open type system is the product the first
+> external consumer (World-Tree) revealed. Today the reference types are
+> still woven monolithically into the codebase, and the open authoring
+> path is landing incrementally — the first brick is a generic signed-op
+> envelope (open kind, typed body, logical clock, `parent_hashes`) that
+> lets a consumer carry an arbitrary typed payload as a signed,
+> causally-ordered DreamBall. See [`docs/VISION.md
+> §1`](docs/VISION.md) for the full reframe and roadmap.
+
+DreamBall is **not** a network, sync, or CRDT engine — it is a verifiable
+wire-format container. Consumers own the network; recrypt owns sealed
+transport.
 
 Full rationale in [`docs/VISION.md`](docs/VISION.md), wire format in
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md), architecture in
@@ -75,15 +111,16 @@ tests/e2e-cryptography.sh       # crypto pipeline (mock or real)
 
 ## The one-binary-two-runtimes principle
 
-`src/wasm_main.zig` compiles to a single `dreamball.wasm` (currently 109 KB)
-that is executed **identically** in Bun (server) and in the browser
+`src/wasm_main.zig` compiles to a single `dreamball.wasm` (ships ML-DSA-87
+verify; size held to the budget in `build.zig`) that is executed
+**identically** in Bun (server) and in the browser
 (Svelte lib). One imported function, `env.getRandomBytes`, is the
 entire host seam.
 
 Consequences: impossible drift between server and client, offline-first
 protocol ops in the browser, and trust symmetry — the server's
 guarantees are the same as the browser's because they run the same
-bytes. See [`docs/VISION.md §14`](docs/VISION.md) and
+bytes. See [`docs/VISION.md §8`](docs/VISION.md) and
 [`docs/ARCHITECTURE.md §2`](docs/ARCHITECTURE.md).
 
 ---
@@ -98,7 +135,7 @@ bytes. See [`docs/VISION.md §14`](docs/VISION.md) and
               zig build   ┌───┴───┐   zig build wasm
                           ▼       ▼
                 ┌─────────────────┐   ┌──────────────────────────┐
-                │  dreamball CLI  │   │  dreamball.wasm (109 KB) │
+                │  dreamball CLI  │   │      dreamball.wasm      │
                 └────────┬────────┘   └────┬────────────────┬────┘
                          │                 │                │
                          ▼                 ▼                ▼
@@ -174,7 +211,7 @@ Read these four files in order before touching code:
 
 Every change must keep these gates green:
 
-- `zig build test` · `zig build smoke` · `zig build wasm` (≤200 KB raw / ≤64 KB gzipped; ships ML-DSA-87 verify)
+- `zig build test` · `zig build smoke` · `zig build wasm` (≤224 KB raw / ≤64 KB gzipped; ships ML-DSA-87 verify)
 - `bun run check` · `bun run test:unit -- --run` · `bun run build`
 - `bun run build-storybook` · `bun run test-storybook`
 - `scripts/server-smoke.sh` · `tests/e2e-cryptography.sh`

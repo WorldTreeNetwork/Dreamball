@@ -55,10 +55,12 @@
 
 ## 2. The cross-runtime invariant
 
-The wire format factors into two parts, each with one canonical location
-(D-018, D-029, D-032):
+The wire format factors into two parts, both **Zig-canonical**. The
+2026-06-25 ADR reverted D-018's JSON-Schema-canonical inversion (it never
+shipped; the most-expressive-medium argument won). See
+[`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
 
-### Part 1 — Encoding algorithm in Zig + golden vectors (D-018)
+### Part 1 — Encoding algorithm in Zig + golden vectors
 
 The CBOR encoding algorithm is canonical in `src/*.zig`. Map key
 ordering, integer-width rules, bytes-vs-text discipline, and golden
@@ -66,16 +68,25 @@ test vectors are all Zig-only. Every runtime must reproduce these bytes
 for the same logical value. There is no second implementation of CBOR
 semantics.
 
-### Part 2 — Field shapes in JSON Schema, vendored + fp-pinned (D-018, D-029)
+### Part 2 — Field shapes in the Zig types (canonical)
 
-Root types (`schemas/root-2.0.0.json`) and archiform extensions
-(`schemas/<archiform>-<version>.json`) are the canonical source for
-all field shapes. The files are vendored locally; each has a
-corresponding blake3 pin at `schemas/.pins/<archiform>-<version>.fp`
-(D-029). Zig types, TypeScript interfaces, Valibot schemas, CBOR
-codecs, and `src/memory-palace/schema.cypher` are all **generated** from
-the JSON Schema source. No hand-maintained schemas exist anywhere;
-regenerate via `bun run codegen`.
+The Zig structs in `src/protocol.zig` + `src/protocol_v2.zig` are the
+canonical source for all field shapes — they are the most expressive
+representation (defaults, methods, exact types). Everything else is
+**generated downward** from them: TypeScript interfaces, Valibot schemas,
+the CBOR codec (`cbor.ts`), **JSON Schema** (`schemas/*.json` — now a
+generated artifact, vendored + blake3-pinned at `schemas/.pins/`, D-029),
+and `src/memory-palace/schema.cypher`. To add or change a wire type, edit
+the Zig structs, then propagate to the generated outputs; regenerate via
+`bun run codegen`. JSON Schema is an output, never hand-authored.
+
+> **Transitional note (2026-06-25):** the real Zig→targets generator
+> (comptime `@typeInfo` reflection) is not built yet. Today the generators
+> still emit hardcoded bodies and the vendored `schemas/*.json` are kept
+> consistent by a pin + byte-equivalence gate. The *direction* is
+> Zig-canonical, generation flowing outward; until the reflection generator
+> lands, edit the Zig types as canonical and update the generated outputs +
+> JSON-Schema fixtures to match by hand.
 
 ### Single shared host code (D-032)
 
@@ -88,9 +99,9 @@ The concrete rules that fall out of this invariant:
 
 1. No TypeScript code encodes or decodes CBOR by hand. It goes through
    the WASM module.
-2. No hand-maintained schemas exist anywhere. TypeScript interfaces +
-   Valibot schemas are generated from JSON Schema source via
-   `bun run codegen`.
+2. No hand-maintained schemas drift. TypeScript interfaces, Valibot
+   schemas, CBOR codecs, and JSON Schema are all generated from the
+   canonical Zig types via `bun run codegen`.
 3. The browser and server load **the same `dreamball.wasm` binary**. No
    platform-specific build, no conditional code paths. A bug in the
    wire format is fixed in one place.
@@ -144,8 +155,7 @@ three tiers; runtimes pick which applies:
   for wasm32-freestanding via shim headers in
   `vendor/liboqs/wasm_shims/`). Both sigs check against the
   envelope's `identity` / `identity-pq` core fields. No network hop
-  required for verify. See `docs/known-gaps.md §1` for the size
-  measurement (+28.7 KB raw / +9.9 KB gzipped over Ed25519-only).
+  required for verify.
 
 ### Tier 3 — Encrypted transport (DragonBall + recrypt proxy-recryption)
 
@@ -404,15 +414,15 @@ route table.
   `<limits.h>` in `vendor/liboqs/wasm_shims/`) and a static-arena
   allocator (`vendor/liboqs/src/dreamball_stubs_wasm.c`). The linker's
   dead-code elimination drops the sign + keypair paths, leaving only
-  the verify-reachable subset. Result: +28.7 KB raw / +9.9 KB gzipped
-  over the Ed25519-only baseline. Browser verification is local and
-  hybrid — no network hop required.
+  the verify-reachable subset — a small, budgeted increment over the
+  Ed25519-only baseline. Browser verification is local and hybrid — no
+  network hop required.
 
 **Prior decision (superseded).** An earlier version of this ADR
 delegated ML-DSA to `recrypt-server` over HTTP. The motivation was a
-pessimistic ~250–400 KB WASM size estimate from Emscripten's full
-liboqs build. The verify-only spike landed at ~28 KB raw, making local
-verify strictly preferable. Signing was already local on the native
+pessimistic WASM size estimate from Emscripten's full liboqs build. The
+verify-only spike came in far smaller — an order of magnitude — making
+local verify strictly preferable. Signing was already local on the native
 side once we vendored liboqs in `7cdf5eb`. `recrypt-server` still
 exposes `POST /sign/ml-dsa` / `POST /verify/ml-dsa` endpoints for
 cross-project use, but Dreamball does not call them.
@@ -420,8 +430,8 @@ cross-project use, but Dreamball does not call them.
 **Consequences.** Offline signing works end-to-end via the native
 CLI; offline verification works end-to-end in any runtime. The
 protocol's hybrid-PQ promise is fulfilled without a
-network-dependent trust anchor. Browser bundle cost is a one-time
-+10 KB over the wire.
+network-dependent trust anchor. Browser bundle cost is a small one-time
+increment over the wire, within the size budget.
 
 ### ADR-4: Storybook as the developer testing environment
 
@@ -578,14 +588,21 @@ and smoke gates). The `outcome` field is a closed enum:
 
 ---
 
-## 10. Codegen flow (D-018, D-029, D-030)
+## 10. Codegen flow (D-029, D-030)
 
-The codegen pipeline inverts the old "Zig-canonical → emit TS" direction.
-JSON Schema is now canonical for all field shapes; Zig types, TS types,
-Valibot schemas, CBOR codecs, and the Cypher DDL are all generated outputs.
+The codegen pipeline flows **outward from the canonical Zig types** (the
+2026-06-25 ADR reverted the short-lived JSON-Schema-canonical inversion —
+see §2). TS types, Valibot schemas, CBOR codecs, JSON Schema, and the
+Cypher DDL are all generated artifacts.
+
+> **Transitional:** until the comptime-reflection generator lands, the
+> `schema-gen` tool below reads the *vendored, pinned* `schemas/*.json` as
+> an intermediate and the generator bodies are hardcoded; the schemas are
+> kept byte-consistent with the Zig types by the pin + byte-equivalence
+> gate. The canonical source is still the Zig types.
 
 ```
-schemas/<archiform>-<version>.json        ← canonical field shapes
+schemas/<archiform>-<version>.json        ← vendored, pinned (transitional)
           │
           ▼  (blake3 verify at codegen entry)
 schemas/.pins/<archiform>-<version>.fp    ← vendor-integrity pin (D-029)
@@ -668,21 +685,22 @@ This document ties them together.
 
 ## 13. Where to add a new envelope type (runbook)
 
-1. Add the field shape to the appropriate JSON Schema source under
-   `schemas/` (root or archiform). Run `bun run schemas:pin schemas/<file>.json`
-   to update the pin. Do **not** hand-edit generated files — JSON Schema
-   is the canonical source per D-018.
+1. Add or change the field shape in the canonical Zig structs
+   (`src/protocol.zig` or `src/protocol_v2.zig`). The Zig types are the
+   source; everything else descends from them. Do **not** hand-author
+   JSON Schema or other generated files.
 2. Run `bun run codegen` (calls `schemas:verify` then `zig build schemagen`).
    This regenerates `src/lib/generated/types.ts`, `schemas.ts`, `cbor.ts`,
    and `src/memory-palace/schema.cypher`.
-3. Add the Zig types in `src/protocol.zig` or `src/protocol_v2.zig` (the
-   codegen step above may have already emitted extensions to `protocol_v2.zig`
-   via `gen_zig`; align with those).
+3. Update the vendored JSON-Schema fixture + its pin
+   (`bun run schemas:pin schemas/<file>.json`) so the byte-equivalence gate
+   matches the Zig types (transitional, until the reflection generator lands).
 4. Add the encoder in `src/envelope.zig` or `src/envelope_v2.zig`.
 5. Add the decoder in `src/envelope.zig` (extend `decodeDreamBall`).
 6. Update `docs/PROTOCOL.md §12` with the wire-format description.
 7. Run `zig build wasm`.
-8. Update `docs/VISION.md §10` if the type changes the taxonomy story.
+8. Update `docs/VISION.md §12` (the reference types) if the type changes
+   the taxonomy story.
 9. Add a Storybook story under `src/stories/types/`.
 10. Run all 7 gates: `zig build test`, `zig build smoke`,
     `bun run check`, `bun run test:unit -- --run`,

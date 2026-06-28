@@ -69,15 +69,10 @@ wasm-ld's dead-code elimination dropped the sign and keypair code
 paths cleanly, leaving only the verify-reachable subset plus shared
 NTT/poly helpers:
 
-| Build                        | Raw    | Gzipped |
-|------------------------------|--------|---------|
-| Default (Ed25519 only)       | 142.5 KB | 40.3 KB |
-| `-Dpq-wasm=true` (PQ verify) | 171.3 KB | 50.1 KB |
-| **Delta**                    | **+28.7 KB raw** | **+9.9 KB gzipped** |
-
-~10 KB over the wire is well inside the 150 KB budget. The prior
-"~250–400 KB" estimate was pessimistic by an order of magnitude;
-it assumed no DCE and the full OQS_KEM + OQS_SIG dispatch surface.
+Enabling PQ verify adds a small, budgeted increment over the Ed25519-only
+baseline (the current budget lives in `build.zig`). The prior estimate that
+motivated delegating ML-DSA over HTTP was pessimistic by an order of
+magnitude; it assumed no DCE and the full OQS_KEM + OQS_SIG dispatch surface.
 
 **End-to-end confirmed.** Mint → hybrid-sign a tool DreamBall via
 the native CLI, load `dreamball.wasm` in Bun, push bytes through
@@ -219,7 +214,7 @@ policy.
 **What's still pending on the PQ side:**
 
 - Browser-side ML-DSA-87 verification — **spike landed 2026-04-21**
-  behind `-Dpq-wasm=true`. +28.7 KB raw / +9.9 KB gzipped over the
+  behind `-Dpq-wasm=true`. A small, budgeted increment over the
   Ed25519-only baseline. Default build stays PQ-free until a
   browser consumer actually needs it. See §1 above for the full
   measurement and follow-ups.
@@ -228,7 +223,7 @@ policy.
   `sender-identity-pq` on Transmission, `identity-pq` on Relic)
   so the PQ sig verifies standalone without a pubkey-bundle
   lookup. Envelopes bump to `format-version: 3` when the slot is
-  populated. See PROTOCOL.md §12.1.4 and §12.9.
+  populated. See `products/dreamball-v2/protocol.md` §12.1.4 and §12.9.
 
 Guild keyspace proxy-recryption (the harder half of Phase D) remains
 future work — `recrypt-server` already has keyspace endpoints
@@ -385,8 +380,8 @@ fallback on any async path. The sync variant `hashBytesBlake3HexSync`
 retains a node:crypto fallback for early test bootstrap where WASM may not
 be initialized; production paths always take the Bun branch.
 
-WASM budget impact: 172 KB raw / 51 KB gzipped — well within the 200 KB /
-64 KB ceiling.
+WASM budget impact: comfortably within the budget at the time (the current
+budget lives in `build.zig`).
 
 ---
 

@@ -9,7 +9,7 @@ scope_tier: mvp
 > Seeded from [`docs/VISION.md` §17 "The open type system"](VISION.md). Scope is
 > **DreamBall-the-protocol/type-system only** — not any consumer application.
 > World-Tree's kanban CRDT is a validating probe, explicitly **not** the ideal
-> use case (VISION.md §17 guardrail 3).
+> use case (VISION.md §9.1 guardrail 3).
 
 ## Problem Statement
 

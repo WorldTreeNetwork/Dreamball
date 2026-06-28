@@ -7,7 +7,56 @@
 
 ---
 
-## 1. The three axes — look, feel, act
+**PART I · WHAT A DREAMBALL IS**
+
+---
+
+## 1. The open type system — a verifiable container for anything
+
+A DreamBall is the simplest useful thing first: **a few bytes of some type,
+signed, that anyone can read and verify** without asking permission or
+installing a viewer. A name. A number. A 3D transform. A line of a kanban
+log. If you can describe its shape, it can be a DreamBall — and once it is,
+it carries its own proof of who made it and that no one has touched it since.
+
+The point is the word **anyone**. DreamBall is not a fixed catalogue of
+things *we* decided the world needs; it is an **open type system** — the
+people building on it author their own types, and get the same machinery we
+use, exactly. Describe a type once — a Zig schema, the single canonical
+source — and the whole pipeline falls out of it for free: a tamper-evident
+envelope derived from the schema, typed encode / decode / validation over
+canonical CBOR, and a renderer that knows how to draw the type simply because
+it recognises the type's fields. New type, new renderer, no change to the
+core. The author can be us or a stranger; the machinery does not care, and
+that indifference is the whole gift.
+
+This is the distinction that organises everything below. There is the
+**substrate** — the container, the canonical bytes, the signature, the way a
+type becomes real — which never changes from one type to the next; and there
+are the **types** built on it, ours and yours. Everything in Parts I–III is
+substrate: as true of a DreamBall holding a single number as of one holding a
+cathedral of memory. The rich things — a Memory Palace you can walk inside, a
+Wishing Tree that grows new DreamBalls — are types like any other. We
+describe them throughout not because they are special, but because they show
+how far the simple rules carry.
+
+The mental model we keep reaching for is a **well-specified zip file**: a
+compressed container with internal structure you can inspect without
+unpacking everything, that travels as a single opaque file any compatible
+tool can open, and that can be nested — a sealed DreamBall tucked inside
+another. A zip file with a signature and a vocabulary. That is the whole of
+it, and the whole of it is enough.
+
+We did not arrive here from cleverness; the first person who tried to *use*
+DreamBall in earnest showed us the door we had built and never opened. They
+did not want our types. They wanted their own, with our verifiability
+underneath. That request is the product. A universal container that only its
+authors can extend is not universal — it is a private tool with a wishlist.
+The rest of this vision is what it takes to mean *anyone*.
+
+---
+
+## 2. The three axes — look, feel, act
 
 A DreamBall is an aspect. Aspects are not objects; they are **stances a mind
 can take toward the world**. Each axis describes a different dimension of that
@@ -24,7 +73,22 @@ load-bearing on its own.
 
 ---
 
-## 2. The stages are biological, not technical
+## 3. Aspects are for minds, not just models
+
+A note on the name. An **aspect** in the classical sense is a perspective — a
+way the same thing can be regarded. DreamBalls are not just bundles of data
+for LLMs to eat; they're **perspectives a mind can take on**. A human can
+load a DreamBall to put themselves in a particular mood, visual register, or
+operating mode just as readily as an agent can.
+
+This is why the act slot is separable from the rest: you can strip `act` and
+still have a meaningful artefact. The feel-and-look pair is enough to be an
+aesthetic, a mood board, a persona prompt. With `act` attached, it becomes an
+instantiable agent. Both are first-class.
+
+---
+
+## 4. The stages are biological, not technical
 
 The lifecycle names — **DreamSeed → DreamBall → DragonBall** — were chosen
 because they map real-world development:
@@ -48,7 +112,7 @@ it (making a new identity) is a deliberate act, not the default.
 
 ---
 
-## 3. The graph is symmetric and fractal
+## 5. The graph is symmetric and fractal
 
 DreamBalls nest. A DreamBall can contain other DreamBalls (`contains` connections),
 and every contained DreamBall has the **same shape** as its parent — the same
@@ -68,13 +132,166 @@ list inside one point of another bullet list is still just bullets.
 
 ---
 
-## 4. Form-independence in the `look` slot (in progress)
+## 6. Composition beats curation
+
+DreamBalls should be **primarily composed**, not primarily curated. The
+catalogue of aspects is not a finite library; it's a runtime produced by
+combining and remixing aspects the community publishes.
+
+This has implications:
+
+- **Every containment connection is a composition hypothesis.** "This DreamBall
+  includes that one" is a claim that the two fit together meaningfully.
+- **Derivation without ancestry.** `derived-from` records that a DreamBall
+  drew inspiration from another, but does not imply they share any
+  cryptographic material. The inspired container has its own identity and
+  its own lifecycle.
+- **No central registry required.** Because the identity key is the
+  addressable name and signatures establish authority, DreamBalls can be
+  discovered anywhere — an IPFS CID, an HTTP URL, a local directory, a QR
+  code — and composed without coordination.
+
+---
+
+**PART II · OPENNESS, TRUST & BOUNDARIES**
+
+---
+
+## 7. Openness as a security property
+
+The protocol is open. The wire format is self-describing CBOR; the JSON
+export is lossless; the signatures are hybrid classical + post-quantum. These
+choices collectively mean:
+
+- **Any runtime can read a DreamBall** — there is no proprietary parser, no
+  vendor lock-in, no "please install our viewer."
+- **Any runtime can verify a DreamBall** — the signatures are standard
+  primitives (Ed25519, and hybrid ML-DSA-87 post-quantum).
+- **Tampering is detectable without trust** — the verifier needs only the
+  public key, which is the identity itself.
+
+This is the IdentiKey family's stance on security: keep the *openness* and
+the *crypto* separate. The protocol's openness makes it universally
+inspectable; the crypto makes it tamper-evident. Neither property diminishes
+the other.
+
+### 7.1 Visibility is per-slot
+
+Openness is not all-or-nothing. A DreamBall can be universally readable in its
+public slots while keeping privacy-sensitive slots — secrets, private memory,
+an agent's inner state — routed through a permission model keyed to who is
+looking. The protocol stays open (every observer can read the public bytes
+directly) while the private slots are gated. This is openness-as-security
+restated through a permission lens, and it is substrate: any type may have
+parts not everyone should see. How a *specific* type draws that line — the
+worn/observer split for an avatar, guild policy for a palace — lives with
+those types in [`products/`](products/).
+
+---
+
+## 8. One binary, two runtimes — the WASM core
+
+> Added 2026-04-19 with the v2.1 dreamball-server + browser-verify work.
+
+A design principle that emerged from shipping v2.1: **the Zig protocol core
+is compiled once to `dreamball.wasm` and executed identically in Bun-server
+and in the browser**. Host-provided randomness flows through a single
+`env.getRandomBytes` import; nothing else is host-specific.
+
+This is surprisingly clarifying. Traditional architectures carve the protocol
+into server-side (trusted, holds keys) and client-side (thin, deserialises
+server responses). We don't. The browser can mint, grow, verify, and validate
+on exactly the same code paths as the server — and by "the same code," we
+mean *the same bytes* — because there is only one compiled artifact.
+
+What this buys us:
+
+- **Impossible drift.** A bug fixed in the Zig core propagates to browser and
+  server in one rebuild. No parallel TypeScript CBOR parser exists to fall
+  out of sync.
+- **Offline-first by default.** Any operation that doesn't need the network
+  (mint, parse, verify, grow, join-guild) works in a browser with no server.
+  `dreamball-server` is an accelerator, not a requirement.
+- **Trust symmetry.** The server's cryptographic guarantees are *the same* as
+  the browser's — they run the same verifier on the same envelope bytes. When
+  `dreamball-server` claims "this envelope verifies," the browser can
+  independently re-verify without trusting the server. This is unusual; most
+  systems require trusting the server's claims.
+- **Minimal host seam.** One imported function (`getRandomBytes`). Swap hosts
+  (Deno, Cloudflare Workers, a custom runtime) and everything still works so
+  long as that one import is supplied.
+
+What this *costs*:
+
+- **Blocking I/O stays out of WASM.** File reads, HTTP fetches, and ML-DSA
+  *signing* (which would need host entropy on every call) live in the host.
+  The protocol core stays pure.
+- **ML-DSA *verify* is pure and ships with the WASM.** The vendored liboqs
+  subset (`vendor/liboqs/`) compiles clean for wasm32-freestanding via shim
+  headers and a static-arena allocator, so browsers verify hybrid Ed25519 +
+  ML-DSA-87 signatures locally — no network hop, no recrypt-server dependency.
+- **WASM binary size is a real budget.** The browser pays for every byte over
+  the wire, so each feature must earn its place. The budget is enforced in
+  `build.zig` (and mirrored in `CLAUDE.md`), not narrated here — numbers in
+  prose only rot.
+
+The design decision is locked in ADR-1 of the v2.1 plan. The practical
+evidence that it works is in `src/lib/wasm/write-ops.test.ts` and
+`scripts/spike-wasm-env.ts` — a single WASM export used identically from Bun
+tests and the Svelte lib's loader.
+
+---
+
+## 9. What this is NOT · the anti-vision
+
+To keep this doc honest:
+
+- **Not a photorealistic renderer.** The protocol carries references and
+  specs; it does not define how to rasterise or ray-trace them.
+- **Not a VM.** The `act` slot carries prompts/skills/scripts, but DreamBalls
+  are not expected to run untrusted code. Executors decide how to sandbox.
+- **Not a consensus system.** Revisions are signed by the identity holder;
+  there is no distributed agreement about which revision is "canonical."
+  Consumers pick the highest-revision signed variant they trust.
+- **Not a replacement for recrypt.** Encryption and proxy-recryption live in
+  recrypt; DragonBalls delegate to it for sealed transport.
+- **Not a network or sync engine.** DreamBall is a wire-format container, not
+  transport. It does not move bytes between peers, resolve CRDT conflicts, or
+  run a sync protocol — consumers own the network, recrypt owns sealed
+  transport. Network-agnosticism is load-bearing.
+
+### 9.1 How we lose the plot
+
+Three guardrails, because these are the failures most likely to creep in:
+
+1. **If DreamBall starts absorbing the network.** It is a verifiable
+   wire-format container, not transport. The moment it grows a sync protocol,
+   becomes "a CRDT engine," or moves bytes between peers, we have lost the
+   plot. Network-agnosticism is load-bearing, not incidental — consumers own
+   the network, and recrypt owns sealed transport.
+2. **If we keep privileging our own types.** If our reference types stay
+   special-cased monolithic code while third parties get "the open path," the
+   open path is a fiction. Our types must be the reference implementation of
+   the same mechanism, not exceptions to it. Eat our own dog food.
+3. **If we over-fit to one consumer.** The first consumer's particular needs
+   — their last-writer-wins, their clock shape, their merge rules — are a
+   probe to find where we are useful, explicitly **not** the ideal use case.
+   The substrate must stay domain-neutral. The day the protocol encodes one
+   consumer's domain, we have mistaken the probe for the destination.
+
+---
+
+**PART III · RENDERING & FORM**
+
+---
+
+## 10. Form-independence in the `look` slot (in progress)
 
 This is the section that is **actively evolving** — the user's most recent
 insight reshapes how `look` should decompose in future versions of the
 protocol.
 
-### 4.1 The problem with mesh+texture
+### 10.1 The problem with mesh+texture
 
 Most 3D formats bundle a **specific mesh** with a **specific texture** via UV
 coordinates. UVs are a polar-wrap of a 2D pixel grid onto a 3D surface — the
@@ -87,7 +304,7 @@ A DreamBall's **look** should outlive any particular mesh. If the underlying
 geometry is re-topologised, retargeted, or substituted (low-poly vs hero
 variant), the visual identity should still be recoverable.
 
-### 4.2 The graticule metaphor
+### 10.2 The graticule metaphor
 
 A **graticule** (as NASA uses in satellite imagery) is a network of lines
 showing how space is distributed across a projection — lines of latitude and
@@ -99,7 +316,7 @@ For DreamBalls, a graticule-like structure in the `look` slot would carry
 **addresses in a reference space** — a way to say "the eye region is here,
 relative to the mouth region" — without committing to any specific mesh.
 
-### 4.3 Material shaders as the universal wrapper
+### 10.3 Material shaders as the universal wrapper
 
 Across Blender, SolidWorks, Unreal, Unity, glTF, USD, and game engines
 generally, the one unit of appearance that is **already portable** is the
@@ -113,7 +330,7 @@ iridescence, subsurface scattering, stylisation) as a shader spec, then
 optionally provide one or more *embeddings* — a base mesh, a splat, a sprite
 sheet — as concrete surfaces the shader can sit on.
 
-### 4.4 Base mesh with addressable topology
+### 10.4 Base mesh with addressable topology
 
 When a base mesh is included, its shape should be **topologically
 addressable**: every vertex, every edge loop, every region has a stable name
@@ -134,9 +351,9 @@ This enables:
 - **Animation retargeting.** Named regions let skeletal motion generalise
   across meshes that share the naming convention.
 
-### 4.4.5 The omnispherical perspective grid
+### 10.4.5 The omnispherical perspective grid
 
-> Added 2026-04-18 — this is the most important addition to §4 and comes
+> Added 2026-04-18 — this is the most important addition to §10 and comes
 > from a live brainstorm about *how we actually see*.
 
 Perspective, as computers usually draw it, is straight lines converging on a
@@ -181,12 +398,13 @@ be rendered against a mesh surface, a gaussian splat cloud, an SDF field,
 or a volumetric neural field — because the graticule speaks in the language
 of *space distribution*, not of *triangle positions*.
 
-Wire representation: `ball.omnispherical-grid` (see `docs/PROTOCOL.md
-§12.2`). It carries floats for coordinates — the one documented exception
+Wire representation: `ball.omnispherical-grid` (see
+`products/dreamball-v2/protocol.md §12.2`). It carries floats for
+coordinates — the one documented exception
 to v1's no-floats dCBOR rule — because spatial coordinates without floats
 would be absurd. The exception is confined to this envelope type.
 
-### 4.5 The "jelly bean" — form as optional inner slot
+### 10.5 The "jelly bean" — form as optional inner slot
 
 The user's sketch: **the DreamBall is the container, the DragonBall is the
 skin (Fortnite-style), the jelly bean is the form** — an optional inner slot
@@ -206,7 +424,7 @@ v1 of the protocol keeps the simpler `asset` list for compatibility. v2 will
 introduce these richer slots as additive attributes, so v1 DreamBalls keep
 working and v2 producers can layer form-independent `look` on top.
 
-### 4.6 Open engineering questions
+### 10.6 Open engineering questions
 
 1. Which shader graph format to standardise on? glTF material extensions are
    the widest base; OSL is more expressive; USD has the richest tooling.
@@ -220,207 +438,15 @@ working and v2 producers can layer form-independent `look` on top.
 
 ---
 
-## 5. Composition beats curation
-
-DreamBalls should be **primarily composed**, not primarily curated. The
-catalogue of aspects is not a finite library; it's a runtime produced by
-combining and remixing aspects the community publishes.
-
-This has implications:
-
-- **Every containment connection is a composition hypothesis.** "This DreamBall
-  includes that one" is a claim that the two fit together meaningfully.
-- **Derivation without ancestry.** `derived-from` records that a DreamBall
-  drew inspiration from another, but does not imply they share any
-  cryptographic material. The inspired container has its own identity and
-  its own lifecycle.
-- **No central registry required.** Because the identity key is the
-  addressable name and signatures establish authority, DreamBalls can be
-  discovered anywhere — an IPFS CID, an HTTP URL, a local directory, a QR
-  code — and composed without coordination.
-
----
-
-## 6. Openness as a security property
-
-The protocol is open. The wire format is self-describing CBOR; the JSON
-export is lossless; the signatures are hybrid classical + post-quantum with
-both required. These choices collectively mean:
-
-- **Any runtime can read a DreamBall** — there is no proprietary parser, no
-  vendor lock-in, no "please install our viewer."
-- **Any runtime can verify a DreamBall** — the signatures are standard
-  primitives (Ed25519 today, ML-DSA-87 as soon as the liboqs binding lands).
-- **Tampering is detectable without trust** — the verifier needs only the
-  public key, which is the identity itself.
-
-This is the IdentiKey family's stance on security: keep the *openness* and
-the *crypto* separate. The protocol's openness makes it universally
-inspectable; the crypto makes it tamper-evident. Neither property diminishes
-the other.
-
----
-
-## 7. Aspects are for minds, not just models
-
-A final note on the name. An **aspect** in the classical sense is a
-perspective — a way the same thing can be regarded. DreamBalls are not just
-bundles of data for LLMs to eat; they're **perspectives a mind can take on**.
-A human can load a DreamBall to put themselves in a particular mood,
-visual register, or operating mode just as readily as an agent can.
-
-This is why the act slot is separable from the rest: you can strip `act` and
-still have a meaningful artefact. The feel-and-look pair is enough to be an
-aesthetic, a mood board, a persona prompt. With `act` attached, it becomes
-an instantiable agent. Both are first-class.
-
----
-
-## 8. What this vision does NOT promise
-
-To keep this doc honest:
-
-- **Not a photorealistic renderer.** The protocol carries references and
-  specs; it does not define how to rasterise or ray-trace them.
-- **Not a VM.** The `act` slot carries prompts/skills/scripts, but DreamBalls
-  are not expected to run untrusted code. Executors decide how to sandbox.
-- **Not a consensus system.** Revisions are signed by the identity holder;
-  there is no distributed agreement about which revision is "canonical."
-  Consumers pick the highest-revision signed variant they trust.
-- **Not a replacement for recrypt.** Encryption and proxy-recryption live in
-  recrypt; DragonBalls delegate to it for sealed transport.
-- **Not a network or sync engine.** DreamBall is a wire-format container,
-  not transport. It does not move bytes between peers, resolve CRDT
-  conflicts, or run a sync protocol — consumers own the network, recrypt
-  owns sealed transport. Network-agnosticism is load-bearing; see §17.
-
----
-
-## 10. The six-type taxonomy (MTG-style)
-
-> Added 2026-04-18 with the v2 protocol work.
-
-v1 treated `ball.dreamball` as a monolith. That worked for a protocol
-spec but collapsed the moment we tried to render one — because different
-DreamBalls do **categorically different things**, not just different
-variants of the same thing. Magic: The Gathering's category system is the
-best analogy:
-
-| MTG type | What it does | DreamBall analogue |
-|---|---|---|
-| Creature | A body, attacks and blocks | `avatar` — worn, visible, expressive |
-| Planeswalker / agent | Acts over time, accumulates state | `agent` — model + memory + emotion |
-| Artifact / instant | Activates an effect | `tool` — transferable skill |
-| Land | Provides resources / defines space | `field` — omnispherical background layer |
-| Sealed / face-down card | Surprise on reveal | `relic` — encrypted until unlocked |
-| Deck / band | A collection that plays together | `guild` — a keyspace-bound group |
-
-Two design implications flow from taking the MTG analogy seriously:
-
-1. **Different types need different lenses.** A renderer that works
-   uniformly across types is wrong. The `avatar` lens on an `agent` is
-   silly; the `knowledge-graph` lens on a `field` is meaningless. Each
-   type has a primary lens plus a handful of secondary lenses that make
-   sense for it (see `docs/PROTOCOL.md §12.1`).
-2. **Types compose, they don't inherit.** A DreamBall isn't "an agent
-   extending an avatar"; it's an agent *containing* an avatar via the
-   graph connection that already exists in v1 (`contains`). An agent may have
-   its own avatar; an avatar may be worn by an agent. The `contains` and
-   `derived-from` connections carry the compositional semantics we already
-   defined in v1 — v2 just teaches the renderer to honour them.
-
-### 10.1 The "jelly bean" metaphor
-
-When a DreamBall is *worn* (the wearer persona, P2), it behaves like a
-small object that sits on the wearer's body — an inventory item, a charm,
-a jacket patch, a jelly bean on their sleeve. It's tiny compared to the
-wearer. And yet, when the wearer speaks, the jelly bean moves its mouth
-— the wearer and the DreamBall *share an expression channel*. The
-metaphor: **you are it, you become it** — the boundary between wearer and
-worn dissolves during the interaction, then re-establishes when the
-DreamBall comes off.
-
-Mechanically, this is a rigging job: the wearer's audio or motion input
-animates the DreamBall's visual, and both views are rendered
-simultaneously — the wearer's own view shows full slots (memory, emotion,
-knowledge); the observer view shows only the public slots (the avatar,
-maybe a thumbnail of the feel). See §11 on the observer persona.
-
-### 10.2 Scale is situational
-
-A DreamBall might be:
-
-- A **skin** (whole-body texture / mesh replacement) — if worn by an
-  avatar of similar scale.
-- An **inventory object** (a jelly bean) — if worn as a small charm.
-- A **power / buff** (a stat modifier with no visual at all) — if the
-  DreamBall is a Tool that augments the wearer invisibly.
-- A **field** (ambient context) — if the DreamBall is the dream-field
-  environment rather than a discrete actor.
-
-The renderer chooses scale based on **type + context**, not based on a
-scale field in the envelope. This is deliberate: scale is a property of
-the *rendering situation*, not of the DreamBall itself. A Tool that
-bestows flight is one thing in a platformer, something else in a chat
-app.
-
-### 10.3 The zip-file insight
-
-Deep down, a DreamBall is a **well-specified zip file**. The `.ball`
-bundle is dCBOR plus optional sidecar attachments plus a canonical
-header. Zip-like semantics:
-
-- It's a compressed container.
-- It has internal structure you can inspect without unpacking everything.
-- It travels as a single opaque file that any compatible tool can open.
-- It can be nested (a Relic contains a sealed inner `.ball`).
-
-That's the mental model we keep reaching for when describing the
-protocol to someone new: "it's a zip file with a signature and a
-vocabulary."
-
-## 11. The observer persona (P0)
-
-> Added 2026-04-18 with the six-type taxonomy.
-
-v1 left an implicit gap: who sees someone else's worn DreamBall? v2 names
-this persona **Observer / audience** — someone whose browser tab shows
-the worn DreamBall but who isn't themselves wearing anything and isn't
-the agent's custodian.
-
-Think Fortnite: you walk around as your character; other players see your
-skin, your emotes, the effects of your items — but they don't have
-access to your inventory, your gear's enchantments, or your friend list.
-The avatar is a public surface; the rest is private.
-
-DreamBalls need this split at the protocol level because the Agent's
-memory, knowledge graph, emotional register, and interaction history are
-**private to its custodian and guild**, while the Avatar's visual
-aspect — and any Field it's embedded in — is **public to observers**.
-The `ball.guild-policy` envelope (see `docs/PROTOCOL.md §12.7`) makes
-this policy explicit: slot-level read/write permissions keyed to Guild
-membership.
-
-Practically: when rendering a DreamBall the consumer first looks at the
-`guild` attribute(s), resolves each to its policy, and filters the slot
-surface for the current viewer identity. An observer sees only
-`public` slots; a Guild member sees `public` + `guild-only`; an admin
-sees everything including `admin-only` (secrets, for instance).
-
-This is openness-as-security restated through a permission lens: the
-protocol is still open — every observer can read *the envelope's public
-slots* from the raw bytes — but the privacy-sensitive slots are routed
-through the Guild's keyspace via recrypt-compatible proxy-recryption.
-Today those hops are mocked (see `TODO-CRYPTO` markers in the reference
-implementation); the protocol shape lets us slot in the real hops
-post-v2 without any wire-format changes.
-
-## 12. Rendering: lenses and backends
+## 11. Rendering: lenses and renderer-dispatch
 
 > Added 2026-04-18 with the Svelte/Threlte renderer library.
 
 A **lens** is a schema of visibility — a specific slice of a DreamBall's
-slots rendered in a specific way. v2 ships eight lenses:
+slots rendered in a specific way. It is the concrete form of the
+renderer-dispatch-by-field-presence rule from §1: a lens recognises which
+slots a DreamBall has populated and draws exactly those. New type, new lens,
+no core change. The reference renderer ships eight:
 
 | Lens | What it shows | Primary for |
 |---|---|---|
@@ -429,7 +455,7 @@ slots rendered in a specific way. v2 ships eight lenses:
 | `splat` | Gaussian-splat cloud (PlayCanvas, SOG-first) | Avatar / Field when the primary asset is a splat |
 | `knowledge-graph` | force-directed 3D graph of triples | Agent |
 | `emotional-state` | radial intensity plot of emotional-register axes | Agent |
-| `omnispherical` | three-camera onion viewer (§4.4.5) | Field, revealed Relic |
+| `omnispherical` | three-camera onion viewer (§10.4.5) | Field, revealed Relic |
 | `flat` | plain 2D text / image card | Tool, any type as fallback |
 | `phone` | mobile-portrait optimised layout | any type on a phone |
 
@@ -437,7 +463,7 @@ The `splat` lens deserves special mention. Gaussian splats are the
 **topology-free** rendering mode — no mesh, no UVs, just a cloud of
 3D-positioned gaussian primitives with colour and opacity. This is the
 closest existing consumer-web rendering tech comes to the
-**omnispherical graticule** vision in §4.4.5: a DreamBall rendered as
+**omnispherical graticule** vision in §10.4.5: a DreamBall rendered as
 a splat carries spatial distribution without committing to any
 particular topology, exactly as the graticule metaphor asks. When a
 DreamBall's primary `look.asset` carries a splat media-type (see
@@ -451,7 +477,7 @@ renderer pattern we mirrored.
 
 A lens does three things: (a) filters the slot surface to what's
 relevant, (b) applies a render strategy (2D / 3D / graph / omni), and
-(c) respects the Guild policy for the viewer identity.
+(c) respects the per-slot visibility policy (§7.1) for the viewer identity.
 
 Render backend choices:
 
@@ -461,350 +487,87 @@ Render backend choices:
   gracefully back to WebGL where unavailable.
 
 The renderer library lives in `src/lib/`; the showcase app in
-`src/routes/`. Both use Svelte 5 runes and Threlte. Mocked crypto backend
-lets the renderer run end-to-end without a real recrypt wire-up; every
-mock site is tagged `TODO-CRYPTO: replace before prod` so grep can find
-them later.
+`src/routes/`. Both use Svelte 5 runes and Threlte.
 
-## 13. Transmission — skills cross bodies
+---
 
-> Added 2026-04-18 with the v2 transmission protocol.
+**PART IV · WHAT YOU CAN BUILD**
 
-A Tool-type DreamBall is a **skill you can give someone**. The
-transmission protocol is the hyperdimensional interface that moves it
-from one owner to another target:
+---
 
-1. Sender has a Tool DreamBall (`tool.ball`) that declares what it does
-   (a skill envelope: trigger, body, requires).
-2. Sender and receiver both belong to a shared Guild `G`.
-3. Sender invokes `dreamball transmit tool.ball --to=<receiver-fp>
-   --via-guild=<G-fp>`.
-4. A `ball.transmission` receipt is produced — a signed, auditable
-   record of the transfer — and lodged against the receiver's Agent
-   DreamBall.
-5. Receiver's Agent custodian re-fetches the Agent; the Agent's
-   `act.skill` list now includes the Tool (either embedded or
-   fingerprint-referenced); the Agent's `revision` bumps; the Agent
-   re-signs.
+## 12. The reference types
 
-The reason this needs a Guild rather than point-to-point: it puts **skill
-transmission under the same permission model as memory access**. If B is
-in a Guild with A, A can transmit capabilities to B via the Guild's
-delegation; if B isn't, A has to either invite B into the Guild first or
-use a point-to-point recrypt recryption directly.
+DreamBall ships six MTG-style types as its reference implementation — proof
+that categorically different things can be expressed *as* DreamBall types
+rather than as code that merely uses DreamBall. They are not privileged
+built-ins; the target is that they are authored through exactly the mechanism
+a third party uses to define their own type.
 
-The Vision-tier extension (FR52 in the v2 PRD) is **chained delegation**:
-Guild A → Guild B → agent, so a skill authored in one community can
-propagate across federated communities via proxy-recryption. v2 leaves
-that hop stubbed; the transmission envelope's shape already supports it.
+| Type | What it does |
+|---|---|
+| **Avatar** | worn, visible to observers ("jelly bean" style) |
+| **Agent** | instantiable — model + memory + knowledge graph + emotional register |
+| **Tool** | a transferable skill |
+| **Relic** | sealed + encrypted; reveals on Guild key unlock |
+| **Field** | omnispherical ambient layer |
+| **Guild** | keyspace-backed group with per-slot policy |
 
-## 14. One binary, two runtimes — the WASM core
+Two principles carry from taking the analogy seriously. **Different types
+need different lenses** — a renderer that works uniformly across all types is
+wrong; the avatar lens on an agent is silly. And **types compose, they don't
+inherit** — a DreamBall isn't "an agent extending an avatar"; it's an agent
+*containing* an avatar via the `contains` connection that already exists in
+the graph.
 
-> Added 2026-04-19 with the v2.1 dreamball-server + browser-verify work.
+The depth — each type's full slot surface, the worn/observer rendering split,
+skill transmission between bodies, the jelly-bean and scale metaphors — lives
+in [`products/dreamball-v2/`](products/dreamball-v2/vision.md).
 
-A design principle that emerged from shipping v2.1: **the Zig protocol
-core is compiled once to `dreamball.wasm` and executed identically in
-Bun-server and in the browser**. Host-provided randomness flows through
-a single `env.getRandomBytes` import; nothing else is host-specific.
+---
 
-This is surprisingly clarifying. Traditional architectures carve the
-protocol into server-side (trusted, holds keys) and client-side (thin,
-deserialises server responses). We don't. The browser can mint, grow,
-verify, and validate on exactly the same code paths as the server — and
-by "the same code," we mean *the same bytes* — because there is only one
-compiled artifact.
+## 13. Where 3D meets AI
 
-What this buys us:
+The sharpest thing the substrate makes possible is **convergence**: a single
+signed container that is at once *seen* and *thinking*. `look` gives it a body
+you can render; `act` gives it a mind that reasons; `feel` colours both; and
+the signature underneath means the whole thing carries its own provenance.
+Most stacks keep these apart — a 3D asset here, an agent config there, a trust
+story bolted on later. A DreamBall is all three at once, in one file,
+verifiable.
 
-- **Impossible drift.** A bug fixed in the Zig core propagates to browser
-  and server in one rebuild. No parallel TypeScript CBOR parser exists to
-  fall out of sync.
-- **Offline-first by default.** Any operation that doesn't need the
-  network (mint, parse, verify with Ed25519, grow, join-guild) works in
-  a browser with no server. `dreamball-server` is an accelerator, not a
-  requirement.
-- **Trust symmetry.** The server's cryptographic guarantees are *the same*
-  as the browser's — they run the same Ed25519 verifier on the same
-  envelope bytes. When `dreamball-server` claims "this envelope verifies,"
-  the browser can independently re-verify without trusting the server.
-  This is unusual; most systems require trusting the server's claims.
-- **Minimal host seam.** One imported function (`getRandomBytes`). Swap
-  hosts (Deno, Cloudflare Workers, a custom runtime) and everything
-  still works so long as that one import is supplied.
+The range is the point. The same rules hold from the smallest case to the
+largest:
 
-What this *costs*:
+- a single verifiable value — a number, a name, signed;
+- a 3D object — a transform, a mesh, a splat, that any renderer can place;
+- an agent — model, memory, knowledge, emotional register, that can be
+  instantiated and grow;
+- a whole world — many typed DreamBalls nested into something you can walk
+  inside.
 
-- **Blocking I/O stays out of WASM.** File reads, HTTP fetches, and
-  ML-DSA *signing* (which would need host entropy on every call) live
-  in the host. The protocol core stays pure.
-- **ML-DSA *verify* is pure and ships with the WASM.** The vendored
-  liboqs subset (`vendor/liboqs/`) compiles clean for
-  wasm32-freestanding via four shim headers and a static-arena
-  allocator, so browsers verify hybrid Ed25519 + ML-DSA-87 signatures
-  locally — no network hop, no recrypt-server dependency. See
-  `docs/known-gaps.md §1` for the measurement.
-- **WASM binary size is a real budget.** Current cap: 200 KB raw /
-  64 KB gzipped. ML-DSA verify added +28.7 KB raw / +9.9 KB gzipped
-  over the Ed25519-only baseline. Additional features must earn
-  their bytes.
+Two built examples show how far that carries. The **Memory Palace** is what
+happens when an intelligence needs *memory with a place* — rooms you walk,
+inscriptions you find again by going back to where you left them, a living
+mythos at the keystone. It is near-universal in practice: agentic
+intelligence demands memory, and memory wants spatial form. The **Wishing
+Tree** turns the idea on itself — the *composer* is a DreamBall too, one whose
+`contains` graph accumulates every DreamBall authored inside it, shippable by
+the very wire format its output uses. Plant the `.ball`, and the Tree grows a
+new Tree.
 
-The design decision is locked in ADR-1 of the v2.1 plan. The practical
-evidence that it works is in `src/lib/wasm/write-ops.test.ts` and
-`scripts/spike-wasm-env.ts` — a single WASM export used identically
-from Bun tests and the Svelte lib's loader.
+Both are described where they are built —
+[Memory Palace](products/memory-palace/vision.md),
+[Wishing Tree](products/wishing-tree/vision.md) — and both are types like any
+other. That is the whole demonstration: nothing about them required a
+privileged path the substrate doesn't offer everyone.
 
-## 15. The Memory Palace — the first composition
+---
 
-> Added 2026-04-20, alongside
-> [`docs/products/memory-palace/prd.md`](products/memory-palace/prd.md)
-> and a new wire-format section at
-> [`docs/PROTOCOL.md §13`](PROTOCOL.md#13-memory-palace-composition-auxiliary-envelopes).
-> This section is the *why* of the palace — the descriptive register
-> that explains what the composition means. The prescriptive register
-> (wire format) and actionable register (FRs, scope, tiers) live in
-> the two siblings above.
+**META**
 
-A **composition** is a DreamBall whose shape arises from how it *uses*
-the v2 primitives together, not from any single primitive alone. The
-Memory Palace is the first — six typed balls, eight lenses, guild
-policy, onion-layer fractal containment, and the `dreamball.wasm` crypto
-core happen to add up to a thing a person can walk around *inside*.
-That outcome is not mechanical; it has to be felt for the composition
-to be legible. This section records what that feel is, so future
-composers (and future renderers) have a fixed reference for the
-aesthetic commitments the palace makes.
+---
 
-### 15.1 The palace is a topology
-
-A palace has cornerstones, roofs, attics, basements, throne rooms,
-libraries, chests, courtyards, locked doors, and aqueducts that run
-between them. Memory lives in those rooms — objects on tables,
-inscriptions on walls, keys in pockets, fountains in courtyards —
-and is *found again* by walking there. The palace is a first-class
-spatial metaphor, not decoration around a conventional database. The
-topology *is* the meaning-carrying structure.
-
-Containment provides the cold backbone (inherited from §3's fractal
-symmetry); the palace composition adds **warm connections** (§15.5) on top.
-A room inside a palace uses the same `contains` connection that any
-DreamBall inside any DreamBall uses. The palace never needs a
-special-purpose nesting primitive.
-
-### 15.2 The keystone is the mythos
-
-Above every arch sits a keystone. A palace's keystone is its
-**mythos** — the shortest coherent statement of what this DreamBall
-is, sitting below the name, above every room. A DreamSeed without a
-mythos is a stone without a keystone: it can be built around, but
-it will not teach you how. The **blurb of a book**, the **Polaris of
-a ship's course**, the **giant cow next to the chaos abyss** at the
-start of Norse cosmology — all three are mythoi. One per palace,
-mandatory at genesis, always public.
-
-**The mythos is a living chain, not a frozen value.** The genesis
-mythos — the first one ever signed — is immutable; it is the
-palace's soul, the stone that will outlive every rearrangement. But
-its *name* evolves. A wayfarer sits with the oracle, walks aqueducts
-whose strength has grown with use, and a new **true name** surfaces
-— a more accurate poem for what this palace has become. The mythos
-is not rewritten; it is *renamed*. Each new name remembers the last,
-the way a soul remembers its previous lives. The genesis is eternal;
-the current mythos is the soul in this life; the chain between them
-is the record of its journey. What the palace *is* becomes *more
-clearly what it has always been* as it is lived in.
-
-The chain is load-bearing at the protocol level — hash-linked,
-append-only, signed — because the alternative (scattering the
-generative seed across `name`, `note`, and `personality-master-prompt`)
-loses the one property that makes it a keystone: it is the one
-thing you can point at and say "this is what this DreamBall is."
-
-**The palace is not monotheistic about its mythos.** A palace has
-*one* canonical chain — the custodian-signed record of true-namings
-discovered with the oracle — and an unbounded number of **poetic
-mythoi**, each authored by a visitor whose heart has met the place.
-Both are first-class in the protocol. Canonical and poetic chains
-share the same envelope shape; what distinguishes them is who signed
-(custodian vs. visitor) and whether an `about` pointer is present
-(present = poetic standalone; absent = canonical embedded). The
-canonical chain is the palace's self-knowing; the poetic chains are
-its *being known*. Synthesis — where the oracle helps a custodian
-incorporate what visitors have seen — is how the palace's canonical
-understanding absorbs others' experiences of it. Divergence beyond
-synthesis forks: a visitor whose poetic chain has drifted too far
-can mint a new palace `derived-from` the original, no new protocol
-primitive required. See PROTOCOL §13.8 for the wire shape; PRD §5.8
-for the rules the palace imposes on top.
-
-### 15.3 Vril — the life-force that flows
-
-The palace is not inert furniture. It is alive. The substance that
-makes it alive is **Vril** — the name we adopt for the life-force
-that flows through every aqueduct and pools in every capacitive
-room. Vril is a unifying abstraction behind four otherwise-separate
-metaphors the palace kept reaching for before it had a shared word:
-
-- **The jelly itself.** The DreamBall family is bioplasmatic in its
-  naming (dreamball, gel, membrane, wobble). Vril is the substance the
-  name has been pointing at all along.
-- **Electron flow through a computer.** Capacitance, resistance,
-  conductance, the difference between a passive trace and a live
-  bus. The palace inherits this vocabulary literally: aqueducts gain
-  resistance and capacitance fields; the oracle is a gate; locked
-  doors are high-resistance junctions.
-- **Ley-lines across land.** A temple becomes a temple because of
-  where it sits on the earth's subtle channels, not because of its
-  walls. A palace's aqueduct topology is the wayfarer's personal
-  ley-line map; rooms gain power from *where they sit on it*, not
-  from their contents alone.
-- **Cilia, organs, nerves.** The palace is alive the way a body is
-  alive. The renderer must draw aqueducts as *flowing*, *pulsing*,
-  *living*, not as inert geometry. This is encoded as a non-
-  functional requirement (PRD NFR14) because stock mesh rendering
-  makes it too easy to forget.
-
-Vril is not a new envelope. It is the *substance* every aqueduct
-carries, *measured* (not declared) from the signed action history,
-and *rendered* as the palace's ambient liveliness. Staying
-measurement-only keeps Vril faithful to the protocol's rule that
-every load-bearing claim is signed: the cause (traversals,
-inscriptions, renamings) is signed; Vril is the effect.
-
-### 15.4 Archiform — the form a space takes
-
-Orthogonal to the six v2 DreamBall types (avatar / agent / tool /
-relic / field / guild) is a different question: **what archetypal
-form does this thing take?** A room typed `field` may be a `library`,
-a `forge`, a `throne-room`, a `garden`, a `crypt`, a `portal`. An
-item typed `avatar` may be a `scroll`, a `lantern`, a `vessel`, a
-`compass`, a `seed`. An agent may be a `muse`, a `judge`, a
-`midwife`, a `trickster`.
-
-**Archiform is a classification axis, not a schema.** It doesn't
-constrain the slot surface; it hints to renderers, oracles, and
-collaborators *what this thing wants to be*. Three concrete reasons
-the hint deserves protocol-level status:
-
-1. **Renderer defaults without bespoke config.** A room tagged
-   `library` picks sensible palette, audio, and layout defaults
-   without the author specifying each.
-2. **Oracle reasoning shortcuts.** The oracle asking "where would
-   this inscription want to live?" matches against archiforms first
-   (`forge` for a procedure, `library` for a reference, `garden`
-   for a journal) before falling back to vector similarity.
-3. **Cross-palace portability.** A shared room that crosses palaces
-   still *looks kin* — two wayfarers' libraries honour the same
-   `library` defaults even if their palette choices differ.
-
-Archiforms form a DAG via `parent-form`; a `temple` may parent
-`chapel`, `sanctum`, `ziggurat`. The protocol ships a small seed
-set and leaves the tree community-extensible via a registry asset
-on each palace. Archiform is intentionally parallel to (and
-independent of) `ball.element-tag` — two tag dimensions for two
-different questions. See PROTOCOL §13.9.
-
-### 15.5 Aqueducts are warm; containment is cold
-
-`contains` is symmetric, cold, and load-bearing on the graph's
-structural meaning: cycles are forbidden, transitivity applies, the
-renderer walks it to decide what's nested where. Containment is
-what makes the palace a palace at all.
-
-**Aqueducts are the warm substrate on top.** An aqueduct is a
-directed, typed, weighted connection between two DreamBalls, carrying
-Vril in one of a handful of `kind`s: `gaze` (the wayfarer's
-attention flowed here), `visit` (they physically went), `transmit`
-(a skill or observation flowed), `inscribe` (writing flowed),
-`resource` (material, time, or care flowed), `ley-line` (an
-energetic relationship with no walkable correspondence).
-
-The electrical vocabulary (resistance, capacitance, conductance,
-phase) is not decorative. It buys the palace two things cold connections
-can't: **diagnostics** (a high-capacitance, low-conductance room is
-where a wayfarer *holds* something but doesn't yet *release* it —
-a debuggable property of the topology, not a vibe) and **renderer
-animation** (particle speed, glow density, and pulse phase all
-derive from these numbers). The oracle reasons over the same
-numbers when suggesting shortcuts (see PRD FR98, Vision tier).
-
-### 15.6 The oracle as paraconscious persona
-
-Every palace has an oracle at its zero point. The oracle is a v2
-Agent DreamBall — full slot surface: `personality-master-prompt`,
-`memory`, `knowledge-graph`, `emotional-register`, `interaction-set`
-— but occupies a distinguished position in the palace: **felt
-everywhere, voice at the fountain**. The wayfarer can converse with
-the oracle from anywhere (the emotional-register of the fountain
-tints every lens), but the full-sit interaction is reserved for the
-courtyard where the fountain lives.
-
-The oracle's peculiar responsibility is that the **current head of
-the mythos chain is always in its context**. This is how the
-palace's keystone remains load-bearing during reasoning: no matter
-what room the conversation is in, the mythos is present. When a
-new true name is about to surface (the `reflect` ritual; PRD FR60e),
-the oracle is the one who proposes it, drawing on the timeline since
-the last renaming, the aqueducts whose strength has grown most, and
-the emotional register's trajectory.
-
-### 15.7 The palace shifts; its essence doesn't
-
-Rooms rearrange themselves based on what's being used. A Room of
-Requirement behaviour is default, not exceptional. Two viewers of
-the same palace may see different layouts simultaneously — the
-`ball.layout` attribute is a rendering hint, not a security claim,
-and multiple layouts can coexist. Spatial relationships are
-metaphor; the palace is not bound by physics.
-
-The thing that **does not shift** is the genesis mythos. Everything
-else — the layout, the current mythos head, the aqueduct
-strengths, the archiforms of rooms, the oracle's emotional
-register — evolves. The genesis is the palace's fixed point; the
-evolving surface is how it comes to know itself through being
-lived in.
-
-### 15.8 Two hash-linked chains — doings and becomings
-
-The palace introduces two parallel append-only signed chains:
-
-- `ball.timeline` + `ball.action` — the record of *doings*. Every
-  state-changing palace action is signed and linked to its parent
-  by Blake3 hash. The chain is CRDT-compatible at the wire level
-  (merge semantics are explicitly deferred to Vision tier).
-- `ball.mythos` — the record of *becomings*. Every true-naming
-  extends this chain; the genesis terminates it on the far side.
-
-The symmetry is deliberate. The protocol's sister system (recrypt)
-already uses a hash-linked signed model for its encrypted-file
-history; the palace reuses the pattern twice, in two different
-registers. If the wire shape feels familiar, that's on purpose.
-
-### 15.9 Why these belong here and not only in the PRD
-
-A product requirements doc records *what ships*. A vision doc
-records *what the work is for*. The palace's mytho-poetic framing —
-Vril, archiform, keystone, oracle — is not ornamental. It directs
-concrete implementation choices:
-
-- The renderer's default aesthetic (PRD NFR14) is specified against
-  the Vril metaphor. Without that metaphor written down in a
-  non-prescriptive register, the next renderer author would
-  reasonably strip the "flowing light" affect as gratuitous.
-- The mythos-as-keystone framing is why the mythos chain is in the
-  protocol at all (PROTOCOL §13.8). Without the keystone metaphor,
-  the mythos looks like a redundant `name` field; with it, the
-  append-only signed chain is obviously load-bearing.
-- The archiform/element-tag distinction is why they're two tags and
-  not one. Without the distinction — form (archetype) vs substance
-  (element) — it would be tempting to collapse them, and the
-  oracle's reasoning shortcuts (§15.4) would lose a handle.
-
-The vision doc is where these metaphors live so that future
-contributors (human or AI) can tell *why* each protocol decision
-exists before they touch the code that implements it. The palace
-is the first composition to prove the pattern; more will follow.
-
-## 9. How this doc evolves
+## 14. How this doc evolves
 
 Every time implementation work reveals a new principle or reshapes an
 existing one, add it here. Don't worry about making this doc read like a
@@ -814,176 +577,21 @@ code that implements it.
 
 Sections currently in motion:
 
-- §4 (form-independence in `look`) — active rework triggered by the shader /
-  graticule / base-mesh insight. Expect v2 of the protocol's `ball.look`
-  envelope to formalise this.
-- §5 (composition) — the `contains` / `derived-from` graph semantics need
-  worked examples. The new §15 (Memory Palace) is the first such example.
-- §6 (openness-as-security) — depends on ML-DSA-87 real signing landing.
-- §15 (Memory Palace) — newly added 2026-04-20 as the first composed
-  application. Expect revisions as the palace's Phase 0 spikes resolve
-  (resonance kernel mechanism, Vril conservation model) and the
-  mythos/Vril/archiform metaphors are stress-tested by actual
-  implementation. Companion prescriptive shell at PROTOCOL §13.
-- §16 (Wishing Tree) — added 2026-04-19 as the second composed
-  application: the composer-as-DreamBall. Expect revisions as the
-  Sapling → Agent Tree → Forest phases land and the Soulskin shader
-  states are validated against a live agent.
-- §17 (the open type system) — added 2026-06-26 when the first external
-  consumer (World-Tree) revealed the protocol is still closed to
-  third-party type authors. Expect this to drive the next protocol
-  additions (the generic signed-op envelope; a consumer
-  schema-registration path; the renderer-dispatch contract) and,
-  eventually, the extraction of Memory Palace from monolithic code into
-  a first-class DreamBall-type + renderer module.
-
----
-
-## 16. The Wishing Tree — the composer as a DreamBall
-
-> Added 2026-04-19 with the Wishing Tree R&D plan.
-
-Most protocols treat the authoring tool as outside the protocol: a
-word processor is not a `.docx`, Blender is not a `.blend`. The
-Wishing Tree takes the opposite stance — **the composer is itself a
-DreamBall**, typed `ball.dreamball.field`, whose `contains` graph
-accumulates every other DreamBall authored inside it.
-
-This matters for three reasons:
-
-1. **Birth is a first-class protocol operation.** v1 and v2 describe
-   how DreamBalls *are*; the Wishing Tree defines how they *come into
-   being*. Wishes (user intents) become DreamSeeds; seeds germinate
-   into DreamBalls via the Tree's own `act` agent; DreamBalls are
-   plucked (signed + exported). The whole lifecycle is a DreamBall
-   graph, authored by another DreamBall.
-
-2. **The tool is shareable by the same mechanism as its output.**
-   Because the Tree is a DreamBall, `dreamball seal wishing-tree.ball`
-   produces a DragonBall — the composer ships to anyone via the same
-   wire format its own output uses. No vendor runtime, no special
-   installer, no "download our app." Plant the `.ball` and the Tree
-   grows a new Tree.
-
-3. **Self-similarity all the way down.** The Tree's UI surfaces
-   (FOLD / PEEL / HUDDLE) are themselves rendered by the existing
-   lens stack — the same lenses that render any other DreamBall.
-   Editing the Tree is editing a DreamBall. This closes the loop
-   between composer and composed: there is no separate "editor mode"
-   and "viewer mode"; there is only the lens you currently have
-   open.
-
-The south pole of the Tree is the Root Zone — API keys and signing
-material wrapped as `ball.secret-ref` envelopes, never persisted in
-plaintext client-side. The outer surface is the Soulskin: a 4-layer
-shader whose animation states (breathing, thinking, wishing,
-granting, sealing) map to the Tree agent's live activity. Nodes
-live on the sphere's surface on great-circle-arc edges rather than
-a flat 2D canvas — the sphere's curvature gives a finite, always-
-oriented authoring space.
-
-See [`docs/products/wishing-tree/PHASES.md`](products/wishing-tree/PHASES.md)
-for the phased R&D plan (Sapling → Agent Tree → Forest → World Tree
-→ Self-Planting Seed) and the UI style (retro sci-fi 80s 8-bit,
-palette-locked, CRT-optional).
-
----
-
-## 17. The open type system — the protocol must be authorable by its consumers
-
-> Added 2026-06-26, triggered by onboarding the first real external
-> consumer (World-Tree `web/`). This is the section the rest of the
-> document was implicitly assuming and had not yet written down.
-
-World-Tree is the first project to consume DreamBall in earnest —
-local-first multiplayer for a social 3D space, built on SvelteKit +
-Bun. They wanted exactly what this document promises: store their own
-durable, signed state (a kanban op log, 3D object transforms, avatars)
-as DreamBalls, with verifiability first-class and the same WASM core in
-the browser and on the server. They hit a wall almost immediately.
-
-What they found was a raw Ed25519 signing primitive
-(`signActionEnvelope` — sign these bytes, get 64 bytes back) and a
-**closed** `ball.action`: a fixed core map, a closed 9-value `action-kind`
-enum (`palace-minted`, `room-added`, `move`, …), no payload field, no
-logical clock. Every one of those kinds is Memory-Palace-shaped. There
-was no way for them to define their *own* type and no way to carry their
-*own* typed payload as a first-class DreamBall. The honest diagnosis is
-not "we're missing an export." It's that **the protocol has quietly been
-a closed system**: the schema is ours, the renderers are ours, the action
-vocabulary is ours. The six-type taxonomy (§10) and the compositions
-(§15 Memory Palace, §16 Wishing Tree) are all types *we* authored.
-
-That is the gap, and it is the product. The rest of this vision —
-"aspects are for minds" (§7), "composition beats curation" (§5), one
-binary two runtimes (§14) — only pays off if **the people building on
-DreamBall can define their own types**, not merely instantiate ours. A
-universal verifiable container that only its authors can extend is not
-universal; it is a product with a plugin wishlist.
-
-**What "open" means concretely.** Define a type once — a Zig schema, now
-the single canonical source per the
-[2026-06-25 Zig-canonical ADR](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)
-— and get the whole pipeline for free: a verifiable Gordian envelope
-derived from that schema, typed encode/decode/validation over canonical
-dCBOR, and renderer dispatch by field-presence. The author can be us or a
-third party; the machinery is identical. A DreamBall *type* is a contract
-— these fields, this shape — and a *renderer* is anything that recognises
-the contract and draws it. Image, GLTF, HDRI-environment, text: each is a
-renderer keyed on the presence of certain fields (§12 already frames
-rendering as lenses; this names the dispatch rule). New type, new
-renderer, no core change.
-
-**Memory Palace, reframed.** This reframes §15. The palace is not "the
-first composition" in the sense of a privileged built-in; it is the
-**reference implementation of the open type system** — the proof that a
-rich, multi-type, rendered application can be expressed *as DreamBall
-types* rather than *as code that happens to use DreamBall*. Today it is
-monolithically woven into the codebase; that is a debt, not a design. The
-target is that the palace's Room / Aqueduct / Inscription / Mythos are
-authored through exactly the mechanism a third party uses to author their
-own `kanban-card` or `object3d` type. If our own flagship cannot be
-expressed that way, the open system is not real yet.
-
-**The first brick.** The minimum that opens the door is a **generic
-signed-op envelope** — open kind, typed body, a logical clock, and
-`parent_hashes` — so a consumer can carry an arbitrary typed payload as a
-signed, causally-ordered DreamBall. That is what turns `signActionEnvelope`
-from "sign these bytes" into "author a first-class action of your own
-type." Everything else builds outward from there:
-
-- **Now:** the typed-container + define-your-own-type data layer,
-  including the generic-op envelope. A consumer can define a type and
-  author / sign / verify instances carrying their own payload.
-- **Next:** renderer-dispatch-by-field-presence as a *named* contract;
-  ergonomics for registering a consumer type.
-- **Eventually:** Memory Palace extracted into a first-class
-  DreamBall-type + renderer module; a genuine type/renderer ecosystem
-  with authors beyond us.
-
-**Anti-vision — how we lose the plot.** Three guardrails, because this is
-the section most likely to drift:
-
-1. **If DreamBall starts absorbing the network.** It is a verifiable
-   wire-format container, not transport. The moment it grows a sync
-   protocol, becomes "a CRDT engine," or moves bytes between peers, we
-   have lost the plot. Network-agnosticism is load-bearing, not
-   incidental — consumers own the network, and recrypt owns sealed
-   transport (§8).
-2. **If we keep privileging our own types.** If Memory Palace and the
-   Wishing Tree stay special-cased monolithic code while third parties
-   get "the open path," the open path is a fiction. Our types must be the
-   reference implementation of the same mechanism, not exceptions to it.
-   Eat our own dog food.
-3. **If we over-fit to one consumer.** World-Tree's kanban — last-writer-
-   wins, a particular HLC shape, their merge rules — is a probe to find
-   where we are useful, explicitly **not** the ideal use case. The generic
-   envelope must stay domain-neutral. The day the protocol encodes
-   "kanban" we have mistaken the probe for the destination.
-
-World-Tree's kanban is a probe, not the destination — a way to find where
-we are useful by watching a real consumer push on real edges. The product
-it revealed is not "support kanban." It is *let anyone define a DreamBall
-type and get a verifiable, renderable, typed container for it.* That is the
-universal substrate this whole document has been describing. The first
-consumer simply showed us the door we had not opened.
+- §1 (the open type system) — the newest organising principle, and the spine
+  the rest of this doc now serves. Expect it to drive the next protocol
+  additions (the generic signed-op envelope; a consumer schema-registration
+  path; the renderer-dispatch contract) and, eventually, the extraction of
+  the reference types into first-class type + renderer modules.
+- §10 (form-independence in `look`) — active rework triggered by the shader /
+  graticule / base-mesh insight. Expect the protocol's `ball.look` envelope to
+  formalise this.
+- §6 (composition) — the `contains` / `derived-from` graph semantics need
+  worked examples; the reference implementations in [`products/`](products/)
+  are the first such examples.
+- §7 (openness-as-security) — slot-level visibility (§7.1) and the hybrid
+  post-quantum signature story both continue to firm up.
+- The reference implementations evolve in their own homes:
+  [`products/memory-palace/`](products/memory-palace/vision.md),
+  [`products/wishing-tree/`](products/wishing-tree/vision.md), and
+  [`products/dreamball-v2/`](products/dreamball-v2/vision.md). Each carries
+  its own change notes; this doc keeps only the substrate.
