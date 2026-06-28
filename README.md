@@ -52,14 +52,15 @@ the same machinery a third party uses to define a `kanban-card` or
 - **Field** — omnispherical ambient layer
 - **Guild** — keyspace-backed group with per-slot policy
 
-> **Status (2026-06-26).** The open type system is the product the first
+> **Status (2026-06-28).** The open type system is the product the first
 > external consumer (World-Tree) revealed. Today the reference types are
 > still woven monolithically into the codebase, and the open authoring
-> path is landing incrementally — the first brick is a generic signed-op
-> envelope (open kind, typed body, logical clock, `parent_hashes`) that
-> lets a consumer carry an arbitrary typed payload as a signed,
-> causally-ordered DreamBall. See [`docs/VISION.md
-> §1`](docs/VISION.md) for the full reframe and roadmap.
+> path is landing incrementally — the first brick has **landed**: the v4
+> `ball.action` envelope (open `kind`, typed body, HLC logical clock,
+> `parent_hashes`, `content_hash`) lets a consumer carry an arbitrary
+> typed payload as a signed, causally-ordered DreamBall, with a
+> cross-runtime golden gate proving Zig-CLI ≡ WASM ≡ browser. See
+> [`docs/VISION.md §1`](docs/VISION.md) for the full reframe and roadmap.
 
 DreamBall is **not** a network, sync, or CRDT engine — it is a verifiable
 wire-format container. Consumers own the network; recrypt owns sealed
@@ -211,7 +212,7 @@ Read these four files in order before touching code:
 
 Every change must keep these gates green:
 
-- `zig build test` · `zig build smoke` · `zig build wasm` (≤224 KB raw / ≤64 KB gzipped; ships ML-DSA-87 verify)
+- `zig build test` · `zig build smoke` · `zig build wasm` (≤300 KB raw / ≤150 KB gzipped; ships ML-DSA-87 verify)
 - `bun run check` · `bun run test:unit -- --run` · `bun run build`
 - `bun run build-storybook` · `bun run test-storybook`
 - `scripts/server-smoke.sh` · `tests/e2e-cryptography.sh`

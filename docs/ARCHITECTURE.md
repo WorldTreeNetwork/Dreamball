@@ -335,7 +335,7 @@ Dreamball/
 │   │   └── wasm/                # dreamball.wasm + loader.ts
 │   ├── routes/                  # SvelteKit showcase app
 │   └── stories/                 # Storybook stories
-├── schemas/                     # Vendored JSON Schema sources (D-018, D-029)
+├── schemas/                     # Generated JSON Schema artifacts (zig build schemagen); fp-pinned (D-029). Superseded D-018 treated these as canonical sources — see §2
 │   ├── root-2.0.0.json          # Root DreamBall wire types
 │   ├── memory-palace-0.1.0.json # Memory Palace archiform
 │   └── .pins/                   # blake3 fp pins (one per schema)

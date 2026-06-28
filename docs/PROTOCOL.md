@@ -517,6 +517,15 @@ Current version floor: `1` for every domain type.
 
 *Implements D-029 (aspects.sh vendor-first contract + pin file format).*
 
+> **Status change (2026-06-25 — supersedes D-018):** Per the
+> [Zig-canonical ADR](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md),
+> `schemas/*.json` are **generated artifacts** — outputs of `zig build schemagen` —
+> not canonical vendored sources. The §14.4 update lifecycle and the
+> `schemas:refresh` tool below describe the pre-ADR (D-018) workflow and are
+> retained for historical context only. The correct update path is: edit
+> `src/protocol*.zig` → run `zig build schemagen` → commit the regenerated
+> outputs together with the updated pin files.
+
 ### 14.1 Location convention
 
 Archiform JSON Schema documents live at:
@@ -563,13 +572,21 @@ the only place pin verification runs — there is no network round-trip.
 |---|---|
 | `bun run schemas:pin <path>` | Compute and write the `.fp` pin for a single schema file |
 | `bun run schemas:verify` | Verify all vendored schemas against their pin files; called automatically by `bun run codegen` |
-| `bun run schemas:refresh` | (Sprint-003 candidate) Fetch the latest schema version from aspects.sh, verify the digest matches the declared pin, and swap in if matched |
+| `bun run schemas:refresh` | (Pre-ADR / historical) Fetch the latest schema version from aspects.sh, verify the digest matches the declared pin, and swap in if matched. Superseded by the Zig-canonical generation path (see §14 supersession notice) |
 
 `schemas:refresh` is **not** a CI gate. It is an optional maintenance
 path for updating vendored schemas. The CI gate is `schemas:verify`
 only, which runs entirely against local files.
 
-### 14.4 Update lifecycle
+### 14.4 Update lifecycle (Pre-ADR / historical)
+
+> This lifecycle treats `schemas/*.json` as authoritative inputs — the
+> retired D-018 contract. It is no longer operative. The current update
+> path is the Zig-canonical one in the §14 supersession notice above:
+> edit `src/protocol*.zig` → `zig build schemagen` → commit regenerated
+> outputs + pins. The steps below are retained because the byte-equivalence
+> gate still compares against the vendored fixtures until `Dreamball-m97.2`
+> (the comptime generator) produces them.
 
 1. Download the new schema version from aspects.sh (or author it locally).
 2. Run `bun run schemas:pin schemas/<archiform>-<version>.json` to

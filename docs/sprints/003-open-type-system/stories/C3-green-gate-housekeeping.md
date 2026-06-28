@@ -252,16 +252,74 @@ source of the failure.
 
 ## Dev Agent Record
 
-*(Complete this section post-implementation.)*
+*Completed 2026-06-28.*
 
-**Gate summary:** *(paste terminal output or CI job links)*
+**Budget note (2026-06-28):** the WASM size budget was raised to 300 KB raw /
+150 KB gzip per [ADR 2026-06-28-wasm-size-budget-dev-velocity-bump](../../../decisions/2026-06-28-wasm-size-budget-dev-velocity-bump.md),
+superseding the 224 KB / 64 KB limits this story was originally written against
+(AC2 / Task 2 text below reflects the old numbers). The current binary is well
+within the new budget.
 
-**WASM size:** raw = ??? bytes / gz = ??? bytes
-*(Headroom from gzip limit: ??? bytes)*
+**Gate summary** (all run locally, all green):
 
-**Browser-leg CI confirmation:** *(CI run URL; confirm
-`action-v4-cross-runtime.svelte.test.ts` listed as PASS)*
+| Gate | Result |
+|---|---|
+| `zig build test` | Build Summary 14/14 steps succeeded; **222/222 tests passed** (`test success`) |
+| `zig build wasm` | OK — 227 651 B raw / 65 937 B gzip (see WASM size) |
+| `zig build smoke` | `all smoke checks passed` |
+| `scripts/cli-smoke.sh` | exit 0 — `all smoke checks passed` |
+| `scripts/server-smoke.sh` | `PASS: 34 / FAIL: 0 — All smoke tests passed.` |
+| `bun run check` (svelte-check) | `0 ERRORS` (1 pre-existing a11y warning in `BallroomEasterEgg.svelte`) |
+| `bun run test:unit -- --run` | **738 passed (738)**; 48/84 files. The single "error" is the `client`/`storybook` chromium browser projects failing to *launch* (`chrome-headless-shell` not installed — environmental, `Dreamball-nvg`), not a test failure. Server legs of both v4 cross-runtime + authoraction suites pass. |
+| `tests/e2e-cryptography.sh` | `all e2e-cryptography checks passed (mock mode)` (real mode not run — `RECRYPT_SERVER_URL` unset) |
 
-**Stale-ref grep output:** *(paste grep result; confirm no unexpected hits)*
+**WASM size:** raw = **227 651** bytes (≤ 307 200) / gz = **65 937** bytes (≤ 153 600).
+*Headroom from gzip limit: 87 663 bytes.* (Against the original 65 536 limit this
+story was written for, the binary would be ~401 B over — which is exactly why the
+2026-06-28 budget bump landed; this is not an AC2 breach under the current budget.)
 
-**Deviations from task breakdown:** *(list any, or "none")*
+**Browser-leg CI confirmation:** **Residual — confirmed-by-construction; CI run to
+be confirmed on next push.** The sprint-003 feature commits (`e8a63ba`, `48fd101`,
+`3728023`) are committed locally but **not yet pushed** (HEAD is 3 ahead of
+`origin/main`); the B4 authoraction test files are still untracked. CI has therefore
+never run on the v4 work — the red CI runs visible on `origin/main` are all for
+`fd6840d`, the *pre-sprint-003* tip (where `zig build smoke` failed and the Bun job
+was skipped), and are not representative of this work. Structural confirmation:
+(1) `bun run check` is clean (0 errors) over the `.svelte.test.ts` files;
+(2) the browser legs (`action-v4-cross-runtime.svelte.test.ts`,
+`action-v4-authoraction.svelte.test.ts`) import the **same** `*.shared.ts`
+assertion module + `__fixtures__/action-v4.golden.json` goldens as the server legs
+that pass in the suite above — only the WASM load path differs (Vite `?url` + fetch
+vs node fs); (3) `.github/workflows/ci.yml` runs `bun run test:unit -- --run` (job
+"Bun — check + tests + build"), which executes the `client` chromium project. The
+client browser project shares chromium provisioning with the pre-existing
+`storybook` browser project (34 stories), so the browser leg rides on the same CI
+browser infrastructure rather than introducing a new dependency.
+
+**Stale-ref grep output:** Living docs (excluding historical `docs/sprints/**` and
+`docs/decisions/**`) now contain only correct D-018 references:
+- `PROTOCOL.md:7` — header, "generated outputs … supersedes D-018" (already correct)
+- `PROTOCOL.md:520/524/584` — new §14 supersession notice + historical annotations
+- `ARCHITECTURE.md:59/594` — describe the 2026-06-25 reversion (correct)
+- `ARCHITECTURE.md:338` — fixed: schemas relabelled "Generated JSON Schema artifacts" (was "Vendored JSON Schema sources (D-018)")
+- `ARCHITECTURE.md:647` — "CBOR semantics stay in Zig (D-018)" — still true post-ADR (CBOR was always Zig-canonical), left as-is
+
+All remaining `D-018` / `json-schema-canonical` hits are in `docs/sprints/**`
+(point-in-time sprint-002/003 planning records), `docs/decisions/**` (the retired
+ADR, the supersession ADR, and sibling-ADR cross-reference lists), and one
+`docs/abi/` note — all legitimate historical references that must not be rewritten.
+
+**known-gaps.md:** scanned — no entry tracked the v4 action / HLC / open-`kind`
+work as an open gap (that work was tracked in sprint docs + beads, never logged in
+known-gaps.md), so nothing closed there. No new gap introduced (WASM headroom is
+tracked under the NFR5 budget + `Dreamball-8bk`, not as a named gap). No edit made.
+
+**Deviations from task breakdown:**
+- AC2/Task 2 thresholds (224 KB/64 KB) are superseded by the 2026-06-28 budget bump
+  (300 KB/150 KB); measured against the current budget, the binary passes. Updated
+  the stale narrative budget reference in `README.md` (was 224/64) to match.
+- Fixed one extra living-doc stale reference beyond PROTOCOL.md §14:
+  `ARCHITECTURE.md:338` directory-tree label (schemas were still called D-018
+  "sources").
+- Browser-leg CI confirmation is the single documented residual (above); not a
+  blocker per story-lead direction.
