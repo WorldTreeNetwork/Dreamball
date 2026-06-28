@@ -261,9 +261,10 @@ fn runAddRoom(
     const actor_fp = Fingerprint.fromEd25519(custodian_keys.ed25519_public).bytes;
 
     const action = v2.Action{
-        .action_kind = .room_added,
+        .kind = v2.ActionKind.room_added.toWireString(),
         .parent_hashes = parent_hashes,
         .actor = actor_fp,
+        .hlc = .{ 0, 0 },
         .target_fp = room_fp,
         .timestamp = now_ms,
     };
@@ -506,12 +507,14 @@ fn encodeSignedAction(
     try zbor.builder.writeTextString(w, "actor");
     try zbor.builder.writeByteString(w, &a.actor);
     try zbor.builder.writeTextString(w, "action-kind");
-    try zbor.builder.writeTextString(w, a.action_kind.toWireString());
+    // v3 wire shape; `a.kind` is byte-identical to the old enum string. The
+    // v4 (7-key) encoder is story A2 — `format-version` pinned to 3.
+    try zbor.builder.writeTextString(w, a.kind);
     try zbor.builder.writeTextString(w, "parent-hashes");
     try zbor.builder.writeArray(w, a.parent_hashes.len);
     for (a.parent_hashes) |ph| try zbor.builder.writeByteString(w, &ph);
     try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @intCast(v2.Action.format_version));
+    try zbor.builder.writeInt(w, 3);
 
     for (a.deps) |d| {
         try zbor.builder.writeArray(w, 2);
@@ -631,9 +634,10 @@ test "encodeSignedAction for room-added produces longer bytes than unsigned" {
     const keys = try signer.HybridSigningKeys.generate();
     const empty: [][32]u8 = &.{};
     const action = v2.Action{
-        .action_kind = .room_added,
+        .kind = v2.ActionKind.room_added.toWireString(),
         .parent_hashes = empty,
         .actor = keys.ed25519_public,
+        .hlc = .{ 0, 0 },
         .target_fp = [_]u8{0xAB} ** 32,
         .timestamp = 1704067200000,
     };

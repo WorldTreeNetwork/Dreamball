@@ -4,7 +4,7 @@
 **File extension:** `.ball`
 **Media type:** `application/ball+cbor` (binary), `application/ball+json` (export)
 **Sister project:** [recrypt](../../recrypt/) — shares cryptographic methodology (see `recrypt/docs/wire-protocol.md`)
-**Authoritative shape sources:** [`schemas/root-2.0.0.json`](../schemas/root-2.0.0.json) (root wire types) and [`schemas/memory-palace-0.1.0.json`](../schemas/memory-palace-0.1.0.json) (Memory Palace archiform) — both JSON Schema draft 2020-12; pinned at [`schemas/.pins/root-2.0.0.fp`](../schemas/.pins/root-2.0.0.fp) and [`schemas/.pins/memory-palace-0.1.0.fp`](../schemas/.pins/memory-palace-0.1.0.fp) respectively (D-018 + D-029). No hand-written schemas exist anywhere; JSON Schema is vendored locally and all generators consume it. See §14 (Schema vendoring and pin format) and §15 (Wasm module signing and trust model) for the full vendoring and trust contract.
+**Authoritative shape sources:** The Zig types in `src/protocol*.zig` are the canonical definition of every wire field — shapes, defaults, encoding rules, and ordering. JSON Schema (`schemas/*.json`), TypeScript types, Valibot schemas, and `cbor.ts` are **generated outputs** that flow downward from the Zig types; they are never hand-authored. See the [Zig-canonical ADR](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md) for rationale (supersedes D-018). See §14 (Schema vendoring and pin format) and §15 (Wasm module signing and trust model) for the vendoring and trust contract.
 
 ---
 
@@ -735,27 +735,202 @@ dialog box, MCP elicitation). This makes actions fully agent-callable.
 - Per D-025 (forward-declare consumer seam contracts), no extension
   to this closed set occurs without an architecture decision.
 
-### 16.7 The generic signed-op envelope (sprint-003, in progress)
+### 16.7 `ball.action` v3 → v4 wire change
 
-> **Forthcoming — wire shape still landing.** Documented here as direction;
-> the canonical bytes will be specified once sprint-003 freezes them.
+*Implements D-037. The wire shape frozen here is the canonical basis for C1's
+golden vectors — downstream encoding work locks against these bytes.*
 
-The open type system's *first brick* (see [`VISION.md §1`](VISION.md))
-generalizes the closed `ball.action` into a **domain-neutral signed op** so a
-consumer can carry their own typed payload as a signed, causally-ordered
-DreamBall — without us pre-blessing their domain. It replaces the closed
-`action-kind` enum and Memory-Palace-shaped core with:
+The open type system (sprint-003) extends `ball.action` in a backward-incompatible
+way. `format-version` is the discriminant — decoders MUST branch on it before
+interpreting the core map.
 
-- an **open `kind`** — any string the author defines, not a fixed enum;
-- a **typed `body`** — an arbitrary consumer payload validated against the
-  author's own schema;
-- a **logical clock** (HLC) for causal ordering across authors;
-- **`parent_hashes`** for the op DAG.
+**v3 core map** (palace profile — 5 keys, dCBOR length-first + lex order):
 
-This is what turns `signActionEnvelope` from "sign these bytes" into "author
-a first-class op of your own type." It is substrate (every consumer type
-reuses it), not a reference-type extension. Tracked in
+| dCBOR key | Type | Notes |
+|---|---|---|
+| `"type"` | text | `"ball.action"` |
+| `"actor"` | bytes (32) | Ed25519 public-key fingerprint |
+| `"action-kind"` | text | one of 9 closed palace values |
+| `"parent-hashes"` | array of bytes(32) | DAG parent hash list |
+| `"format-version"` | uint | `3` |
+
+**v4 core map** (open type — 6 or 7 keys, dCBOR length-first + lex order):
+
+| dCBOR key | Type | Required | Notes |
+|---|---|---|---|
+| `"hlc"` | array [uint64, uint64] | yes | see §17 |
+| `"body"` | bytes | no | omitted from the map when there is no payload |
+| `"kind"` | text | yes | open kind string; see §18 |
+| `"type"` | text | yes | `"ball.action"` |
+| `"actor"` | bytes (32) | yes | Ed25519 public-key fingerprint |
+| `"parent-hashes"` | array of bytes(32) | yes | DAG parent hash list |
+| `"format-version"` | uint | yes | `4` |
+
+**Key ordering.** dCBOR sorts map keys length-first, lexicographically within
+equal length. The 7-key ordering (with `body` present) is: `"hlc"` (3) →
+`"body"`, `"kind"`, `"type"` (all length 4, alphabetical) → `"actor"` (5) →
+`"parent-hashes"` (13) → `"format-version"` (14). When `body` is absent the
+map has 6 keys; `"body"` is simply omitted.
+
+**Summary of changes from v3 to v4:**
+
+| Change | Detail |
+|---|---|
+| `format-version` | `3` → `4` |
+| `action-kind` → `kind` | Key renamed; value changes from a closed 9-value enum to an open UTF-8 string |
+| `hlc` added | Mandatory 2-int CBOR array (`[l, c]`); see §17 |
+| `body` added | Optional CBOR byte string; omitted from the core map when there is no payload |
+
+**`body` encoding.** When present, `body` is a CBOR byte string (major type 2)
+whose content bytes are the consumer's canonical CBOR payload. The encoder
+calls `assertCanonical` on the body bytes before embedding. The decoder returns
+body as raw bytes for the consumer to parse. The body is opaque to the
+protocol — internal structure is the consumer's responsibility (D-043).
+
+**Covered by `content_hash`.** `content_hash = Blake3(canonical_envelope_bytes)`.
+`hlc`, `kind`, and `body` are all part of the canonical envelope bytes; changing
+any of them changes the hash and invalidates the signature. No domain-separation
+prefix is needed (D-043).
+
+**v3 goldens are a regression gate.** The v3 palace golden byte vectors in
+`src/golden.zig` (§13.11 in `products/memory-palace/protocol.md`) MUST remain
+byte-identical through any code change. A change that alters a v3 golden is a
+bug. Format_version 4 golden vectors are introduced separately in C1.
+
+The open type system's full context — motivation, PRD, and sprint plan — is in
 [`prd-open-type-system-mvp.md`](prd-open-type-system-mvp.md) and
-[`sprints/003-open-type-system/`](sprints/003-open-type-system/); the
-canonical dCBOR shape + golden vector land there before this section gains
-its byte spec.
+[`sprints/003-open-type-system/`](sprints/003-open-type-system/). This section
+is the prescriptive wire spec; those documents are the rationale.
+
+---
+
+## 17. HLC Specification
+
+*Implements D-039. Resolves bead Dreamball-fch.*
+
+The **Hybrid Logical Clock (HLC)** provides causal ordering for `ball.action`
+v4 envelopes authored by independent nodes without a shared global clock. The
+HLC is **mandatory** in every format_version 4 `ball.action`; a v4 envelope
+without an `hlc` field is a decode error.
+
+### 17.1 Wire shape
+
+```
+[l, c]   ; CBOR array (major type 4, definite length 2)
+         ; index 0: l — major type 0, uint64, dCBOR shortest encoding
+         ; index 1: c — major type 0, uint64, dCBOR shortest encoding
+         ; no CBOR tag
+```
+
+| Field | Index | Zig type | Meaning |
+|---|---|---|---|
+| `l` | 0 | `u64` | Physical component — millisecond wall-clock timestamp, advanced monotonically |
+| `c` | 1 | `u64` | Counter — disambiguates concurrent events from independent authors with the same `l` |
+
+Wire key in the core map: `"hlc"` (3-byte CBOR text string). No CBOR tag.
+Zig struct: `hlc: [2]u64` where `hlc[0] = l` and `hlc[1] = c`.
+TypeScript type: `[number, number]` — both values fit within
+`Number.MAX_SAFE_INTEGER` for any practical timestamp.
+
+### 17.2 Advance algorithm
+
+When issuing a new event, the author advances the HLC as follows:
+
+```
+new_l = max(local_wall_ms, last_l) + 1
+new_c = 0   ; l always strictly advances; counter resets
+```
+
+`local_wall_ms` is the current millisecond-resolution wall-clock
+(`Date.now()` in JS; `std.time.milliTimestamp()` in Zig). `last_l` is the `l`
+value of the most recently issued or observed event, or `0` on first use.
+
+The `+1` guarantees `new_l > max(local_wall_ms, last_l)`, so sequential events
+from the same author are always strictly ordered by `l` alone. The `c` counter
+differentiates events from independent authors that independently arrived at the
+same `l` value.
+
+### 17.3 Total order
+
+```
+(l1, c1) < (l2, c2)   iff   l1 < l2   OR   (l1 == l2 AND c1 < c2)
+```
+
+Events where `l1 == l2` and `c1 == c2` are **concurrent**. The protocol
+imposes no merge rule for concurrent events — the consumer's domain logic
+determines the outcome (VISION.md §17, guardrail 1).
+
+### 17.4 Coverage by `content_hash`
+
+The HLC is part of the core map and therefore covered by
+`content_hash = Blake3(canonical_envelope_bytes)`. Changing either `l` or `c`
+changes the hash and invalidates the signature.
+
+---
+
+## 18. Kind Namespace Convention
+
+*Implements D-038.*
+
+The `kind` field in `ball.action` v4 is an **open UTF-8 string**. Any valid,
+non-empty UTF-8 string is accepted at the wire level.
+
+### 18.1 Wire type
+
+```
+kind = text   ; CBOR major type 3, any valid non-empty UTF-8 string
+```
+
+Wire key in the core map: `"kind"` (4-byte CBOR text). Zig type: `kind: []const u8`.
+**Zero-length `kind` is a decode error** — a v4 envelope with `kind = ""`
+is rejected.
+
+### 18.2 Recommended convention
+
+```
+<namespace>.<noun>.<verb>
+```
+
+| Component | Role | Example values |
+|---|---|---|
+| `<namespace>` | Author or product identity; lowercase, no dots | `worldtree`, `palace`, `myapp` |
+| `<noun>` | Entity or resource being acted upon | `kanban-card`, `room`, `document` |
+| `<verb>` | The operation | `move`, `add`, `archive` |
+
+**Full examples:** `worldtree.kanban-card.move`, `palace.room-added`,
+`palace.minted`.
+
+The convention is **recommended, not enforced** at the wire level. A decoder
+MUST accept any non-empty UTF-8 kind string, including un-namespaced ones.
+Consumers who follow the convention gain collision-safe dispatch keys;
+those who do not risk kind-string collisions with envelopes from other producers.
+
+### 18.3 Palace kinds in v4
+
+The 9 palace action kinds and their recommended dot-convention equivalents for
+format_version 4 envelopes (canonical values defined in `src/protocol_v2.zig`,
+`ActionKind` enum):
+
+| v3 `action-kind` (closed enum) | Recommended v4 `kind` |
+|---|---|
+| `"palace-minted"` | `"palace.minted"` |
+| `"room-added"` | `"palace.room-added"` |
+| `"avatar-inscribed"` | `"palace.avatar-inscribed"` |
+| `"aqueduct-created"` | `"palace.aqueduct-created"` |
+| `"move"` | `"palace.move"` |
+| `"true-naming"` | `"palace.true-naming"` |
+| `"inscription-updated"` | `"palace.inscription-updated"` |
+| `"inscription-orphaned"` | `"palace.inscription-orphaned"` |
+| `"inscription-pending-embedding"` | `"palace.inscription-pending-embedding"` |
+
+Format_version 3 palace envelopes continue to use the v3 `action-kind` bare
+strings unchanged. Format_version 4 palace envelopes SHOULD use the `"palace.*"`
+dot-prefix forms above. Any non-empty string is accepted at the wire level in
+v4 — the convention is a recommendation, not a gate.
+
+### 18.4 Renderer dispatch
+
+Renderer dispatch (FR12, planned growth feature) uses `kind` as the lookup
+key. The dot namespace convention ensures that `"worldtree.kanban-card"` and
+`"palace.room"` route to separate handlers without a central registry — no
+coordination required between producers.

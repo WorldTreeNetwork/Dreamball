@@ -28,7 +28,9 @@ const std = @import("std");
 const build_options = @import("build_options");
 
 const protocol = @import("protocol.zig");
+const protocol_v2 = @import("protocol_v2.zig");
 const envelope = @import("envelope.zig");
+const envelope_v2 = @import("envelope_v2.zig");
 const sealing = @import("sealing.zig");
 const json_mod = @import("json.zig");
 const ml_dsa = @import("ml_dsa.zig");
@@ -618,6 +620,109 @@ export fn signActionEnvelope(
     return packResult(out);
 }
 
+/// Author a `ball.action` v4 envelope in one call — the consumer-facing
+/// open-type authoring seam (D-040/D-042, FR6). Builds the action from the
+/// caller's fields, encodes it canonically via `envelope_v2.encodeActionV4`
+/// (so the WASM never hand-rolls CBOR — the Zig encoder is canonical), Ed25519
+/// -signs the canonical *unsigned* bytes, and returns the SIGNED envelope
+/// (core + one `signed` attribute) as packed `(ptr << 32) | len`. Returns 0 on
+/// any error; read `resultErr` for the diagnostic.
+///
+/// ABI (packed-u64 convention, matching `mintDreamBall`/`growDreamBall`):
+///   kind_ptr / kind_len           — open kind string (UTF-8), must be non-empty
+///   body_ptr / body_len           — opaque CBOR body bytes (0/0 = no body)
+///   parent_hashes_ptr             — ptr to concatenated 32-byte hashes
+///   parent_hashes_count           — number of 32-byte hashes (NOT byte length)
+///   hlc_l, hlc_c                  — HLC [l, c] (§17)
+///   secret_ptr                    — 64-byte Ed25519 secret [seed(32)||pub(32)]
+///
+/// Actor derivation (D-042): the actor fingerprint is NOT a separate parameter
+/// — it is the public half of the secret (`secret[32..64]`, i.e.
+/// `kp.public_key`), exactly the convention `mintDreamBall` already uses. The
+/// secret is read as a fixed 64-byte run; the caller is contractually required
+/// to supply 64 bytes (no length param in the revised ABI, D-042).
+///
+/// Signing mirrors `mintDreamBall`: encode unsigned → sign those bytes → encode
+/// again with the signature attached. A verifier (B2) strips the `signed`
+/// attribute to recover the unsigned bytes and checks the signature, exactly as
+/// for DreamBall envelopes (PROTOCOL.md §2.3 / §16.7).
+export fn authorAction(
+    kind_ptr: u32,
+    kind_len: u32,
+    body_ptr: u32,
+    body_len: u32,
+    parent_hashes_ptr: u32,
+    parent_hashes_count: u32,
+    hlc_l: u64,
+    hlc_c: u64,
+    secret_ptr: u32,
+) u64 {
+    if (kind_len == 0) {
+        setErr("authorAction: kind must be non-empty", .{});
+        return 0;
+    }
+    const alloc_ = fba_state.allocator();
+
+    const kind: []const u8 = @as([*]const u8, @ptrFromInt(kind_ptr))[0..kind_len];
+    const body: ?[]const u8 = if (body_len == 0)
+        null
+    else
+        @as([*]const u8, @ptrFromInt(body_ptr))[0..body_len];
+
+    // Reconstruct the Ed25519 keypair; actor = public half of the secret (D-042).
+    var sk_bytes: [64]u8 = undefined;
+    @memcpy(&sk_bytes, @as([*]const u8, @ptrFromInt(secret_ptr))[0..64]);
+    const sk = Ed25519.SecretKey.fromBytes(sk_bytes) catch {
+        setErr("authorAction: invalid Ed25519 secret key", .{});
+        return 0;
+    };
+    const kp = Ed25519.KeyPair.fromSecretKey(sk) catch {
+        setErr("authorAction: fromSecretKey failed", .{});
+        return 0;
+    };
+    const actor = kp.public_key.toBytes();
+
+    // Marshal the concatenated 32-byte parent hashes into a [][32]u8.
+    const parents = alloc_.alloc([32]u8, parent_hashes_count) catch {
+        setErr("authorAction: OOM allocating parent hashes", .{});
+        return 0;
+    };
+    const ph_src: []const u8 = @as([*]const u8, @ptrFromInt(parent_hashes_ptr))[0 .. @as(usize, parent_hashes_count) * 32];
+    for (parents, 0..) |*p, i| {
+        @memcpy(p, ph_src[i * 32 .. i * 32 + 32]);
+    }
+
+    const action = protocol_v2.Action{
+        .kind = kind,
+        .parent_hashes = parents,
+        .actor = actor,
+        .body = body,
+        .hlc = .{ hlc_l, hlc_c },
+    };
+
+    // Encode the canonical unsigned bytes (this also rejects a non-canonical
+    // body via assertCanonical → DecodeError), sign them, then re-encode with
+    // the signature attached.
+    const unsigned = envelope_v2.encodeActionV4(alloc_, action) catch |e| {
+        setErr("authorAction: encode (unsigned) failed: {t}", .{e});
+        return 0;
+    };
+    const sig = kp.sign(unsigned, null) catch |e| {
+        setErr("authorAction: Ed25519 sign failed: {t}", .{e});
+        return 0;
+    };
+    const sig_bytes = sig.toBytes();
+    // Ed25519-only — same reasoning as mint/grow (browser holds no PQ key).
+    const sigs = [_]protocol.Signature{
+        .{ .alg = "ed25519", .value = &sig_bytes },
+    };
+    const signed = envelope_v2.encodeActionV4Signed(alloc_, action, &sigs) catch |e| {
+        setErr("authorAction: encode (signed) failed: {t}", .{e});
+        return 0;
+    };
+    return packResult(signed);
+}
+
 // ============================================================================
 // Inline KAT — verifies signActionEnvelope round-trips through verifyEd25519.
 // Uses a deterministic all-zeros seed so the expected signature is a fixed
@@ -725,6 +830,92 @@ test "signActionEnvelope tamper test — bit-flipped payload produces different 
     const pk_obj = try Ed25519.PublicKey.fromBytes(pk_bytes);
     const verify_result = sig1_obj.verify(&payload_mut, pk_obj);
     try std.testing.expectError(error.SignatureVerificationFailed, verify_result);
+}
+
+// ============================================================================
+// Inline KAT — authorAction encodes + signs a v4 ball.action and the signature
+// verifies against the canonical unsigned bytes; a tampered payload fails.
+// Deterministic all-zeros seed (matches the golden-vector style; C1 locks the
+// exact bytes cross-runtime). PROTOCOL.md §16.7/§17/§18, D-042.
+// ============================================================================
+
+test "authorAction KAT — all-zeros seed produces a verifiable signed v4 action" {
+    fba_state.reset();
+
+    const seed: [Ed25519.KeyPair.seed_length]u8 = .{0} ** Ed25519.KeyPair.seed_length;
+    const kp = try Ed25519.KeyPair.generateDeterministic(seed);
+    const sk_bytes = kp.secret_key.toBytes();
+
+    const kind = "worldtree.kanban-card.move";
+    const body = [_]u8{ 0x82, 0x01, 0x02 }; // canonical CBOR array [1, 2]
+    const parent = [_]u8{0x10} ** 32;
+    const hlc_l: u64 = 1_700_000_000_000;
+    const hlc_c: u64 = 7;
+
+    // Marshal inputs into linear memory.
+    const sk_slot = try fba_state.allocator().alloc(u8, 64);
+    @memcpy(sk_slot, &sk_bytes);
+    const kind_slot = try fba_state.allocator().alloc(u8, kind.len);
+    @memcpy(kind_slot, kind);
+    const body_slot = try fba_state.allocator().alloc(u8, body.len);
+    @memcpy(body_slot, &body);
+    const ph_slot = try fba_state.allocator().alloc(u8, 32);
+    @memcpy(ph_slot, &parent);
+
+    const result = authorAction(
+        @intCast(@intFromPtr(kind_slot.ptr)),
+        @intCast(kind_slot.len),
+        @intCast(@intFromPtr(body_slot.ptr)),
+        @intCast(body_slot.len),
+        @intCast(@intFromPtr(ph_slot.ptr)),
+        1,
+        hlc_l,
+        hlc_c,
+        @intCast(@intFromPtr(sk_slot.ptr)),
+    );
+    try std.testing.expect(result != 0);
+
+    const env_ptr = @as(usize, @intCast(result >> 32));
+    const env_len = @as(usize, @intCast(result & 0xFFFFFFFF));
+    const env_bytes: []const u8 = @as([*]const u8, @ptrFromInt(env_ptr))[0..env_len];
+
+    // It is a ball.action envelope carrying the open kind + a signed attribute.
+    try std.testing.expect(std.mem.indexOf(u8, env_bytes, "ball.action") != null);
+    try std.testing.expect(std.mem.indexOf(u8, env_bytes, "signed") != null);
+    try std.testing.expect(std.mem.indexOf(u8, env_bytes, kind) != null);
+
+    // Reconstruct the canonical UNSIGNED bytes (what the producer signs) and
+    // confirm the embedded signature verifies against them.
+    var parents = [_][32]u8{parent};
+    const action = protocol_v2.Action{
+        .kind = kind,
+        .parent_hashes = &parents,
+        .actor = kp.public_key.toBytes(),
+        .body = &body,
+        .hlc = .{ hlc_l, hlc_c },
+    };
+    const unsigned = try envelope_v2.encodeActionV4(std.testing.allocator, action);
+    defer std.testing.allocator.free(unsigned);
+
+    const expected_sig = (try kp.sign(unsigned, null)).toBytes();
+    // Ed25519 is deterministic: the signed envelope must embed exactly this sig.
+    try std.testing.expect(std.mem.indexOf(u8, env_bytes, &expected_sig) != null);
+
+    const sig_obj = Ed25519.Signature.fromBytes(expected_sig);
+    try sig_obj.verify(unsigned, kp.public_key);
+
+    // Tamper: flipping a byte of the signed-over bytes must fail verification.
+    const tampered = try std.testing.allocator.dupe(u8, unsigned);
+    defer std.testing.allocator.free(tampered);
+    tampered[tampered.len - 1] ^= 0x01;
+    try std.testing.expectError(error.SignatureVerificationFailed, sig_obj.verify(tampered, kp.public_key));
+}
+
+test "authorAction rejects zero-length kind with diagnostic" {
+    fba_state.reset();
+    // kind_len = 0 short-circuits before any pointer is dereferenced.
+    const result = authorAction(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    try std.testing.expectEqual(@as(u64, 0), result);
 }
 
 /// Blake3 hash — cross-runtime parity export (HIGH-2 fix, Sprint-1 code review).

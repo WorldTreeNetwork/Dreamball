@@ -554,6 +554,12 @@ pub fn encodeAction(allocator: Allocator, a: v2.Action) ![]u8 {
     try zbor.builder.writeArray(w, 1 + ac);
 
     try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    // v3 wire shape (5-key core map). A1 opened the struct to v4 but the v4
+    // encoder (7-key map: hlc/body/kind) is story A2 — this path still emits
+    // the v3 envelope, so `format-version` is pinned to the literal 3 (the
+    // struct const is now 4) and the legacy `"action-kind"` key is retained.
+    // `a.kind` is byte-identical to the old `action_kind.toWireString()`
+    // because callers set `kind = ActionKind.x.toWireString()`.
     // Core keys sorted (len asc, lex):
     //   "type"(4), "actor"(5), "action-kind"(11), "parent-hashes"(13), "format-version"(14)
     try zbor.builder.writeMap(w, 5);
@@ -562,12 +568,12 @@ pub fn encodeAction(allocator: Allocator, a: v2.Action) ![]u8 {
     try zbor.builder.writeTextString(w, "actor");
     try zbor.builder.writeByteString(w, &a.actor);
     try zbor.builder.writeTextString(w, "action-kind");
-    try zbor.builder.writeTextString(w, a.action_kind.toWireString());
+    try zbor.builder.writeTextString(w, a.kind);
     try zbor.builder.writeTextString(w, "parent-hashes");
     try zbor.builder.writeArray(w, a.parent_hashes.len);
     for (a.parent_hashes) |ph| try zbor.builder.writeByteString(w, &ph);
     try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @intCast(v2.Action.format_version));
+    try zbor.builder.writeInt(w, 3);
 
     // Attributes sorted: "deps"(4), "nacks"(5), "target-fp"(9), "timestamp"(9)
     // At len 9: "target-fp" < "timestamp" lex
@@ -595,6 +601,146 @@ pub fn encodeAction(allocator: Allocator, a: v2.Action) ![]u8 {
     return ai.toOwnedSlice();
 }
 
+/// v4 `ball.action` encoder — the OPEN type-system wire shape (D-037/D-038/
+/// D-039/D-043; frozen in PROTOCOL.md §16.7/§17/§18). This is a SIBLING of the
+/// v3 `encodeAction` above: that function stays pinned to the v3 palace profile
+/// (5-key core map, `action-kind`) so the v3 golden vectors, the CLI verbs that
+/// call it, and the existing v3 round-trip tests remain byte-identical. v4 lives
+/// here; `decodeAction` reads both back by branching on `format-version`. B1's
+/// `authorAction` WASM export links THIS function.
+///
+/// Core-map keys in dCBOR length-first order (lex within equal length):
+///   "hlc"(3) · "body"(4) · "kind"(4) · "type"(4) · "actor"(5)
+///   · "parent-hashes"(13) · "format-version"(14)
+/// Among the length-4 keys: "body" < "kind" < "type". When `body` is absent it
+/// is simply omitted and the core map is 6 keys (PROTOCOL.md §16.7).
+///
+/// `body` is embedded as a CBOR byte string (major type 2) wrapping the
+/// consumer's canonical CBOR — CBOR-in-CBOR, opaque to the protocol (D-043).
+/// `verifyCanonical` does NOT recurse into a byte string, so we `assertCanonical`
+/// the body bytes up front: that is the only point the body's own canonicality
+/// is enforced, and it keeps a non-canonical payload off the wire (A3 owns the
+/// richer decode-side rejection path). `hlc` is a bare 2-element array of dCBOR
+/// shortest-form unsigned ints `[l, c]` — no CBOR tag (D-039).
+pub fn encodeActionV4(allocator: Allocator, a: v2.Action) ![]u8 {
+    return encodeActionV4Signed(allocator, a, &.{});
+}
+
+/// `content_hash` for a v4 `ball.action` — the op's portable identity.
+/// `content_hash = Blake3-256(canonical UNSIGNED envelope bytes)` with NO
+/// domain-separation prefix (D-043, PROTOCOL.md §16.7/§17.4). The unsigned
+/// bytes are the encodeActionV4 output (zero `signed` attributes); a verifier
+/// strips any signatures and recomputes over these same bytes. Cross-runtime
+/// invariant: every runtime that hashes the same logical action MUST get this
+/// exact digest (golden vector in `src/golden.zig`, gated CLI≡WASM in C1).
+pub fn contentHash(allocator: Allocator, a: v2.Action) ![32]u8 {
+    const bytes = try encodeActionV4(allocator, a);
+    defer allocator.free(bytes);
+    var out: [32]u8 = undefined;
+    std.crypto.hash.Blake3.hash(bytes, &out, .{});
+    return out;
+}
+
+/// v4 `ball.action` encoder that ALSO appends one `signed` attribute per
+/// signature — the signed-envelope form B1's `authorAction` WASM export returns
+/// (D-042). `encodeActionV4` above is the zero-signature special case and stays
+/// the canonical *unsigned* shape that A2's round-trip tests and C1's
+/// `content_hash` domain pin (the `signed` attributes are NOT part of the bytes
+/// a producer signs — a verifier strips them, exactly as for DreamBall envelopes,
+/// PROTOCOL.md §16.7 / §2.3).
+///
+/// Attribute order is the v3/v4 canonical run with `signed`(6) slotted between
+/// `nacks`(5) and `target-fp`(9): "deps"(4) · "nacks"(5) · "signed"(6) ·
+/// "target-fp"(9) · "timestamp"(9). Each `signed` attribute is the same
+/// `[label, [alg, value]]` 2-array used by every other v2 envelope encoder
+/// (see `encodeGuild`).
+pub fn encodeActionV4Signed(
+    allocator: Allocator,
+    a: v2.Action,
+    signatures: []const protocol.Signature,
+) ![]u8 {
+    // Reject a non-canonical body before allocating any output — the body is
+    // opaque once embedded, so this is the encoder's only window to check it.
+    if (a.body) |b| try assertCanonical(b);
+
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+
+    // parent_hashes lives in the core map; the attribute set mirrors v3 exactly
+    // (deps, nacks, target-fp, timestamp) per AC3, plus any `signed` attributes.
+    var ac: u64 = a.deps.len + a.nacks.len + signatures.len;
+    if (a.target_fp != null) ac += 1;
+    if (a.timestamp != null) ac += 1;
+    try zbor.builder.writeArray(w, 1 + ac);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    // 7 keys when a body is present, 6 when absent.
+    const core_len: u64 = if (a.body != null) 7 else 6;
+    try zbor.builder.writeMap(w, core_len);
+    // "hlc"(3) — bare [l, c] array, no tag.
+    try zbor.builder.writeTextString(w, "hlc");
+    try zbor.builder.writeArray(w, 2);
+    try zbor.builder.writeInt(w, @intCast(a.hlc[0]));
+    try zbor.builder.writeInt(w, @intCast(a.hlc[1]));
+    // "body"(4) — optional; first of the length-4 keys (b < k < t).
+    if (a.body) |b| {
+        try zbor.builder.writeTextString(w, "body");
+        try zbor.builder.writeByteString(w, b);
+    }
+    // "kind"(4) — open UTF-8 string.
+    try zbor.builder.writeTextString(w, "kind");
+    try zbor.builder.writeTextString(w, a.kind);
+    // "type"(4)
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, v2.Action.type_string);
+    // "actor"(5)
+    try zbor.builder.writeTextString(w, "actor");
+    try zbor.builder.writeByteString(w, &a.actor);
+    // "parent-hashes"(13)
+    try zbor.builder.writeTextString(w, "parent-hashes");
+    try zbor.builder.writeArray(w, a.parent_hashes.len);
+    for (a.parent_hashes) |ph| try zbor.builder.writeByteString(w, &ph);
+    // "format-version"(14)
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(v2.Action.format_version));
+
+    // Attributes, sorted exactly as v3: "deps"(4), "nacks"(5),
+    // "target-fp"(9) < "timestamp"(9).
+    for (a.deps) |d| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "deps");
+        try zbor.builder.writeByteString(w, &d);
+    }
+    for (a.nacks) |n| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "nacks");
+        try zbor.builder.writeByteString(w, &n);
+    }
+    // "signed"(6) — slots between nacks(5) and target-fp(9). Same shape as
+    // every other v2 envelope: [label, [alg, value]].
+    for (signatures) |s| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "signed");
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, s.alg);
+        try zbor.builder.writeByteString(w, s.value);
+    }
+    if (a.target_fp) |tfp| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "target-fp");
+        try zbor.builder.writeByteString(w, &tfp);
+    }
+    if (a.timestamp) |ts| {
+        try zbor.builder.writeArray(w, 2);
+        try zbor.builder.writeTextString(w, "timestamp");
+        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
+        try zbor.builder.writeInt(w, @intCast(ts));
+    }
+    return ai.toOwnedSlice();
+}
+
 pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
     action: v2.Action,
     parent_hashes: [][32]u8,
@@ -605,11 +751,19 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
     var cursor: usize = 0;
     const attr_count = try readEnvelopeHeader(bytes, &cursor);
 
-    // Read core
+    // Read the core map generically, then branch on `format-version` (D-037).
+    // The version is the discriminant but it is the LAST core key in dCBOR
+    // length-first order (longest key), so we collect every field first and
+    // decide v3-vs-v4 once the whole core map has been read.
     dcbor.expectTag(bytes, &cursor, dcbor.Tag.leaf) catch |e| return mapDecodeError(e);
     const core_n = dcbor.readMapHeader(bytes, &cursor) catch |e| return mapDecodeError(e);
-    var action_kind_opt: ?v2.ActionKind = null;
+    var action_kind_opt: ?[]const u8 = null; // v3 "action-kind" (closed palette)
+    var open_kind_opt: ?[]const u8 = null; // v4 "kind" (open string)
     var actor_opt: ?[32]u8 = null;
+    var format_version: ?u64 = null;
+    var hlc: [2]u64 = .{ 0, 0 };
+    var hlc_present = false;
+    var body_opt: ?[]const u8 = null;
     var parent_list = std.ArrayListUnmanaged([32]u8).empty;
     defer parent_list.deinit(allocator);
 
@@ -617,22 +771,9 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
     while (ci < core_n) : (ci += 1) {
         const k = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
         if (std.mem.eql(u8, k, "action-kind")) {
-            const s = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
-            // Match wire string to enum
-            const kinds = [_]v2.ActionKind{
-                .palace_minted, .room_added, .avatar_inscribed, .aqueduct_created,
-                .move, .true_naming, .inscription_updated, .inscription_orphaned,
-                .inscription_pending_embedding,
-            };
-            var found = false;
-            for (kinds) |kk| {
-                if (std.mem.eql(u8, kk.toWireString(), s)) {
-                    action_kind_opt = kk;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) return DecodeError.InvalidValue;
+            action_kind_opt = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
+        } else if (std.mem.eql(u8, k, "kind")) {
+            open_kind_opt = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
         } else if (std.mem.eql(u8, k, "actor")) {
             const b = dcbor.readBytes(bytes, &cursor) catch |e| return mapDecodeError(e);
             if (b.len != 32) return DecodeError.InvalidValue;
@@ -649,6 +790,18 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
                 @memcpy(&ph, b);
                 try parent_list.append(allocator, ph);
             }
+        } else if (std.mem.eql(u8, k, "hlc")) {
+            // [l, c] — bare 2-element array of dCBOR uints (D-039).
+            const arr_n = dcbor.readArrayHeader(bytes, &cursor) catch |e| return mapDecodeError(e);
+            if (arr_n != 2) return DecodeError.InvalidValue;
+            hlc[0] = dcbor.readUint(bytes, &cursor) catch |e| return mapDecodeError(e);
+            hlc[1] = dcbor.readUint(bytes, &cursor) catch |e| return mapDecodeError(e);
+            hlc_present = true;
+        } else if (std.mem.eql(u8, k, "body")) {
+            // Opaque CBOR-in-CBOR; returned to the caller as raw bytes (D-043).
+            body_opt = dcbor.readBytes(bytes, &cursor) catch |e| return mapDecodeError(e);
+        } else if (std.mem.eql(u8, k, "format-version")) {
+            format_version = dcbor.readUint(bytes, &cursor) catch |e| return mapDecodeError(e);
         } else {
             dcbor.skipItem(bytes, &cursor) catch |e| return mapDecodeError(e);
         }
@@ -693,14 +846,52 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
         }
     }
 
+    // Resolve the version-specific fields BEFORE taking ownership of the lists,
+    // so an early error return cannot leak the to-be-owned slices.
+    const fv = format_version orelse return DecodeError.MissingField;
+    var decoded_kind: []const u8 = undefined;
+    var decoded_body: ?[]const u8 = null;
+    var decoded_hlc: [2]u64 = .{ 0, 0 };
+    if (fv == v2.Action.format_version) {
+        // v4 — open kind, mandatory HLC (§17), optional opaque body.
+        decoded_kind = open_kind_opt orelse return DecodeError.MissingField;
+        if (!hlc_present) return DecodeError.MissingField;
+        decoded_hlc = hlc;
+        decoded_body = body_opt;
+    } else if (fv == 3) {
+        // v3 palace profile — closed `action-kind`, no HLC, no body. Preserve
+        // the original closed-enum validation: the wire string must be one of
+        // the 9 known palace verbs.
+        const ak = action_kind_opt orelse return DecodeError.MissingField;
+        const kinds = [_]v2.ActionKind{
+            .palace_minted, .room_added, .avatar_inscribed, .aqueduct_created,
+            .move,          .true_naming, .inscription_updated, .inscription_orphaned,
+            .inscription_pending_embedding,
+        };
+        var found = false;
+        for (kinds) |kk| {
+            if (std.mem.eql(u8, kk.toWireString(), ak)) {
+                decoded_kind = kk.toWireString();
+                found = true;
+                break;
+            }
+        }
+        if (!found) return DecodeError.InvalidValue;
+    } else {
+        return DecodeError.InvalidValue; // unknown format-version
+    }
+    const actor = actor_opt orelse return DecodeError.MissingField;
+
     const ph_slice = try parent_list.toOwnedSlice(allocator);
     const deps_slice = try deps_list.toOwnedSlice(allocator);
     const nacks_slice = try nacks_list.toOwnedSlice(allocator);
     return .{
         .action = .{
-            .action_kind = action_kind_opt orelse return DecodeError.MissingField,
-            .actor = actor_opt orelse return DecodeError.MissingField,
+            .kind = decoded_kind,
+            .actor = actor,
             .parent_hashes = ph_slice,
+            .body = decoded_body,
+            .hlc = decoded_hlc,
             .deps = deps_slice,
             .nacks = nacks_slice,
             .target_fp = target_fp,
@@ -1584,9 +1775,10 @@ test "encodeAction round-trip" {
     const allocator = std.testing.allocator;
     var parents = [_][32]u8{ [_]u8{0x10} ** 32 };
     const a = v2.Action{
-        .action_kind = .true_naming,
+        .kind = v2.ActionKind.true_naming.toWireString(),
         .parent_hashes = &parents,
         .actor = [_]u8{0x20} ** 32,
+        .hlc = .{ 0, 0 },
         .target_fp = [_]u8{0x30} ** 32,
         .timestamp = 1_700_000_000,
     };
@@ -1603,7 +1795,7 @@ test "encodeAction round-trip" {
     defer allocator.free(result.deps);
     defer allocator.free(result.nacks);
 
-    try std.testing.expectEqual(v2.ActionKind.true_naming, result.action.action_kind);
+    try std.testing.expectEqualStrings("true-naming", result.action.kind);
     try std.testing.expectEqualSlices(u8, &[_]u8{0x20} ** 32, &result.action.actor);
     try std.testing.expectEqual(@as(usize, 1), result.parent_hashes.len);
     try std.testing.expectEqualSlices(u8, &[_]u8{0x10} ** 32, &result.parent_hashes[0]);
@@ -1623,9 +1815,10 @@ test "encodeAction AC4: multi-parent + deps + nacks" {
     const deps = [_]v2.ActionRef{ dep1, dep2 };
     const nacks = [_]v2.ActionRef{nack1};
     const a = v2.Action{
-        .action_kind = .move,
+        .kind = v2.ActionKind.move.toWireString(),
         .parent_hashes = &parents,
         .actor = [_]u8{0x03} ** 32,
+        .hlc = .{ 0, 0 },
         .deps = &deps,
         .nacks = &nacks,
     };
@@ -1644,6 +1837,156 @@ test "encodeAction AC4: multi-parent + deps + nacks" {
     try std.testing.expectEqualSlices(u8, &[_]u8{0x0D} ** 32, &result.deps[0]);
     try std.testing.expectEqualSlices(u8, &[_]u8{0x0E} ** 32, &result.deps[1]);
     try std.testing.expectEqualSlices(u8, &[_]u8{0x0F} ** 32, &result.nacks[0]);
+}
+
+// ----------------------------------------------------------------------------
+// A2 — v4 ball.action codec (open kind + opaque body + HLC). The v3 tests above
+// remain the regression gate; these exercise the encodeActionV4 / decodeAction
+// v4 path. PROTOCOL.md §16.7/§17/§18.
+// ----------------------------------------------------------------------------
+
+test "encodeActionV4 round-trip with body (7-key core map)" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    // Opaque consumer payload: a canonical CBOR array [1, 2].
+    const body = [_]u8{ 0x82, 0x01, 0x02 };
+    const a = v2.Action{
+        .kind = "worldtree.kanban-card.move",
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x20} ** 32,
+        .body = &body,
+        .hlc = .{ 1_700_000_000_000, 7 },
+    };
+    const bytes = try encodeActionV4(allocator, a);
+    defer allocator.free(bytes);
+
+    // v4 markers: open `kind`, `format-version` 4, and NO legacy `action-kind`.
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.action") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "worldtree.kanban-card.move") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "action-kind") == null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "hlc") != null);
+    // Encoder output must itself be canonical.
+    try assertCanonical(bytes);
+
+    var result = try decodeAction(allocator, bytes);
+    defer allocator.free(result.parent_hashes);
+    defer allocator.free(result.deps);
+    defer allocator.free(result.nacks);
+
+    try std.testing.expectEqualStrings("worldtree.kanban-card.move", result.action.kind);
+    try std.testing.expectEqualSlices(u8, &[_]u8{0x20} ** 32, &result.action.actor);
+    try std.testing.expectEqual(@as(usize, 1), result.parent_hashes.len);
+    try std.testing.expect(result.action.body != null);
+    try std.testing.expectEqualSlices(u8, &body, result.action.body.?);
+    try std.testing.expectEqual(@as(u64, 1_700_000_000_000), result.action.hlc[0]);
+    try std.testing.expectEqual(@as(u64, 7), result.action.hlc[1]);
+
+    // Re-encode the decoded action and confirm byte-identical canonical output.
+    const reencoded = try encodeActionV4(allocator, result.action);
+    defer allocator.free(reencoded);
+    try std.testing.expectEqualSlices(u8, bytes, reencoded);
+}
+
+test "encodeActionV4 round-trip without body (6-key core map)" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    const a = v2.Action{
+        .kind = "palace.minted",
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x01} ** 32,
+        .hlc = .{ 42, 0 },
+    };
+    const bytes = try encodeActionV4(allocator, a);
+    defer allocator.free(bytes);
+    try assertCanonical(bytes);
+
+    const result = try decodeAction(allocator, bytes);
+    defer allocator.free(result.parent_hashes);
+    defer allocator.free(result.deps);
+    defer allocator.free(result.nacks);
+
+    try std.testing.expectEqualStrings("palace.minted", result.action.kind);
+    try std.testing.expectEqual(@as(?[]const u8, null), result.action.body);
+    try std.testing.expectEqual(@as(u64, 42), result.action.hlc[0]);
+    try std.testing.expectEqual(@as(u64, 0), result.action.hlc[1]);
+
+    const reencoded = try encodeActionV4(allocator, result.action);
+    defer allocator.free(reencoded);
+    try std.testing.expectEqualSlices(u8, bytes, reencoded);
+}
+
+test "encodeActionV4 multi-parent + deps + nacks + target-fp + timestamp" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{ [_]u8{0x01} ** 32, [_]u8{0x02} ** 32 };
+    const deps = [_]v2.ActionRef{[_]u8{0x0D} ** 32};
+    const nacks = [_]v2.ActionRef{[_]u8{0x0F} ** 32};
+    const a = v2.Action{
+        .kind = "myapp.document.archive",
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x03} ** 32,
+        .hlc = .{ 9_000_000_000_000, 65_535 },
+        .target_fp = [_]u8{0x30} ** 32,
+        .timestamp = 1_700_000_000,
+        .deps = &deps,
+        .nacks = &nacks,
+    };
+    const bytes = try encodeActionV4(allocator, a);
+    defer allocator.free(bytes);
+
+    const result = try decodeAction(allocator, bytes);
+    defer allocator.free(result.parent_hashes);
+    defer allocator.free(result.deps);
+    defer allocator.free(result.nacks);
+
+    try std.testing.expectEqual(@as(usize, 2), result.parent_hashes.len);
+    try std.testing.expectEqual(@as(usize, 1), result.deps.len);
+    try std.testing.expectEqual(@as(usize, 1), result.nacks.len);
+    try std.testing.expectEqual(@as(u64, 9_000_000_000_000), result.action.hlc[0]);
+    try std.testing.expectEqual(@as(u64, 65_535), result.action.hlc[1]);
+    try std.testing.expect(result.action.target_fp != null);
+    try std.testing.expectEqual(@as(i64, 1_700_000_000), result.action.timestamp.?);
+}
+
+test "decodeAction dispatches on format-version: v3 envelope still decodes (regression)" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    const a = v2.Action{
+        .kind = v2.ActionKind.true_naming.toWireString(),
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x20} ** 32,
+        .hlc = .{ 0, 0 },
+    };
+    // encodeAction (NOT V4) emits the v3 palace wire shape.
+    const bytes = try encodeAction(allocator, a);
+    defer allocator.free(bytes);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "action-kind") != null);
+
+    const result = try decodeAction(allocator, bytes);
+    defer allocator.free(result.parent_hashes);
+    defer allocator.free(result.deps);
+    defer allocator.free(result.nacks);
+
+    // v3 decode yields kind from action-kind, no body, zero HLC.
+    try std.testing.expectEqualStrings("true-naming", result.action.kind);
+    try std.testing.expectEqual(@as(?[]const u8, null), result.action.body);
+    try std.testing.expectEqual(@as(u64, 0), result.action.hlc[0]);
+    try std.testing.expectEqual(@as(u64, 0), result.action.hlc[1]);
+}
+
+test "encodeActionV4 rejects a non-canonical body" {
+    const allocator = std.testing.allocator;
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    // Non-canonical CBOR: uint 0 written in 2-byte form (0x18 0x00) instead of
+    // the shortest 0x00. assertCanonical must reject before anything is emitted.
+    const bad_body = [_]u8{ 0x18, 0x00 };
+    const a = v2.Action{
+        .kind = "x.y.z",
+        .parent_hashes = &parents,
+        .actor = [_]u8{0x01} ** 32,
+        .body = &bad_body,
+        .hlc = .{ 1, 0 },
+    };
+    try std.testing.expectError(DecodeError.NonCanonicalInteger, encodeActionV4(allocator, a));
 }
 
 test "encodeAqueduct round-trip" {
@@ -2206,9 +2549,10 @@ test "MEDIUM-5: encoder produces canonical bytes for every palace envelope" {
     {
         var act_ph = [_][32]u8{[_]u8{0x10} ** 32};
         const a = v2.Action{
-            .action_kind = .palace_minted,
+            .kind = v2.ActionKind.palace_minted.toWireString(),
             .actor = [_]u8{0x01} ** 32,
             .parent_hashes = &act_ph,
+            .hlc = .{ 0, 0 },
             .target_fp = null,
             .timestamp = null,
             .deps = &.{},

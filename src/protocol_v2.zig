@@ -183,8 +183,12 @@ pub const Layout = struct {
 // §13.3 ball.timeline + ball.action
 // ============================================================================
 
-/// RC2 — ActionKind enum with all 9 known kinds.
-/// Wire representation is the kebab-case string in comments.
+/// Palace-profile kind palette — the conventional `kind` strings the palace
+/// authors use on `ball.action`. As of v4 (D-037) the wire type carries an
+/// OPEN `kind: []const u8`, so this enum is a convenience/profile helper, NOT
+/// the wire field: it maps the 9 known palace verbs to their canonical wire
+/// strings via `toWireString()`. Other consumers author arbitrary `kind`
+/// strings (D-038 dot-namespace convention) without touching this enum.
 pub const ActionKind = enum {
     palace_minted, // "palace-minted"
     room_added, // "room-added"
@@ -229,15 +233,24 @@ pub const Timeline = struct {
 pub const ActionRef = [32]u8;
 
 pub const Action = struct {
-    pub const format_version: u32 = 3;
+    pub const format_version: u32 = 4;
     /// Wire type string: `"ball.action"`.
     pub const type_string: []const u8 = "ball.action";
 
-    action_kind: ActionKind,
+    /// OPEN kind string (D-037/D-038). Replaces the closed `action_kind` enum
+    /// of v3. Palace authors set this via `ActionKind.x.toWireString()`; other
+    /// consumers supply their own dot-namespaced verb. Wire key is `"kind"`.
+    kind: []const u8,
     /// ACKS — previous head(s) this action acknowledges; one for linear, multiple for merges.
     parent_hashes: [][32]u8,
     /// Fingerprint of the signer.
     actor: [32]u8,
+    /// Opaque, consumer-defined CBOR payload carried as a CBOR byte string
+    /// (CBOR-in-CBOR, D-040/D-043). The protocol does not interpret its schema.
+    body: ?[]const u8 = null,
+    /// Hybrid Logical Clock `[l, c]` (D-039): index 0 = `l` (ms wall-clock),
+    /// index 1 = `c` (intra-`l` counter). Structural in v4 envelopes.
+    hlc: [2]u64,
     /// Optional target DreamBall fingerprint.
     target_fp: ?[32]u8 = null,
     /// Unix timestamp (seconds).
@@ -502,13 +515,16 @@ test "struct shape: Timeline" {
 test "struct shape: Action" {
     var parents = [_][32]u8{[_]u8{0x02} ** 32};
     const a: Action = .{
-        .action_kind = .true_naming,
+        .kind = ActionKind.true_naming.toWireString(),
         .parent_hashes = &parents,
         .actor = [_]u8{0x03} ** 32,
+        .hlc = .{ 0, 0 },
     };
-    try std.testing.expectEqual(@as(u32, 3), Action.format_version);
+    try std.testing.expectEqual(@as(u32, 4), Action.format_version);
     try std.testing.expectEqualStrings("ball.action", Action.type_string);
-    try std.testing.expectEqualStrings("true-naming", a.action_kind.toWireString());
+    try std.testing.expectEqualStrings("true-naming", a.kind);
+    try std.testing.expectEqual(@as(?[]const u8, null), a.body);
+    try std.testing.expectEqual(@as(u64, 0), a.hlc[1]);
     try std.testing.expectEqual(@as(usize, 0), a.deps.len);
     try std.testing.expectEqual(@as(usize, 0), a.nacks.len);
 }

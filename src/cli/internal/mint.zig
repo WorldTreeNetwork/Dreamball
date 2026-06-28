@@ -232,9 +232,10 @@ fn runMint(gpa: Allocator, out_path: []const u8, mythos_body: []const u8) !u8 {
     // parent_hashes is empty (genesis action; AC4).
     const empty_parents: [][32]u8 = &.{};
     const action = v2.Action{
-        .action_kind = .palace_minted,
+        .kind = v2.ActionKind.palace_minted.toWireString(),
         .parent_hashes = empty_parents,
         .actor = palace_fp_bytes,
+        .hlc = .{ 0, 0 },
         .target_fp = palace_fp_bytes,
         .timestamp = now_ms,
     };
@@ -496,12 +497,15 @@ fn encodeSignedAction(
     try zbor.builder.writeTextString(w, "actor");
     try zbor.builder.writeByteString(w, &a.actor);
     try zbor.builder.writeTextString(w, "action-kind");
-    try zbor.builder.writeTextString(w, a.action_kind.toWireString());
+    // v3 wire shape; `a.kind` is byte-identical to the old enum string. The
+    // v4 (7-key) encoder is story A2 — `format-version` pinned to 3 (struct
+    // const is now 4).
+    try zbor.builder.writeTextString(w, a.kind);
     try zbor.builder.writeTextString(w, "parent-hashes");
     try zbor.builder.writeArray(w, a.parent_hashes.len);
     for (a.parent_hashes) |ph| try zbor.builder.writeByteString(w, &ph);
     try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @intCast(v2.Action.format_version));
+    try zbor.builder.writeInt(w, 3);
 
     // Attributes sorted by label length, then lex:
     // "deps"(4), "nacks"(5), "signed"(6), "target-fp"(9), "timestamp"(9)
@@ -711,9 +715,10 @@ test "encodeSignedAction produces longer envelope than unsigned" {
     const keys = try signer.HybridSigningKeys.generate();
     const empty: [][32]u8 = &.{};
     const action = v2.Action{
-        .action_kind = .palace_minted,
+        .kind = v2.ActionKind.palace_minted.toWireString(),
         .parent_hashes = empty,
         .actor = keys.ed25519_public,
+        .hlc = .{ 0, 0 },
         .timestamp = 1704067200000,
     };
 

@@ -98,6 +98,48 @@ pub const GOLDEN_MYTHOS_POETIC_BLAKE3: []const u8 = "dc25f30643c7ff9b048c1669f7f
 pub const GOLDEN_ARCHIFORM_BLAKE3: []const u8 = "bae68c293a382bd085378bcc2f3f3e3c33e215c703ccaf3131d7389ad590465d";
 
 // ============================================================================
+// C1 — v4 `ball.action` content_hash cross-runtime golden (sprint-003)
+// ============================================================================
+// The op log's whole point is portable op identity: the SAME logical v4 action
+// must hash identically across the Zig CLI, browser WASM, and Bun WASM (NFR1).
+//
+// **Which bytes are hashed (the content_hash domain).** `content_hash =
+// Blake3-256(canonical UNSIGNED v4 envelope bytes)`, with NO domain-separation
+// prefix (D-043, PROTOCOL.md §16.7/§17.4). The UNSIGNED bytes are exactly what
+// `encodeActionV4` emits — `encodeActionV4Signed(a, &.{})`. Signatures are NOT
+// covered: a verifier strips the `signed` attributes and recomputes over these
+// same unsigned bytes, exactly as for DreamBall envelopes (PROTOCOL.md §2.3).
+//
+// **Why three constants.** The WASM `authorAction` export emits a SIGNED
+// envelope (Ed25519 is deterministic for a fixed seed), so the cross-runtime
+// gate compares like-for-like at two levels: (1) the SIGNED bytes that
+// `authorAction` returns must be byte-identical CLI≡WASM, and (2) the UNSIGNED
+// bytes — the content_hash domain — and their digest must agree. The signed and
+// unsigned encodings share an identical leaf+core block (they differ only in the
+// outer array length header and the trailing `signed` attribute), so locking
+// both pins the canonical encoder end to end.
+//
+// Fixture (the B1 reference KAT, reused for consistency): kind
+// "worldtree.kanban-card.move", body = canonical CBOR `[1, 2]` (0x82 0x01 0x02),
+// one parent 0x10*32, hlc `[1700000000000, 7]`, actor = Ed25519 public key of
+// the all-zeros 32-byte seed. The TS-side mirror of these constants lives in
+// `src/lib/wasm/__fixtures__/action-v4.golden.json`; the cross-runtime tests
+// force the two copies to agree (any drift fails a gate on one side or the other).
+
+/// Ed25519 public key of the all-zeros 32-byte seed = the fixture's `actor`.
+pub const GOLDEN_ACTION_V4_ACTOR_HEX: []const u8 = "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29";
+
+/// Canonical UNSIGNED v4 `ball.action` envelope bytes — the content_hash domain.
+pub const GOLDEN_ACTION_V4_UNSIGNED_BYTES_HEX: []const u8 = "d8c881d8c9a763686c63821b0000018bcfe568000764626f647943820102646b696e64781a776f726c64747265652e6b616e62616e2d636172642e6d6f766564747970656b62616c6c2e616374696f6e656163746f7258203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da296d706172656e742d68617368657381582010101010101010101010101010101010101010101010101010101010101010106e666f726d61742d76657273696f6e04";
+
+/// content_hash = Blake3-256(GOLDEN_ACTION_V4_UNSIGNED_BYTES_HEX), no domain prefix.
+pub const GOLDEN_ACTION_V4_CONTENT_HASH: []const u8 = "5b97ee37cd5fc24ee7e88c96d6613dadf9fafe4ebea5429ac328af133e2fd27b";
+
+/// Canonical SIGNED v4 envelope bytes — exactly what WASM `authorAction` returns
+/// for the all-zeros seed (deterministic Ed25519 signature over the unsigned bytes).
+pub const GOLDEN_ACTION_V4_SIGNED_BYTES_HEX: []const u8 = "d8c882d8c9a763686c63821b0000018bcfe568000764626f647943820102646b696e64781a776f726c64747265652e6b616e62616e2d636172642e6d6f766564747970656b62616c6c2e616374696f6e656163746f7258203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da296d706172656e742d68617368657381582010101010101010101010101010101010101010101010101010101010101010106e666f726d61742d76657273696f6e0482667369676e656482676564323535313958409c6046ab78bebcb744ed214fa0e44f362e0853a15360c8c781458230058f1aaa771da72aaeb20e95a35cf42c0a0188e7bcc257710220306d30b9202d72bbde03";
+
+// ============================================================================
 // Pre-existing tests
 // ============================================================================
 
@@ -263,9 +305,10 @@ test "golden bytes: ball.action single-parent" {
     const envelope_v2 = @import("envelope_v2.zig");
     var parents = [_][32]u8{[_]u8{0x10} ** 32};
     const a = v2.Action{
-        .action_kind = .palace_minted,
+        .kind = v2.ActionKind.palace_minted.toWireString(),
         .actor = [_]u8{0x01} ** 32,
         .parent_hashes = &parents,
+        .hlc = .{ 0, 0 },
     };
     const bytes = try envelope_v2.encodeAction(allocator, a);
     defer allocator.free(bytes);
@@ -283,9 +326,10 @@ test "golden bytes: ball.action multi-parent" {
         [_]u8{0x11} ** 32,
     };
     const a = v2.Action{
-        .action_kind = .move,
+        .kind = v2.ActionKind.move.toWireString(),
         .actor = [_]u8{0x01} ** 32,
         .parent_hashes = &parents,
+        .hlc = .{ 0, 0 },
     };
     const bytes = try envelope_v2.encodeAction(allocator, a);
     defer allocator.free(bytes);
@@ -302,9 +346,10 @@ test "golden bytes: ball.action deps and nacks" {
     var deps = [_]v2.ActionRef{[_]u8{0x20} ** 32};
     var nacks = [_]v2.ActionRef{[_]u8{0x30} ** 32};
     const a = v2.Action{
-        .action_kind = .inscription_updated,
+        .kind = v2.ActionKind.inscription_updated.toWireString(),
         .actor = [_]u8{0x01} ** 32,
         .parent_hashes = &parents,
+        .hlc = .{ 0, 0 },
         .deps = &deps,
         .nacks = &nacks,
     };
@@ -469,6 +514,110 @@ test "golden bytes: ball.archiform with parent-form" {
     defer allocator.free(bytes);
     const hex = blake3Hex(bytes);
     try goldenCheck(GOLDEN_ARCHIFORM_BLAKE3, hex, "GOLDEN_ARCHIFORM_BLAKE3");
+}
+
+/// Format `bytes` as lowercase hex into a caller-freed buffer.
+fn hexAlloc(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
+    const buf = try allocator.alloc(u8, bytes.len * 2);
+    const charset = "0123456789abcdef";
+    for (bytes, 0..) |b, i| {
+        buf[i * 2] = charset[(b >> 4) & 0xF];
+        buf[i * 2 + 1] = charset[b & 0xF];
+    }
+    return buf;
+}
+
+/// Assert `bytes` hex-encodes to `expected_hex`; prints both on mismatch.
+fn expectHexEql(expected_hex: []const u8, bytes: []const u8, name: []const u8) !void {
+    const allocator = std.testing.allocator;
+    const got = try hexAlloc(allocator, bytes);
+    defer allocator.free(got);
+    std.testing.expectEqualSlices(u8, expected_hex, got) catch |err| {
+        std.debug.print("\n  C1 GOLDEN MISMATCH: {s}\n  observed: {s}\n  expected: {s}\n", .{ name, got, expected_hex });
+        return err;
+    };
+}
+
+/// Build the C1 fixture Action with the all-zeros-seed keypair. Returns the
+/// keypair alongside so the caller can sign. `parents` and `body` are borrowed
+/// from caller-owned storage (the slices below are pointers into the args).
+fn c1FixtureAction(
+    parents: *[1][32]u8,
+    body: []const u8,
+    kp: std.crypto.sign.Ed25519.KeyPair,
+) @import("protocol_v2.zig").Action {
+    const v2 = @import("protocol_v2.zig");
+    return v2.Action{
+        .kind = "worldtree.kanban-card.move",
+        .parent_hashes = parents,
+        .actor = kp.public_key.toBytes(),
+        .body = body,
+        .hlc = .{ 1_700_000_000_000, 7 },
+    };
+}
+
+test "C1 golden: v4 ball.action content_hash + signed bytes (CLI ≡ Zig side)" {
+    // AC2/AC3: the Zig CLI encoder produces the exact pinned canonical bytes and
+    // content_hash. content_hash is Blake3 over the UNSIGNED envelope (D-043) —
+    // see the C1 header comment for why the unsigned bytes are the domain.
+    const allocator = std.testing.allocator;
+    const envelope_v2 = @import("envelope_v2.zig");
+    const proto = @import("protocol.zig");
+    const Ed25519 = std.crypto.sign.Ed25519;
+
+    const seed: [Ed25519.KeyPair.seed_length]u8 = .{0} ** Ed25519.KeyPair.seed_length;
+    const kp = try Ed25519.KeyPair.generateDeterministic(seed);
+    const actor = kp.public_key.toBytes();
+    // The actor is the all-zeros-seed public key — pin it so the TS fixture's
+    // `actorHex` (which it must reuse to build the same secret) is anchored here.
+    try expectHexEql(GOLDEN_ACTION_V4_ACTOR_HEX, &actor, "actor");
+
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    const body = [_]u8{ 0x82, 0x01, 0x02 }; // canonical CBOR array [1, 2]
+    const a = c1FixtureAction(&parents, &body, kp);
+
+    // (1) Canonical UNSIGNED bytes — the content_hash domain.
+    const unsigned = try envelope_v2.encodeActionV4(allocator, a);
+    defer allocator.free(unsigned);
+    try expectHexEql(GOLDEN_ACTION_V4_UNSIGNED_BYTES_HEX, unsigned, "unsigned bytes");
+
+    // (2) content_hash = Blake3(unsigned), no domain prefix.
+    const ch = blake3Hex(unsigned);
+    try std.testing.expectEqualSlices(u8, GOLDEN_ACTION_V4_CONTENT_HASH, &ch);
+    // …and via the named helper, which is what consumers call (AC1).
+    const ch2 = try envelope_v2.contentHash(allocator, a);
+    try expectHexEql(GOLDEN_ACTION_V4_CONTENT_HASH, &ch2, "contentHash() helper");
+
+    // (3) SIGNED bytes — what WASM authorAction returns (deterministic Ed25519).
+    const sig = (try kp.sign(unsigned, null)).toBytes();
+    const sigs = [_]proto.Signature{.{ .alg = "ed25519", .value = &sig }};
+    const signed = try envelope_v2.encodeActionV4Signed(allocator, a, &sigs);
+    defer allocator.free(signed);
+    try expectHexEql(GOLDEN_ACTION_V4_SIGNED_BYTES_HEX, signed, "signed bytes");
+
+    // The signed and unsigned encodings share an identical leaf+core block
+    // (offset 3 = 2-byte envelope tag + 1-byte outer-array header). This is the
+    // invariant the WASM cross-runtime test relies on to recover the content_hash
+    // domain from authorAction's signed output without a second encode path.
+    try std.testing.expectEqualSlices(u8, unsigned[3..], signed[3 .. unsigned.len]);
+}
+
+test "C1 negative: a one-byte body perturbation flips content_hash" {
+    // AC (test plan): an intentional one-byte change must change the digest.
+    const allocator = std.testing.allocator;
+    const envelope_v2 = @import("envelope_v2.zig");
+    const Ed25519 = std.crypto.sign.Ed25519;
+
+    const seed: [Ed25519.KeyPair.seed_length]u8 = .{0} ** Ed25519.KeyPair.seed_length;
+    const kp = try Ed25519.KeyPair.generateDeterministic(seed);
+
+    var parents = [_][32]u8{[_]u8{0x10} ** 32};
+    const body = [_]u8{ 0x82, 0x01, 0x03 }; // [1, 3] — one byte differs from the fixture's [1, 2]
+    const a = c1FixtureAction(&parents, &body, kp);
+    const ch = try envelope_v2.contentHash(allocator, a);
+    const got = try hexAlloc(allocator, &ch);
+    defer allocator.free(got);
+    try std.testing.expect(!std.mem.eql(u8, GOLDEN_ACTION_V4_CONTENT_HASH, got));
 }
 
 test "AC5: mythos canonical-genesis, canonical-successor, poetic hashes are distinct" {
