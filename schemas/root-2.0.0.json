@@ -1282,6 +1282,35 @@
           "x-cbor-section": "attribute",
           "x-optional": true
         },
+        "memory": {
+          "$comment": "§12.3 first-class Memory slot — a ball.memory nested envelope carried as an attribute on the DreamBall. Zig field `memory: ?Memory`.",
+          "oneOf": [{ "$ref": "#/$defs/Memory" }, { "type": "null" }],
+          "x-zig": "?Memory",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "knowledge-graph": {
+          "$comment": "§12.4 first-class KnowledgeGraph slot — a ball.knowledge-graph nested envelope. Zig field `knowledge_graph: ?KnowledgeGraph`.",
+          "oneOf": [{ "$ref": "#/$defs/KnowledgeGraph" }, { "type": "null" }],
+          "x-zig": "?KnowledgeGraph",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "emotional-register": {
+          "$comment": "§12.5 first-class EmotionalRegister slot — a ball.emotional-register nested envelope. Zig field `emotional_register: ?EmotionalRegister`.",
+          "oneOf": [{ "$ref": "#/$defs/EmotionalRegister" }, { "type": "null" }],
+          "x-zig": "?EmotionalRegister",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "interaction-sets": {
+          "$comment": "§12.6 REPEATABLE slot — the JSON array projects the repeated CBOR `interaction-set` assertion (one ball.interaction-set envelope per element). The in-memory Zig field is `interaction_sets: []const InteractionSet`.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/InteractionSet" },
+          "x-zig": "[]const InteractionSet",
+          "x-cbor": "array-of-interaction-set",
+          "x-cbor-section": "attribute"
+        },
         "guilds": {
           "type": "array",
           "items": { "$ref": "#/$defs/Fingerprint" },

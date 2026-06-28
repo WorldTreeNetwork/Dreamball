@@ -201,16 +201,19 @@ describe('ML-DSA-87 WASM verify (primitive)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC4 — WASM binary size budget (TC5: ≤200 KB raw / ≤64 KB gzipped)
+// AC4 — WASM binary size budget (TC5: ≤224 KB raw / ≤64 KB gzipped)
 // Colocated here per Story 1.1 spec so the budget assertion travels with
 // the verify coverage. CI also enforces this at .github/workflows/ci.yml.
+// Raw budget relaxed 200→224 KB on 2026-06-25 for the five nested-envelope
+// decoders; gzip (the over-the-wire cost) remains the binding 64 KB budget.
+// See docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md.
 // ---------------------------------------------------------------------------
 
 describe('WASM binary budget (TC5)', () => {
-	it('raw size ≤ 204800 bytes and gzip size ≤ 65536 bytes', () => {
+	it('raw size ≤ 229376 bytes and gzip size ≤ 65536 bytes', () => {
 		const raw = statSync(WASM_PATH).size;
 		const gzip = gzipSync(readFileSync(WASM_PATH)).length;
-		expect(raw).toBeLessThanOrEqual(204800);
+		expect(raw).toBeLessThanOrEqual(229376);
 		expect(gzip).toBeLessThanOrEqual(65536);
 	});
 });
