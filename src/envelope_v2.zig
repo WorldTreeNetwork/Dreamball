@@ -344,6 +344,54 @@ pub fn encodeLayout(allocator: Allocator, l: v2.Layout) ![]u8 {
     return ai.toOwnedSlice();
 }
 
+// ============================================================================
+// §13.10 ball.object3d — encoder (sprint-003 D1)
+// ============================================================================
+//
+// Core-map-only envelope: a single-element outer array (no attribute pairs),
+// whose one leaf carries all six keys. `position`/`scale` reuse encodeLayout's
+// placement float block (3× writeSmallestFloat); `rotation` reuses the 4-element
+// quaternion array exactly as `Placement.facing` emits it. No Zig decoder is
+// shipped (D1 scope) — the cross-runtime proof decodes via the generated
+// `cbor.ts` over these canonical bytes.
+pub fn encodeObject3d(allocator: Allocator, o: v2.Object3d) ![]u8 {
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    // No attributes: just the leaf core map.
+    try zbor.builder.writeArray(w, 1);
+
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    // dCBOR canonical order (len asc, lex within equal length):
+    // "mesh"(4), "type"(4), "scale"(5), "position"(8), "rotation"(8), "format-version"(14).
+    // len 4: "mesh" < "type"; len 8: "position" < "rotation".
+    try zbor.builder.writeMap(w, 6);
+    try zbor.builder.writeTextString(w, "mesh");
+    try zbor.builder.writeTextString(w, o.mesh);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, v2.Object3d.type_string);
+    try zbor.builder.writeTextString(w, "scale");
+    try zbor.builder.writeArray(w, 3);
+    try dcbor.writeSmallestFloat(w, o.scale[0]);
+    try dcbor.writeSmallestFloat(w, o.scale[1]);
+    try dcbor.writeSmallestFloat(w, o.scale[2]);
+    try zbor.builder.writeTextString(w, "position");
+    try zbor.builder.writeArray(w, 3);
+    try dcbor.writeSmallestFloat(w, o.position[0]);
+    try dcbor.writeSmallestFloat(w, o.position[1]);
+    try dcbor.writeSmallestFloat(w, o.position[2]);
+    try zbor.builder.writeTextString(w, "rotation");
+    try zbor.builder.writeArray(w, 4);
+    try dcbor.writeSmallestFloat(w, o.rotation.qx);
+    try dcbor.writeSmallestFloat(w, o.rotation.qy);
+    try dcbor.writeSmallestFloat(w, o.rotation.qz);
+    try dcbor.writeSmallestFloat(w, o.rotation.qw);
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @intCast(v2.Object3d.format_version));
+    return ai.toOwnedSlice();
+}
+
 // These shared envelope decode helpers were relocated DOWN to dcbor.zig to
 // break the protocol/envelope ↔ v2 import cycle (so envelope.zig can decode
 // the memory slot too). The aliases below keep this module's ~50 existing

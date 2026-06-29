@@ -252,7 +252,7 @@ const BODY =
     \\
     \\import type {
     \\  Layout, Timeline, Action, Aqueduct,
-    \\  ElementTag, TrustObservation, Inscription, Mythos, Archiform
+    \\  ElementTag, TrustObservation, Inscription, Mythos, Archiform, Object3d
     \\} from './types.js';
     \\
     \\/** Walk the raw CBOR tree and extract the core map + attribute list. */
@@ -549,6 +549,27 @@ const BODY =
     \\  if (parentForm !== undefined) out['parent-form'] = parentForm;
     \\  if (note !== undefined) out.note = note;
     \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.object3d CBOR envelope (sprint-003 D1).
+    \\ *
+    \\ * Core-map-only: mesh/position/rotation/scale all live in the tag-201 leaf
+    \\ * core map (no attribute pairs), mirroring `encodeObject3d`
+    \\ * (src/envelope_v2.zig). position/scale are 3-element float arrays and
+    \\ * rotation a 4-element quaternion array, read via CborReader.readAny(). */
+    \\export function decodeObject3d(bytes: Uint8Array): Object3d {
+    \\  const { core } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  const mesh = core['mesh'] as string;
+    \\  const pos = core['position'] as number[];
+    \\  const rot = core['rotation'] as number[];
+    \\  const scl = core['scale'] as number[];
+    \\  return {
+    \\    type: 'ball.object3d', 'format-version': 2,
+    \\    mesh,
+    \\    position: [pos[0], pos[1], pos[2]],
+    \\    rotation: [rot[0], rot[1], rot[2], rot[3]],
+    \\    scale: [scl[0], scl[1], scl[2]],
+    \\  };
     \\}
     \\
 ;

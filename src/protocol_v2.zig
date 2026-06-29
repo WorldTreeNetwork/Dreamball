@@ -411,6 +411,32 @@ pub const Archiform = struct {
 };
 
 // ============================================================================
+// §13.10 ball.object3d
+// ============================================================================
+
+/// A minimal 3D-transform record — the second maintainer-authored type added
+/// through the Zig-canonical pipeline (sprint-003 D1). Demonstrates the
+/// general authoring path: a new Zig struct flows downward to the schema
+/// `$defs`, the generated TS type/Valibot schema/`cbor.ts` decoder, and a
+/// pinned golden vector, with zero new infrastructure. All fields live in the
+/// core leaf map (no attributes, no optionals) — the simplest possible
+/// envelope shape. Reuses the existing `Quaternion` type for `rotation`.
+pub const Object3d = struct {
+    pub const format_version: u32 = 2;
+    /// Wire type string: `"ball.object3d"`.
+    pub const type_string: []const u8 = "ball.object3d";
+
+    /// Open-enum mesh/asset identifier (e.g. "glb:tree-01", "primitive:cube").
+    mesh: []const u8,
+    /// Local-frame translation [x, y, z].
+    position: [3]f32,
+    /// Orientation (reuses the existing Quaternion type).
+    rotation: Quaternion,
+    /// Per-axis scale [x, y, z].
+    scale: [3]f32,
+};
+
+// ============================================================================
 // §13.11 palace invariant primitive (AC4)
 // ============================================================================
 
@@ -583,6 +609,21 @@ test "struct shape: Archiform" {
     try std.testing.expectEqualStrings("ball.archiform", Archiform.type_string);
     try std.testing.expectEqualStrings("library", ar.form);
     try std.testing.expectEqual(@as(?[]const u8, null), ar.parent_form);
+}
+
+test "struct shape: Object3d" {
+    const o: Object3d = .{
+        .mesh = "glb:tree-01",
+        .position = .{ 1.0, 2.0, 3.0 },
+        .rotation = .{ .qx = 0, .qy = 0, .qz = 0, .qw = 1 },
+        .scale = .{ 1.0, 1.0, 1.0 },
+    };
+    try std.testing.expectEqual(@as(u32, 2), Object3d.format_version);
+    try std.testing.expectEqualStrings("ball.object3d", Object3d.type_string);
+    try std.testing.expectEqualStrings("glb:tree-01", o.mesh);
+    try std.testing.expectEqual(@as(f32, 1.0), o.position[0]);
+    try std.testing.expectEqual(@as(f32, 1.0), o.rotation.qw);
+    try std.testing.expectEqual(@as(f32, 1.0), o.scale[2]);
 }
 
 test "AC2: field-kind palace and room preserved" {

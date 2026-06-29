@@ -455,6 +455,16 @@ const BODY =
     \\  note?: string;
     \\}
     \\
+    \\/** §13.10 ball.object3d — minimal 3D-transform record (sprint-003 D1). */
+    \\export interface Object3d {
+    \\  type: 'ball.object3d';
+    \\  'format-version': 2;
+    \\  mesh: string;
+    \\  position: [number, number, number];
+    \\  rotation: [number, number, number, number];  // quaternion [qx, qy, qz, qw]
+    \\  scale: [number, number, number];
+    \\}
+    \\
     \\/** §13.3 ball.timeline — DAG head-hashes for a palace. */
     \\export interface Timeline {
     \\  type: 'ball.timeline';

@@ -98,6 +98,23 @@ pub const GOLDEN_MYTHOS_POETIC_BLAKE3: []const u8 = "dc25f30643c7ff9b048c1669f7f
 pub const GOLDEN_ARCHIFORM_BLAKE3: []const u8 = "bae68c293a382bd085378bcc2f3f3e3c33e215c703ccaf3131d7389ad590465d";
 
 // ============================================================================
+// D1 — `ball.object3d` golden (sprint-003 stretch)
+// ============================================================================
+// Second maintainer-authored type proving the Zig-canonical pipeline
+// generalizes. Fixed fixture: mesh "glb:tree-01", position [1,2,3], identity
+// rotation [0,0,0,1], unit scale [1,1,1]. The TS-side mirror of these bytes
+// lives in `src/lib/__fixtures__/object3d.golden.json`; the cross-runtime
+// Vitest (`src/lib/object3d-codegen.test.ts`) decodes them via the generated
+// `decodeObject3d` and validates via the generated `Object3dSchema`, forcing
+// the Zig and TS golden copies to agree.
+
+/// Canonical dCBOR `ball.object3d` envelope bytes for the fixed fixture.
+pub const GOLDEN_OBJECT3D_BYTES_HEX: []const u8 = "d8c881d8c9a6646d6573686b676c623a747265652d303164747970656d62616c6c2e6f626a6563743364657363616c6583f93c00f93c00f93c0068706f736974696f6e83f93c00f94000f9420068726f746174696f6e84f90000f90000f90000f93c006e666f726d61742d76657273696f6e02";
+
+/// blake3 of GOLDEN_OBJECT3D_BYTES_HEX bytes.
+pub const GOLDEN_OBJECT3D_BLAKE3: []const u8 = "eec27f4c4e8cb4306e7ab74290fe37b8ad891bb2716f1e02d3bb703a9039feba";
+
+// ============================================================================
 // C1 — v4 `ball.action` content_hash cross-runtime golden (sprint-003)
 // ============================================================================
 // The op log's whole point is portable op identity: the SAME logical v4 action
@@ -618,6 +635,25 @@ test "C1 negative: a one-byte body perturbation flips content_hash" {
     const got = try hexAlloc(allocator, &ch);
     defer allocator.free(got);
     try std.testing.expect(!std.mem.eql(u8, GOLDEN_ACTION_V4_CONTENT_HASH, got));
+}
+
+test "D1 golden: ball.object3d canonical bytes + blake3" {
+    // Fixed fixture (mirrored in src/lib/__fixtures__/object3d.golden.json).
+    const allocator = std.testing.allocator;
+    const envelope_v2 = @import("envelope_v2.zig");
+    const v2 = @import("protocol_v2.zig");
+
+    const o = v2.Object3d{
+        .mesh = "glb:tree-01",
+        .position = .{ 1.0, 2.0, 3.0 },
+        .rotation = .{ .qx = 0, .qy = 0, .qz = 0, .qw = 1 },
+        .scale = .{ 1.0, 1.0, 1.0 },
+    };
+    const bytes = try envelope_v2.encodeObject3d(allocator, o);
+    defer allocator.free(bytes);
+    try expectHexEql(GOLDEN_OBJECT3D_BYTES_HEX, bytes, "object3d bytes");
+    const hex = blake3Hex(bytes);
+    try goldenCheck(GOLDEN_OBJECT3D_BLAKE3, hex, "GOLDEN_OBJECT3D_BLAKE3");
 }
 
 test "AC5: mythos canonical-genesis, canonical-successor, poetic hashes are distinct" {

@@ -1174,6 +1174,34 @@
         }
       }
     },
+    "Object3d": {
+      "$comment": "Per src/protocol_v2.zig Object3d (PROTOCOL.md §13.10). Minimal 3D-transform record; second maintainer-authored type (sprint-003 D1). All fields in the core leaf map; no attributes. Zig is canonical — no x-cbor/x-zig generator hints on properties.",
+      "type": "object",
+      "x-zig-type": "Object3d",
+      "x-wire-type": "ball.object3d",
+      "x-format-version": 2,
+      "required": ["mesh", "position", "rotation", "scale"],
+      "additionalProperties": false,
+      "properties": {
+        "mesh": {
+          "$comment": "Open-enum mesh/asset identifier; e.g. glb:tree-01, primitive:cube.",
+          "type": "string"
+        },
+        "position": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        },
+        "rotation": { "$ref": "#/$defs/Quaternion" },
+        "scale": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        }
+      }
+    },
     "DreamBall": {
       "$comment": "The DreamBall wire envelope (src/protocol.zig DreamBall). Lifted from tools/schema-gen/spike/schemas/envelope-2.0.0.json + extended with the post-spike per-variant attribute surfaces (look, feel, act, memory, knowledge-graph, emotional-register, interaction-set, contains, derived-from, guilds, dreamball-type, identity-pq, field-kind). Discriminated-union over `type` × 7 variants — per spike Gap 1 the schema authors flat with closed enum; the per-variant `oneOf` narrowing is a Phase 3 generator concern.",
       "type": "object",

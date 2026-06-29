@@ -475,6 +475,15 @@ const BODY =
     \\  note: v.optional(v.string())
     \\});
     \\
+    \\export const Object3dSchema = v.object({
+    \\  type: v.literal('ball.object3d'),
+    \\  'format-version': v.literal(2),
+    \\  mesh: v.string(),
+    \\  position: v.tuple([v.number(), v.number(), v.number()]),
+    \\  rotation: v.tuple([v.number(), v.number(), v.number(), v.number()]),
+    \\  scale: v.tuple([v.number(), v.number(), v.number()])
+    \\});
+    \\
     \\export const ActionKindSchema = v.picklist([
     \\  'palace-minted',
     \\  'room-added',
