@@ -183,7 +183,10 @@ else
   # is a genuine bug → FAIL (so bridge regressions are still caught wherever the
   # extension is installed, e.g. dev machines and the full local smoke run).
   # Proper long-term fix (install the extension in CI) tracked in Dreamball-7bc.
-  ext_found=$(find "$HOME/.lbdb" "$REPO_DIR/src/lib/bridge" -name 'libvector*.lbug_extension' 2>/dev/null | head -1)
+  # NB: `|| true` is load-bearing — `find` exits nonzero when $HOME/.lbdb does
+  # not exist (the exact CI case), which under `set -e` would abort the probe
+  # before we reach the skip-vs-fail decision below.
+  ext_found=$( { find "$HOME/.lbdb" "$REPO_DIR/src/lib/bridge" -name 'libvector*.lbug_extension' 2>/dev/null || true; } | head -1)
   if grep -qiE 'AccessDenied|Failed to load library|libvector|lbug_extension' "$probe_err" pmint.out 2>/dev/null \
      || [ -z "$ext_found" ]; then
     PALACE_BRIDGE_OK=0
