@@ -173,16 +173,27 @@ if PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
   echo "  AC1 verified (LadybugDB vector extension present — running FULL palace suite)"
 else
   probe_status=$?
-  # Only the extension-missing signature is allowed to skip. Match against both
-  # the forwarded bridge stderr and dreamball's own spawn-error line.
-  if grep -qiE 'AccessDenied|Failed to load library|libvector|lbug_extension' "$probe_err" pmint.out 2>/dev/null; then
+  # Decide skip-vs-fail. The precise libvector load error is emitted by the Bun
+  # bridge SUBPROCESS and is not always forwarded into dreamball's stderr — in CI
+  # we often see only the generic "palace-mint bridge failed — rolling back". So
+  # string-matching alone is unreliable. The robust discriminator is whether the
+  # LadybugDB vector extension actually exists on this machine: if it does NOT,
+  # the bridge physically cannot run and a failure here is definitionally the
+  # missing extension → SKIP. If it DOES exist but the bridge still failed, that
+  # is a genuine bug → FAIL (so bridge regressions are still caught wherever the
+  # extension is installed, e.g. dev machines and the full local smoke run).
+  # Proper long-term fix (install the extension in CI) tracked in Dreamball-7bc.
+  ext_found=$(find "$HOME/.lbdb" "$REPO_DIR/src/lib/bridge" -name 'libvector*.lbug_extension' 2>/dev/null | head -1)
+  if grep -qiE 'AccessDenied|Failed to load library|libvector|lbug_extension' "$probe_err" pmint.out 2>/dev/null \
+     || [ -z "$ext_found" ]; then
     PALACE_BRIDGE_OK=0
-    echo "==> palace mint: SKIPPED (LadybugDB vector extension not installed — see Dreamball-7bc)"
-    echo "    bridge probe exit=$probe_status; matched extension-missing signature:" >&2
+    echo "==> palace mint: SKIPPED (LadybugDB vector extension not available — see Dreamball-7bc)"
+    echo "    bridge probe exit=$probe_status; vector extension on disk: ${ext_found:-<none found>}" >&2
+    echo "    captured bridge stderr:" >&2
     sed 's/^/      /' "$probe_err" >&2 || true
   else
-    echo "FAIL: palace mint bridge failed with an UNEXPECTED error (not the vector-extension signature) — exit=$probe_status" >&2
-    echo "      (genuine bridge bugs must still fail the gate; see Dreamball-7bc)" >&2
+    echo "FAIL: palace mint bridge failed but the vector extension IS installed ($ext_found) — genuine bug, exit=$probe_status" >&2
+    echo "      (see Dreamball-7bc)" >&2
     cat "$probe_err" >&2 || true
     exit 1
   fi
