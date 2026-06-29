@@ -107,6 +107,21 @@ if "$DREAMBALL" not-a-real-command 2>/dev/null; then
 fi
 
 # --- palace verb group (Story 3.1 / AC1, AC2, AC5) ---
+#
+# Bridge dependency / CI skip behaviour (Dreamball-7bc):
+#   Several palace verbs (mint, add-room, inscribe, move, rename-mythos, and
+#   the bridge-minted half of show/open/verify) spawn a Bun bridge that loads
+#   LadybugDB's `libvector.lbug_extension`. On CI and any machine without that
+#   extension installed, the bridge fails to start. Rather than failing the
+#   whole gate, the first real bridge op below (`palace mint` AC1) doubles as a
+#   probe: if it fails with the extension-missing signature (AccessDenied /
+#   "Failed to load library" / libvector / lbug_extension), PALACE_BRIDGE_OK is
+#   set to 0 and every bridge-dependent palace assertion is SKIPPED with a clear
+#   message; the gate still exits 0. When the extension IS present the probe's
+#   successful run counts as AC1 and the FULL palace suite runs (no loss of dev
+#   coverage). Any OTHER bridge failure (a genuine bug) is NOT masked — it still
+#   fails the gate. The non-bridge palace checks (help text, usage/argument
+#   errors, static-fixture invariants) always run.
 echo "==> palace: AC1 — dreamball --help lists palace with correct summary"
 "$DREAMBALL" --help | grep -E '^\s*palace\b' | grep -q "palace verb group (see dreamball palace --help)"
 
@@ -139,20 +154,48 @@ pmiss_out=$("$DREAMBALL" palace mint --out pmiss 2>&1 || true)
 "$DREAMBALL" palace mint --out pmiss > /dev/null 2>&1 && { echo "FAIL: palace mint without --mythos should exit nonzero"; exit 1; }
 echo "$pmiss_out" | grep -q "mythos required"
 
-echo "==> palace mint: AC1 — mint with --mythos produces verifying bundle"
-PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
-PALACE_DB_PATH="$WORK/palace-smoke.db" \
-PALACE_BUN="$(command -v bun)" \
-"$DREAMBALL" palace mint --out pmint --mythos "smoke test mythos body" > pmint.out
-# AC1: exit 0 (set -e enforces this); output mentions palace fp
-grep -q "palace fp:" pmint.out
-grep -q "field-kind:" pmint.out
-# AC1: bundle file and oracle key sibling exist
-test -s pmint.bundle
-test -s pmint.oracle.key
+echo "==> palace mint: AC1 — mint with --mythos produces verifying bundle (also bridge probe)"
+# Bridge-availability probe (Dreamball-7bc). Run the first real bridge op while
+# capturing exit code + stderr WITHOUT aborting under `set -e`. On success this
+# IS AC1 (no double-run). On the extension-missing signature → skip the bridge
+# suite; on any other failure → fail the gate (don't mask real bugs).
+PALACE_BRIDGE_OK=1
+probe_err="$WORK/palace-probe-err.out"
+if PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
+   PALACE_DB_PATH="$WORK/palace-smoke.db" \
+   PALACE_BUN="$(command -v bun)" \
+   "$DREAMBALL" palace mint --out pmint --mythos "smoke test mythos body" > pmint.out 2>"$probe_err"; then
+  # AC1: exit 0; output mentions palace fp + field-kind; bundle + oracle key exist
+  grep -q "palace fp:" pmint.out
+  grep -q "field-kind:" pmint.out
+  test -s pmint.bundle
+  test -s pmint.oracle.key
+  echo "  AC1 verified (LadybugDB vector extension present — running FULL palace suite)"
+else
+  probe_status=$?
+  # Only the extension-missing signature is allowed to skip. Match against both
+  # the forwarded bridge stderr and dreamball's own spawn-error line.
+  if grep -qiE 'AccessDenied|Failed to load library|libvector|lbug_extension' "$probe_err" pmint.out 2>/dev/null; then
+    PALACE_BRIDGE_OK=0
+    echo "==> palace mint: SKIPPED (LadybugDB vector extension not installed — see Dreamball-7bc)"
+    echo "    bridge probe exit=$probe_status; matched extension-missing signature:" >&2
+    sed 's/^/      /' "$probe_err" >&2 || true
+  else
+    echo "FAIL: palace mint bridge failed with an UNEXPECTED error (not the vector-extension signature) — exit=$probe_status" >&2
+    echo "      (genuine bridge bugs must still fail the gate; see Dreamball-7bc)" >&2
+    cat "$probe_err" >&2 || true
+    exit 1
+  fi
+fi
 
 echo "==> palace mint: AC6 — TODO-CRYPTO marker present in source"
 grep -q "TODO-CRYPTO: oracle key is plaintext" "$REPO_DIR/src/cli/internal/mint.zig"
+
+# === Bridge-dependent palace steps (Dreamball-7bc) ========================
+# Everything from here through the rename-mythos AC1/AC3/AC5 block spawns the
+# palace bridge (or consumes its minted artifacts). Guarded by the probe above;
+# skipped wholesale when the LadybugDB vector extension is absent.
+if [[ "$PALACE_BRIDGE_OK" == "1" ]]; then
 
 echo "==> palace mint: AC3 — oracle key has mode 0600"
 KEY_MODE=$(stat -f "%Lp" pmint.oracle.key 2>/dev/null || stat -c "%a" pmint.oracle.key 2>/dev/null)
@@ -309,6 +352,10 @@ test -s pmint_genesis_only.bundle
 test -s pmint_genesis_only.oracle.key
 grep -q "palace fp:" pmint_genesis_only.out
 
+else
+  echo "==> palace mint/add-room/inscribe/rename-mythos: SKIPPED (LadybugDB vector extension not installed — Dreamball-7bc)"
+fi  # === end bridge-dependent group: mint/add-room/inscribe/rename-mythos ===
+
 echo "==> palace rename-mythos: AC4 — broken-mythos fixture fails verify"
 FIXTURE_DIR="$REPO_DIR/tests/fixtures/palace-broken-mythos"
 # Walk the bundle: verify should detect the unresolvable predecessor and exit nonzero.
@@ -322,6 +369,9 @@ test -f "$FIXTURE_DIR/palace.cas/$BROKEN_MYTHOS_FP"
 echo "  broken-mythos fixture present: $BROKEN_MYTHOS_FP"
 
 # --- palace move (Story 3.4 / AC2, AC5, AC6) ---
+# Bridge-dependent (Dreamball-7bc): consumes inscription/room fps minted via the
+# bridge above. Skipped together when the vector extension is absent.
+if [[ "$PALACE_BRIDGE_OK" == "1" ]]; then
 echo "==> palace move: setup — capture inscription fp and destination room fp"
 INSCRIPTION_FP=$(grep "inscription fp:" inscribe.out | awk '{print $NF}')
 ROOM2_FP=$(grep "room fp:" add-room-mythos.out | awk '{print $NF}')
@@ -359,6 +409,10 @@ grep -q "avatar:" move.out
 grep -q "to room:" move.out
 echo "  move atomicity verified: output shape matches pre-projection behavior"
 
+else
+  echo "==> palace move: SKIPPED (LadybugDB vector extension not installed — Dreamball-7bc)"
+fi  # === end bridge-dependent group: palace move ===
+
 # --- palace open (Story 3.5 / AC2, AC3, AC4) ---
 # NOTE: yolo tier — reachability poll (AC1) requires a running Vite dev server
 # which is impractical in CI without a display / full npm bootstrap. The smoke
@@ -375,6 +429,10 @@ open_missing_out=$("$DREAMBALL" palace open ./does-not-exist 2>&1 || true)
 } || true
 echo "$open_missing_out" | grep -qi "unknown palace"
 
+# Bridge-dependent (Dreamball-7bc): open AC4/AC2 and show AC4/AC2/AC1 all need
+# the bridge-minted pmint bundle. Skipped together when the extension is absent.
+# (open AC3 unknown-palace above is non-bridge and always runs.)
+if [[ "$PALACE_BRIDGE_OK" == "1" ]]; then
 echo "==> palace open: AC4 — port-in-use exits nonzero"
 # Find a port that is in use by binding it ourselves via a background listener.
 # We use a Python one-liner because bash/nc availability varies across CI images.
@@ -465,12 +523,19 @@ echo "$show_human" | grep -q "mythos:"
 echo "$show_human" | grep -q "oracle fp:"
 echo "  human-readable output verified"
 
+else
+  echo "==> palace open/show (bridge-minted bundle): SKIPPED (LadybugDB vector extension not installed — Dreamball-7bc)"
+fi  # === end bridge-dependent group: palace open + show ===
+
 echo "==> palace show: AC3 — non-palace file exits nonzero"
 "$DREAMBALL" show --as-palace seed.ball > /dev/null 2>&1 && {
   echo "FAIL: show --as-palace on non-palace should exit nonzero"; exit 1;
 } || true
 
 # --- palace verify (Story 3.6 / AC5–AC10, AC11) ---
+# Happy-path verify mints pverify via the bridge → bridge-dependent (Dreamball-7bc).
+# The invariant fixtures below (AC5–AC9) use static fixture files and always run.
+if [[ "$PALACE_BRIDGE_OK" == "1" ]]; then
 echo "==> palace verify: happy — freshly-minted palace verifies ok"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
@@ -483,6 +548,10 @@ PALACE_BUN="$(command -v bun)" \
 verify_ok=$("$DREAMBALL" verify pverify.bundle 2>&1)
 echo "$verify_ok" | grep -q "palace ok"
 echo "  happy-path verify passed"
+
+else
+  echo "==> palace verify: happy-path SKIPPED (LadybugDB vector extension not installed — Dreamball-7bc)"
+fi  # === end bridge-dependent group: palace verify happy path ===
 
 echo "==> palace verify: AC5 — invariant (a) no rooms"
 FIXTURE_NO_ROOMS="$REPO_DIR/tests/fixtures/palace-no-rooms"
@@ -530,6 +599,9 @@ echo "$verify_wrong" | grep -qi "head-hash\|invariant e\|not a leaf"
 echo "  invariant (e) head-hashes wrong — correct failure"
 
 # --- oracle bootstrap (Story 4.1 / AC2, AC4, AC5) ---
+# AC2 re-checks the bridge-minted pmint.oracle.key → bridge-dependent (Dreamball-7bc).
+# AC3/AC4/AC5 below are static source/file lints and always run.
+if [[ "$PALACE_BRIDGE_OK" == "1" ]]; then
 echo "==> S4.1 AC2 — oracle key 0600 perms on freshly-minted palace"
 # pmint.oracle.key was already created above; re-verify mode here under S4.1 label
 S41_KEY_MODE=$(stat -f "%Lp" pmint.oracle.key 2>/dev/null || stat -c "%a" pmint.oracle.key 2>/dev/null)
@@ -537,6 +609,10 @@ if [[ "$S41_KEY_MODE" != "600" ]]; then
   echo "FAIL: S4.1 AC2: oracle key mode is $S41_KEY_MODE, expected 600"; exit 1
 fi
 echo "  oracle key mode: $S41_KEY_MODE — ok"
+
+else
+  echo "==> S4.1 AC2 oracle-key-perms: SKIPPED (LadybugDB vector extension not installed — Dreamball-7bc)"
+fi  # === end bridge-dependent group: S4.1 AC2 ===
 
 echo "==> S4.1 AC3 — TODO-CRYPTO marker lint (every .oracle.key site in src/)"
 # Check that every .oracle.key reference in src/ (excluding tests and .d.ts) has
