@@ -629,7 +629,14 @@ describe('AC10 — replay-from-CAS (NFR18): histogram + cbor_bytes_blake3 byte-i
 
     await store2.close();
     fs.rmSync(dir2, { recursive: true, force: true });
-  });
+    // Explicit timeout (Dreamball-kem). This test does far more real LadybugDB
+    // work than any other in this file — two ServerStores, eight mirrored
+    // actions, a .lbug delete and a full replay — and runs ~1s on an idle
+    // machine. The 5s default left too thin a margin: it timed out at 5008ms on
+    // a CI runner and again locally under CPU contention, while passing in
+    // isolation both times. Sized for contention, not for the happy path; a
+    // genuine hang still fails the job well inside the step budget.
+  }, 30_000);
 });
 
 // ── AC11: TC13 no CBOR in columns ─────────────────────────────────────────────
