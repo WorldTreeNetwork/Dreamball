@@ -69,6 +69,14 @@ export default defineConfig({
 				],
 				test: {
 					name: 'storybook',
+					// These stories render Threlte/WebGL scenes (AllLensesGrid mounts every
+					// lens at once), which is far slower on a 2-core CI runner than locally.
+					// The 15s default flaked on two different stories across separate runs —
+					// WearerIdle on 30928914073, AllLensesGrid on 30932164374 — each passing
+					// on the other runs. Sized for a contended runner, not the happy path;
+					// a genuinely hung story still fails well inside the step budget.
+					testTimeout: 60_000,
+					hookTimeout: 60_000,
 					browser: {
 						enabled: true,
 						headless: true,
