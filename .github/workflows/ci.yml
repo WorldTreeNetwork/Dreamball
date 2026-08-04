@@ -94,8 +94,21 @@ jobs:
         run: zig build wasm
       - name: bun run check
         run: bun run check
-      - name: bun run test:unit
+      # Node-only leg: fast, no browser. Kept separate from the browser leg so a
+      # missing/broken chromium is distinguishable from a genuine logic failure
+      # (a fused `test:unit` silently dropped 36 files when chromium was absent).
+      - name: bun run test:unit (node leg)
         run: bun run test:unit -- --run
+      # Use the repo-pinned binary, NOT `bunx playwright` — bunx resolves a newer
+      # playwright from the registry and installs a chromium build number that the
+      # pinned playwright-core never looks for (observed: bunx fetched 1228 while
+      # playwright-core@1.59.1 wants 1217, so the browser stayed "missing").
+      - name: Install chromium for browser-mode vitest
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+      # Browser leg: `client` (svelte component + wasm cross-runtime tests) and
+      # `storybook`. These need a real DOM — see vite.config.ts projects.
+      - name: bun run test:browser (browser leg)
+        run: bun run test:browser -- --run
       - name: bun run build
         run: bun run build
       - name: bun run build-storybook
