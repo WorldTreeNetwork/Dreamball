@@ -38,7 +38,13 @@
 		void sourceTrack;
 	});
 
-	const bgColor = $derived(ball.look?.background ?? 'color:#0b1020');
+	// `ball?.` (not just `ball.look?.`) is deliberate: these deriveds can be
+	// re-evaluated once more during teardown, after the prop has been torn down
+	// but before the reaction is disposed. Storybook's browser runner surfaced
+	// that as an unhandled "Cannot read properties of undefined (reading 'look')"
+	// which failed the whole vitest run even though every assertion passed.
+	// During normal rendering `ball` is required and always present.
+	const bgColor = $derived(ball?.look?.background ?? 'color:#0b1020');
 	const colorHex = $derived(
 		bgColor.startsWith('color:') ? bgColor.slice(6) : '#0b1020'
 	);
@@ -53,7 +59,7 @@
 		const url = a.url?.[0]?.toLowerCase() ?? '';
 		return !mt && (url.endsWith('.glb') || url.endsWith('.gltf'));
 	}
-	const meshAsset = $derived(ball.look?.asset?.find(isMeshAsset));
+	const meshAsset = $derived(ball?.look?.asset?.find(isMeshAsset));
 	const modelUrl = $derived(meshAsset?.url?.[0]);
 
 	// Track mesh load state for the fallback decision + e2e signals.
