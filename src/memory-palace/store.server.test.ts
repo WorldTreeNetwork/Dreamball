@@ -16,7 +16,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -46,29 +45,47 @@ async function closeTempStore(store: ServerStore, dir: string): Promise<void> {
 // ── AC1: grep-check ───────────────────────────────────────────────────────────
 
 describe('AC1 — @ladybugdb/core not imported outside store*.ts', () => {
-  it('grep returns zero matches when store*.ts excluded', () => {
-    const repoRoot = path.resolve(import.meta.dirname, '../../..');
-    // Run grep; exit code 1 means no matches (which is what we want)
-    let output = '';
-    let exitCode = 0;
-    try {
-      output = execSync(
-        `grep -r --include="*.ts" --include="*.js" "@ladybugdb/core" "${repoRoot}/src" "${repoRoot}/dreamball-server" \
-         --exclude="store.server.ts" --exclude="store.ts" --exclude="store-types.ts" \
-         --exclude="parity.test.ts"`,
-        { encoding: 'utf-8' }
-      );
-    } catch (e: unknown) {
-      exitCode = (e as { status?: number }).status ?? 1;
+  it('no production module outside store*.ts imports @ladybugdb/core', () => {
+    // This guard was vacuous for its whole life, in two compounding ways:
+    //   1. repoRoot was '../../..' — one level ABOVE the repo — so it scanned
+    //      directories that do not exist and never read a single file. It looked
+    //      green only because macOS grep returns 1 for missing paths, which the
+    //      old assertion read as "no matches = pass". GNU grep returns 2 for the
+    //      same input, which is how CI finally surfaced it.
+    //   2. It substring-matched the package name, so comments, doc lines and
+    //      test titles that merely mention @ladybugdb/core counted as imports —
+    //      it could never have passed once the paths were correct.
+    // It is implemented in Node rather than shelling out to grep so it cannot
+    // drift on BSD-vs-GNU exit codes or shell quoting again.
+    const repoRoot = path.resolve(import.meta.dirname, '../..');
+    const roots = [path.join(repoRoot, 'src'), path.join(repoRoot, 'dreamball-server')];
+
+    // store*.ts (incl. their .d.ts) are the sanctioned home of the napi binding
+    // per D-007 / TC12. *.test.ts is exempt because server-side tests legitimately
+    // drive the native store directly — the same rationale that already exempted
+    // parity.test.ts by name. The invariant protects production code paths.
+    const isExempt = (f: string) =>
+      /(^|\/)store(\.server|-types)?\.(d\.)?ts$/.test(f) || /\.(test|spec)\.[jt]s$/.test(f);
+
+    // Requires the quoted module specifier, so prose can never match.
+    const IMPORT_RE =
+      /(?:^|[^A-Za-z])(?:import|require)\b[^;\n]*['"]@ladybugdb\/core['"]/;
+
+    const offenders: string[] = [];
+    for (const root of roots) {
+      expect(fs.existsSync(root), `scan root missing: ${root}`).toBe(true);
+      for (const entry of fs.readdirSync(root, { recursive: true, encoding: 'utf-8' })) {
+        const rel = entry.replace(/\\/g, '/');
+        if (!/\.[jt]s$/.test(rel) || isExempt(rel)) continue;
+        const abs = path.join(root, entry);
+        if (!fs.statSync(abs).isFile()) continue;
+        for (const [i, line] of fs.readFileSync(abs, 'utf-8').split('\n').entries()) {
+          if (IMPORT_RE.test(line)) offenders.push(`${path.relative(repoRoot, abs)}:${i + 1}`);
+        }
+      }
     }
-    // grep exits 1 when no lines match — that's the success case here
-    if (exitCode === 0) {
-      // Some matches found outside store*.ts and parity.test.ts — FAIL
-      expect(output.trim()).toBe('');
-    } else {
-      // exit 1 = no matches = pass
-      expect(exitCode).toBe(1);
-    }
+
+    expect(offenders, 'production code must reach LadybugDB only via store*.ts').toEqual([]);
   });
 });
 

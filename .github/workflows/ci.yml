@@ -92,6 +92,13 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Rebuild WASM (deterministic)
         run: zig build wasm
+      # The node leg shells out to zig-out/bin binaries: verify.test.ts mints a
+      # real ball via the `dreamball` CLI (the "browser as independent verifier"
+      # proof) and tests/wasm/host/* run `wasm-host-failure-test`. `zig build
+      # wasm` alone does not produce them, and job artifacts are not shared from
+      # the zig job, so build them here.
+      - name: Build Zig CLI + host test binaries
+        run: zig build
       - name: bun run check
         run: bun run check
       # Node-only leg: fast, no browser. Kept separate from the browser leg so a
