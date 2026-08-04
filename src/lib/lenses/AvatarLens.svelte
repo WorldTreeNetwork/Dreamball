@@ -131,7 +131,8 @@
 			<T.MeshStandardMaterial color={colorHex} metalness={0.0} roughness={0.8} />
 		</T.Mesh>
 	</Canvas>
-	<div class="label">{ball.name ?? '(unnamed)'}</div>
+	<!-- ball?. for the same teardown reason as the deriveds above. -->
+	<div class="label">{ball?.name ?? '(unnamed)'}</div>
 	{#if modelError}
 		<div class="err" title={modelError}>mesh failed to load — showing placeholder</div>
 	{/if}
