@@ -264,6 +264,28 @@ pub fn build(b: *std.Build) void {
     const envelope_fixture_step = b.step("export-envelope-fixtures", "Write fixtures/envelope_golden/*.cbor for Vitest round-trip tests");
     envelope_fixture_step.dependOn(&envelope_fixture_run.step);
 
+    // export-golden-fixtures — write fixtures/goldens/manifest.json: the 20
+    // named golden vectors from src/golden.zig as toolchain-neutral data
+    // (logical value as JSON + full canonical bytes_hex + blake3), so a
+    // future Rust (bc-envelope) implementation can compare without running
+    // Zig at all (Dreamball-y4t.8).
+    const golden_fixture_mod = b.createModule(.{
+        .root_source_file = b.path("tools/export-golden-fixtures/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    golden_fixture_mod.addImport("dreamball", mod);
+    // The palace_field fixture is built directly with zbor/dcbor primitives
+    // (same as the src/golden.zig test), same as export-palace-fixtures below.
+    golden_fixture_mod.addImport("zbor", zbor_mod);
+    const golden_fixture_exe = b.addExecutable(.{
+        .name = "export-golden-fixtures",
+        .root_module = golden_fixture_mod,
+    });
+    const golden_fixture_run = b.addRunArtifact(golden_fixture_exe);
+    const golden_fixture_step = b.step("export-golden-fixtures", "Write fixtures/goldens/manifest.json (toolchain-neutral golden vectors for the Rust port)");
+    golden_fixture_step.dependOn(&golden_fixture_run.step);
+
     // export-palace-fixtures — regenerate the 6 negative-test palace fixtures
     // under tests/fixtures/ used by scripts/cli-smoke.sh (palace verify AC5–AC10
     // + rename-mythos AC4). Mints a real valid ball.* palace via the dreamball

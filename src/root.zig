@@ -19,6 +19,11 @@ pub const key_file = @import("key_file.zig");
 pub const identity_envelope = @import("identity_envelope.zig");
 pub const mythos_chain = @import("memory-palace/mythos-chain.zig");
 pub const archiform = @import("archiform.zig");
+/// Golden-bytes constants (Blake3 pins + a few full-bytes hex pins). Exported
+/// so `tools/export-golden-fixtures` can assert its freshly-encoded bytes
+/// agree with the pinned constants instead of re-deriving them by hand — see
+/// `fixtures/goldens/README.md` for why that matters during the Rust port.
+pub const golden = @import("golden.zig");
 
 pub const Stage = protocol.Stage;
 pub const DreamBall = protocol.DreamBall;
