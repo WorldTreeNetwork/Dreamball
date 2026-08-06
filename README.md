@@ -17,10 +17,11 @@
 A DreamBall is a **verifiable typed container** — a signed, self-describing
 CBOR envelope that any runtime can read, verify, and render without a
 proprietary parser. The point of DreamBall is that **its consumers author
-the types**, not merely instantiate ours. Define a type once — a Zig schema,
-the single canonical source ([Zig-canonical
-ADR](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)) —
-and get the whole pipeline for free:
+the types**, not merely instantiate ours. Define a type once — a Rust type
+with `serde` + `schemars` derives, the single canonical source
+([Rust-canonical ADR](docs/decisions/2026-08-06-rust-canonical.md);
+transitionally still the Zig types while epic `Dreamball-y4t` ports the
+substrate) — and get the whole pipeline for free:
 
 - a tamper-evident Gordian envelope derived from the schema,
 - typed encode / decode / validation over canonical dCBOR,

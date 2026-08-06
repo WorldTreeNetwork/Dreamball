@@ -1,5 +1,18 @@
 # 2026-06-25 — Zig is canonical; generate every representation from it (supersedes D-018)
 
+> **⛔ SUPERSEDED 2026-08-06** by
+> [rust-canonical](./2026-08-06-rust-canonical.md).
+> The comptime `@typeInfo` generator this ADR turned on (Dreamball-m97.2)
+> was never built, so Zig-canonical never shipped as designed — the
+> generators still emit hardcoded strings behind a byte-equivalence gate.
+> With the envelope substrate moving to bc-envelope / dcbor (epic
+> Dreamball-y4t), the canonical types move to Rust, where `serde` +
+> `schemars` provide the projector off the shelf. The
+> **most-expressive-medium principle below is not repudiated** — it is
+> applied again, to a language that has a maintained generator. Zig
+> remains the build system (orchestrator + `cargo-zigbuild` linker). Read
+> the superseding ADR before acting on anything below.
+
 Sprint: sprint-002 (course-correction) · Significance: HIGH ·
 **Supersedes:** D-018
 ([json-schema-canonical](./2026-04-25-json-schema-canonical.md)) and the

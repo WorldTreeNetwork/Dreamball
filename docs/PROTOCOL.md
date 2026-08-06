@@ -4,7 +4,7 @@
 **File extension:** `.ball`
 **Media type:** `application/ball+cbor` (binary), `application/ball+json` (export)
 **Sister project:** [recrypt](../../recrypt/) — shares cryptographic methodology (see `recrypt/docs/wire-protocol.md`)
-**Authoritative shape sources:** The Zig types in `src/protocol*.zig` are the canonical definition of every wire field — shapes, defaults, encoding rules, and ordering. JSON Schema (`schemas/*.json`), TypeScript types, Valibot schemas, and `cbor.ts` are **generated outputs** that flow downward from the Zig types; they are never hand-authored. See the [Zig-canonical ADR](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md) for rationale (supersedes D-018). See §14 (Schema vendoring and pin format) and §15 (Wasm module signing and trust model) for the vendoring and trust contract.
+**Authoritative shape sources:** The canonical definition of every wire field — shapes, defaults, encoding rules, and ordering — is the **Rust types** carrying `serde` + `schemars` derives, per the [Rust-canonical ADR](decisions/2026-08-06-rust-canonical.md) (supersedes the 2026-06-25 Zig-canonical ADR, which superseded D-018). dCBOR semantics and envelope framing come from `dcbor` 0.25.2 / `bc-envelope` 0.43.0; we consume those crates rather than reimplementing them. JSON Schema (`schemas/*.json`), TypeScript types, Valibot schemas, and `cbor.ts` are **generated outputs** that flow downward; they are never hand-authored. *Transitional:* until epic `Dreamball-y4t` completes the port, the Zig types in `src/protocol*.zig` are still what the build compiles and are canonical in practice — edit them, but do not invest in the Zig codegen path. See §14 (Schema vendoring and pin format) and §15 (Wasm module signing and trust model) for the vendoring and trust contract.
 
 ---
 
@@ -517,14 +517,17 @@ Current version floor: `1` for every domain type.
 
 *Implements D-029 (aspects.sh vendor-first contract + pin file format).*
 
-> **Status change (2026-06-25 — supersedes D-018):** Per the
-> [Zig-canonical ADR](decisions/2026-06-25-zig-canonical-supersedes-json-schema.md),
-> `schemas/*.json` are **generated artifacts** — outputs of `zig build schemagen` —
-> not canonical vendored sources. The §14.4 update lifecycle and the
-> `schemas:refresh` tool below describe the pre-ADR (D-018) workflow and are
-> retained for historical context only. The correct update path is: edit
-> `src/protocol*.zig` → run `zig build schemagen` → commit the regenerated
-> outputs together with the updated pin files.
+> **Status change (2026-08-06 — supersedes the 2026-06-25 ADR, which
+> superseded D-018):** Per the
+> [Rust-canonical ADR](decisions/2026-08-06-rust-canonical.md),
+> `schemas/*.json` are **generated artifacts** — emitted from the canonical
+> Rust types via `schemars` — not canonical vendored sources. The §14.4
+> update lifecycle and the `schemas:refresh` tool below describe the
+> pre-ADR (D-018) workflow and are retained for historical context only.
+> The correct update path is: edit the canonical types → regenerate →
+> commit the regenerated outputs together with the updated pin files.
+> *Transitionally* (while epic `Dreamball-y4t` runs) that is still
+> `src/protocol*.zig` → `zig build schemagen`.
 
 ### 14.1 Location convention
 
@@ -572,7 +575,7 @@ the only place pin verification runs — there is no network round-trip.
 |---|---|
 | `bun run schemas:pin <path>` | Compute and write the `.fp` pin for a single schema file |
 | `bun run schemas:verify` | Verify all vendored schemas against their pin files; called automatically by `bun run codegen` |
-| `bun run schemas:refresh` | (Pre-ADR / historical) Fetch the latest schema version from aspects.sh, verify the digest matches the declared pin, and swap in if matched. Superseded by the Zig-canonical generation path (see §14 supersession notice) |
+| `bun run schemas:refresh` | (Pre-ADR / historical) Fetch the latest schema version from aspects.sh, verify the digest matches the declared pin, and swap in if matched. Superseded by the canonical-types generation path (see §14 supersession notice) |
 
 `schemas:refresh` is **not** a CI gate. It is an optional maintenance
 path for updating vendored schemas. The CI gate is `schemas:verify`
@@ -582,11 +585,13 @@ only, which runs entirely against local files.
 
 > This lifecycle treats `schemas/*.json` as authoritative inputs — the
 > retired D-018 contract. It is no longer operative. The current update
-> path is the Zig-canonical one in the §14 supersession notice above:
-> edit `src/protocol*.zig` → `zig build schemagen` → commit regenerated
-> outputs + pins. The steps below are retained because the byte-equivalence
-> gate still compares against the vendored fixtures until `Dreamball-m97.2`
-> (the comptime generator) produces them.
+> path is the one in the §14 supersession notice above: edit the
+> canonical types → regenerate → commit regenerated outputs + pins. The
+> steps below are retained because the byte-equivalence gate still
+> compares against the vendored fixtures until the Rust `schemars` path
+> produces them. (`Dreamball-m97.2`, the Zig comptime generator, is
+> **dissolved** by the [Rust-canonical ADR](decisions/2026-08-06-rust-canonical.md),
+> not deferred.)
 
 1. Download the new schema version from aspects.sh (or author it locally).
 2. Run `bun run schemas:pin schemas/<archiform>-<version>.json` to

@@ -27,52 +27,72 @@
 
 ## The cross-runtime invariant
 
-**Zig is the single canonical source for the whole wire format**, which
-factors into two parts, both Zig-canonical:
+**Rust is the single canonical source for the whole wire format**, which
+factors into two parts, both Rust-canonical:
 
-1. **CBOR encoding algorithm — `src/*.zig`.** Canonical map ordering,
-   integer width rules, bytes-vs-text discipline, golden test vectors.
-   Every runtime must reproduce these bytes for the same logical value.
-2. **Field shapes — the Zig types** (`src/protocol.zig` +
-   `src/protocol_v2.zig`). These are the most expressive representation
-   (defaults, methods, exact types), so everything else is *generated
-   downward* from them: TS types, Valibot schemas, the CBOR codec
-   (`cbor.ts`), **JSON Schema** (`schemas/*.json` — now a generated
-   *artifact*, published to aspects.sh if/when federation exists), and
-   the Cypher DDL.
+1. **dCBOR encoding algorithm — the Blockchain Commons crates.** `dcbor`
+   0.25.2 owns canonical map ordering, integer width rules, and the
+   bytes-vs-text discipline; `bc-envelope` 0.43.0 owns envelope framing.
+   We *consume* them; we do not reimplement them. Every runtime must
+   reproduce the same bytes for the same logical value, and the
+   language-neutral golden vectors are what prove it.
+2. **Field shapes — the Rust types**, with `serde` + `schemars` derives.
+   These are the most expressive representation (defaults, methods,
+   exact types), so everything else is *generated downward* from them:
+   TS types, Valibot schemas, the CBOR codec (`cbor.ts`), **JSON
+   Schema** (`schemas/*.json` — a generated *artifact*, published to
+   aspects.sh if/when federation exists), and the Cypher DDL.
 
-This reverts D-018 (JSON-Schema-canonical). See
-[`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md)
-for the why (the most-expressive-medium argument; aspects.sh unbuilt;
-the inversion never shipped).
+This supersedes the 2026-06-25 Zig-canonical ADR, which itself reverted
+D-018 (JSON-Schema-canonical). Yes — that is three changes of canonical
+medium. See
+[`docs/decisions/2026-08-06-rust-canonical.md`](docs/decisions/2026-08-06-rust-canonical.md)
+for the honest version: the first two moved the *label* and never
+shipped a generator, while `serde` + `schemars` already exist and the
+substrate itself is moving to Rust (epic `Dreamball-y4t`). The
+most-expressive-medium principle is unchanged; it now points at Rust.
+
+**Zig remains the build system**, scoped to two jobs it is genuinely
+good at: the task orchestrator (`zig build test|smoke|wasm` keep
+working, shelling out to `cargo` and `bun` — one stable command surface
+over three toolchains) and cross-compilation/linking via
+`cargo-zigbuild`. Zig no longer compiles protocol artifacts. This keeps
+[`2026-05-24-hermetic-musl-default-linux.md`](docs/decisions/2026-05-24-hermetic-musl-default-linux.md)
+true verbatim — Linux binaries are still static musl with no system
+libc/crt dependency.
 
 Concretely:
 
 - No TypeScript code encodes or decodes CBOR *by hand* — it goes
   through the WASM module or the **generated** `cbor.ts` (generated, so
-  it can't drift from the canonical Zig).
-- **To add or change a wire type, edit the Zig structs** in
-  `src/protocol*.zig`, then propagate to the generated outputs. JSON
-  Schema is an output, never hand-authored; do **not** add `x-cbor` /
-  `x-zig` extension keys (that was the retired JSON-Schema-canonical
-  authoring path).
+  it can't drift from the canonical Rust).
+- **To add or change a wire type, edit the Rust types**, then
+  regenerate. JSON Schema is an output, never hand-authored; do **not**
+  add `x-cbor` / `x-zig` extension keys (that was the retired
+  JSON-Schema-canonical authoring path).
 - The browser and server load the same `dreamball.wasm` binary.
   Host-supplied randomness via one `env.getRandomBytes` import is the
   entire runtime seam; see [`docs/VISION.md §8`](docs/VISION.md) and
-  ADR-1 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+  ADR-1 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). ADR-1 was
+  never about Zig — it was about one compiled artifact with one host
+  seam, and that survives the language change.
 
 If you find yourself writing a second hand-maintained implementation of
-a wire type — stop. The Zig types are canonical; the rest is generated
-from them.
+a wire type — stop. The Rust types are canonical; the rest is generated
+from them. (The Zig crypto substrate was a standing violation of exactly
+this rule, one layer down. That is what epic `Dreamball-y4t` is paying
+off.)
 
-**Transitional status (2026-06-25):** the real Zig→targets generator
-(comptime `@typeInfo` reflection; beads `Dreamball-m97.2`) is not built
-yet. Today the generators still emit hardcoded string bodies and the
-vendored `schemas/*.json` are kept consistent by a pin + byte-equivalence
-gate. Until `m97.2` lands: edit the Zig types as canonical, then update
-the generated TS/Valibot/`cbor.ts` **and** the JSON-Schema fixtures to
-match by hand. The *direction* is Zig-canonical with generation flowing
-outward — read the ADR before adding fields.
+**Transitional status (2026-08-06):** the port is in flight. Until epic
+`Dreamball-y4t` lands, `src/protocol*.zig` and the hardcoded-string
+generators in `tools/schema-gen/` are still what the build actually
+runs, and the vendored `schemas/*.json` are still kept consistent by a
+pin + byte-equivalence gate. So *while porting*: change the Zig types
+and update the generated TS/Valibot/`cbor.ts` + JSON-Schema fixtures by
+hand, as before — but don't invest in that path, and don't build new
+Zig-side codegen. The Zig comptime `@typeInfo` generator
+(`Dreamball-m97.2`) is **dissolved, not deferred** — do not build it.
+Read the ADR before adding fields.
 
 ## Operating principle — document the why, not only the what
 
