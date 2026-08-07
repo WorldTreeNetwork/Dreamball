@@ -30,6 +30,7 @@ const Fingerprint = dreamball.fingerprint.Fingerprint;
 const protocol = dreamball.protocol;
 const v2 = dreamball.protocol_v2;
 const envelope_v2 = dreamball.envelope_v2;
+const palace_v3 = @import("palace_action_v3.zig");
 const signer = dreamball.signer;
 const key_file = dreamball.key_file;
 
@@ -155,7 +156,7 @@ fn runMove(
     const actor_fp = Fingerprint.fromEd25519(custodian_keys.ed25519_public).bytes;
 
     const action = v2.Action{
-        .kind = v2.ActionKind.move.toWireString(),
+        .kind = palace_v3.Kind.move,
         .parent_hashes = parent_hashes,
         .actor = actor_fp,
         .hlc = .{ 0, 0 },
@@ -163,7 +164,7 @@ fn runMove(
         .timestamp = now_ms,
     };
 
-    const action_unsigned = try envelope_v2.encodeAction(gpa, action);
+    const action_unsigned = try palace_v3.encodeActionV3(gpa, action);
     defer gpa.free(action_unsigned);
     const action_ed_sig = try signer.signEd25519(action_unsigned, custodian_keys.classical());
     const action_mldsa_sig = try signer.signMlDsa(gpa, action_unsigned, custodian_keys);

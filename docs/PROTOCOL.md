@@ -757,24 +757,16 @@ dialog box, MCP elicitation). This makes actions fully agent-callable.
 - Per D-025 (forward-declare consumer seam contracts), no extension
   to this closed set occurs without an architecture decision.
 
-### 16.7 `ball.action` v3 → v4 wire change
+### 16.7 `ball.action` wire format (v4 only; v3 removed from the core)
 
 *Implements D-037. The wire shape frozen here is the canonical basis for C1's
 golden vectors — downstream encoding work locks against these bytes.*
 
-The open type system (sprint-003) extends `ball.action` in a backward-incompatible
-way. `format-version` is the discriminant — decoders MUST branch on it before
-interpreting the core map.
-
-**v3 core map** (palace profile — 5 keys, dCBOR length-first + lex order):
-
-| dCBOR key | Type | Notes |
-|---|---|---|
-| `"type"` | text | `"ball.action"` |
-| `"actor"` | bytes (32) | Ed25519 public-key fingerprint |
-| `"action-kind"` | text | one of 9 closed palace values |
-| `"parent-hashes"` | array of bytes(32) | DAG parent hash list |
-| `"format-version"` | uint | `3` |
+**format_version 4 is the only `ball.action` format the core substrate
+supports.** `format-version` is the discriminant — decoders MUST branch on it
+before interpreting the core map, and MUST reject any value other than `4`
+with a clear decode error (`DecodeError.UnsupportedFormatVersion` in the Zig
+implementation) rather than attempting to interpret the rest of the core map.
 
 **v4 core map** (open type — 6 or 7 keys, dCBOR length-first + lex order):
 
@@ -794,15 +786,6 @@ equal length. The 7-key ordering (with `body` present) is: `"hlc"` (3) →
 `"parent-hashes"` (13) → `"format-version"` (14). When `body` is absent the
 map has 6 keys; `"body"` is simply omitted.
 
-**Summary of changes from v3 to v4:**
-
-| Change | Detail |
-|---|---|
-| `format-version` | `3` → `4` |
-| `action-kind` → `kind` | Key renamed; value changes from a closed 9-value enum to an open UTF-8 string |
-| `hlc` added | Mandatory 2-int CBOR array (`[l, c]`); see §17 |
-| `body` added | Optional CBOR byte string; omitted from the core map when there is no payload |
-
 **`body` encoding.** When present, `body` is a CBOR byte string (major type 2)
 whose content bytes are the consumer's canonical CBOR payload. The encoder
 calls `assertCanonical` on the body bytes before embedding. The decoder returns
@@ -814,10 +797,51 @@ protocol — internal structure is the consumer's responsibility (D-043).
 any of them changes the hash and invalidates the signature. No domain-separation
 prefix is needed (D-043).
 
-**v3 goldens are a regression gate.** The v3 palace golden byte vectors in
-`src/golden.zig` (§13.11 in `products/memory-palace/protocol.md`) MUST remain
-byte-identical through any code change. A change that alters a v3 golden is a
-bug. Format_version 4 golden vectors are introduced separately in C1.
+**History — v3 removed, 2026-08-07 (Dreamball-y4t.15).** Through sprint-003
+the core carried BOTH formats: `format-version` 3, a CLOSED 5-key palace
+profile (`"type"`, `"actor"`, `"action-kind"` — one of 9 fixed values, no
+payload, no logical clock — `"parent-hashes"`, `"format-version"`); and
+`format-version` 4, the OPEN type system above. D-037 introduced v4 as v3's
+successor but the core kept decoding both, and this section used to say "v3
+goldens are a regression gate... a change that alters a v3 golden is a bug."
+
+That commitment is retired. v3 was always the Memory Palace's closed profile,
+never a general substrate concern, and the Memory Palace is being extracted to
+its own repository (epic Dreamball-etk) — so v3 support belongs there, in
+whatever form the palace needs, not in the shared protocol/envelope core. The
+core substrate (`src/protocol_v2.zig`, `src/envelope_v2.zig`) dropped
+`ActionKind` and the v3 encoder/decoder entirely; a v3 envelope now fails
+decode cleanly instead of being silently accepted.
+
+**This is a breaking wire-format change** — a `format-version: 3` envelope
+that used to decode now does not — and it is acceptable specifically because,
+per the project owner (2026-08-05/2026-08-07): there are no consumers of this
+application, and no persisted data, so nothing that already exists needs to
+keep decoding. The three v3 `ball.action` golden vectors and the two
+palace-profile `ball.timeline` goldens are preserved byte-for-byte in
+[`fixtures/goldens/palace-v3-manifest.json`](../fixtures/goldens/palace-v3-manifest.json)
+— NOT a core regression gate, but a handoff artifact for whoever continues
+the palace's v3 support after the Dreamball-etk extraction. Format_version 4
+golden vectors (introduced separately in C1) remain in
+`fixtures/goldens/manifest.json` and remain the core's regression gate.
+
+Two things have NOT (yet) followed the core substrate off of v3, and are
+called out here rather than silently left inconsistent:
+- The palace CLI verbs (`src/cli/internal/{mint,add_room,move,rename_mythos,inscribe}.zig`)
+  still author `format-version: 3` envelopes, via a verbatim copy of the old
+  core encoder kept in `src/cli/internal/palace_action_v3.zig` — no v4
+  CLI-authoring migration has landed for these verbs. Since the CLI only
+  encodes (it does not call `decodeAction` on what it mints), this does not
+  conflict with the core's decode-side rejection, but it does mean the CLI
+  still ships wire bytes the core's own decoder now refuses.
+- The generated TypeScript CBOR codec (`tools/schema-gen/gen_cbor.zig` →
+  `cbor.ts`) still implements v3 decode as a backward-compat branch, since the
+  browser/bridge layer needs to read the v3 envelopes the CLI is still
+  minting. It was deliberately left unchanged by this decision rather than
+  regenerated to match the Zig core.
+
+Both are consequences of the Memory Palace extraction (Dreamball-etk) not
+having happened yet; resolving them is that epic's work, not this section's.
 
 The open type system's full context — motivation, PRD, and sprint plan — is in
 [`prd-open-type-system-mvp.md`](prd-open-type-system-mvp.md) and
@@ -929,11 +953,16 @@ those who do not risk kind-string collisions with envelopes from other producers
 
 ### 18.3 Palace kinds in v4
 
-The 9 palace action kinds and their recommended dot-convention equivalents for
-format_version 4 envelopes (canonical values defined in `src/protocol_v2.zig`,
-`ActionKind` enum):
+The 9 former v3 palace action kinds and their recommended dot-convention
+equivalents for format_version 4 envelopes. The closed `ActionKind` enum that
+used to canonicalize these values lived in `src/protocol_v2.zig`; it was
+deleted along with the rest of v3 core support (§16.7, Dreamball-y4t.15,
+2026-08-07). The wire strings below are historical/recommended values only —
+the palace CLI's own copy of them now lives in
+`src/cli/internal/palace_action_v3.zig` (v3 authoring, until the Memory
+Palace extraction, Dreamball-etk):
 
-| v3 `action-kind` (closed enum) | Recommended v4 `kind` |
+| Former v3 `action-kind` (closed enum, now removed) | Recommended v4 `kind` |
 |---|---|
 | `"palace-minted"` | `"palace.minted"` |
 | `"room-added"` | `"palace.room-added"` |
@@ -945,10 +974,13 @@ format_version 4 envelopes (canonical values defined in `src/protocol_v2.zig`,
 | `"inscription-orphaned"` | `"palace.inscription-orphaned"` |
 | `"inscription-pending-embedding"` | `"palace.inscription-pending-embedding"` |
 
-Format_version 3 palace envelopes continue to use the v3 `action-kind` bare
-strings unchanged. Format_version 4 palace envelopes SHOULD use the `"palace.*"`
-dot-prefix forms above. Any non-empty string is accepted at the wire level in
-v4 — the convention is a recommendation, not a gate.
+Format_version 4 palace envelopes SHOULD use the `"palace.*"` dot-prefix
+forms above. Any non-empty string is accepted at the wire level in v4 — the
+convention is a recommendation, not a gate. (Format_version 3 envelopes are
+no longer decodable by the core substrate at all — see §16.7 — so there is no
+"format_version 3 palace envelope" to route through this convention any
+more; the row above documents the mapping historically, for whoever
+continues v3 authoring in the extracted Memory Palace repo.)
 
 ### 18.4 Renderer dispatch
 

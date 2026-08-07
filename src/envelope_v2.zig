@@ -548,72 +548,20 @@ pub fn decodeTimeline(allocator: Allocator, bytes: []const u8) !struct {
 // §13.3 ball.action — encoder + decoder
 // ============================================================================
 
-pub fn encodeAction(allocator: Allocator, a: v2.Action) ![]u8 {
-    var ai = std.Io.Writer.Allocating.init(allocator);
-    errdefer ai.deinit();
-    const w = &ai.writer;
-    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
-
-    // parent_hashes is in the core map, not attributes
-    var ac: u64 = a.deps.len + a.nacks.len;
-    if (a.target_fp != null) ac += 1;
-    if (a.timestamp != null) ac += 1;
-    try zbor.builder.writeArray(w, 1 + ac);
-
-    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
-    // v3 wire shape (5-key core map). A1 opened the struct to v4 but the v4
-    // encoder (7-key map: hlc/body/kind) is story A2 — this path still emits
-    // the v3 envelope, so `format-version` is pinned to the literal 3 (the
-    // struct const is now 4) and the legacy `"action-kind"` key is retained.
-    // `a.kind` is byte-identical to the old `action_kind.toWireString()`
-    // because callers set `kind = ActionKind.x.toWireString()`.
-    // Core keys sorted (len asc, lex):
-    //   "type"(4), "actor"(5), "action-kind"(11), "parent-hashes"(13), "format-version"(14)
-    try zbor.builder.writeMap(w, 5);
-    try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, v2.Action.type_string);
-    try zbor.builder.writeTextString(w, "actor");
-    try zbor.builder.writeByteString(w, &a.actor);
-    try zbor.builder.writeTextString(w, "action-kind");
-    try zbor.builder.writeTextString(w, a.kind);
-    try zbor.builder.writeTextString(w, "parent-hashes");
-    try zbor.builder.writeArray(w, a.parent_hashes.len);
-    for (a.parent_hashes) |ph| try zbor.builder.writeByteString(w, &ph);
-    try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, 3);
-
-    // Attributes sorted: "deps"(4), "nacks"(5), "target-fp"(9), "timestamp"(9)
-    // At len 9: "target-fp" < "timestamp" lex
-    for (a.deps) |d| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "deps");
-        try zbor.builder.writeByteString(w, &d);
-    }
-    for (a.nacks) |n| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "nacks");
-        try zbor.builder.writeByteString(w, &n);
-    }
-    if (a.target_fp) |tfp| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "target-fp");
-        try zbor.builder.writeByteString(w, &tfp);
-    }
-    if (a.timestamp) |ts| {
-        try zbor.builder.writeArray(w, 2);
-        try zbor.builder.writeTextString(w, "timestamp");
-        try zbor.builder.writeTag(w, dcbor.Tag.epoch_time);
-        try zbor.builder.writeInt(w, @intCast(ts));
-    }
-    return ai.toOwnedSlice();
-}
+// The v3 `encodeAction` (closed palace profile — 5-key core map,
+// `"action-kind"`, `format-version` pinned to the literal 3) was deleted here
+// (Dreamball-y4t.15, 2026-08-07): the core substrate now supports ONLY v4
+// `ball.action`. See docs/PROTOCOL.md §16.7 for the rationale (no consumers,
+// no data, Memory Palace — the v3 profile's only owner — is being extracted
+// to its own repo, Dreamball-etk). The palace CLI verbs that still author v3
+// envelopes keep a verbatim copy of this function in
+// `src/cli/internal/palace_action_v3.zig` (`encodeActionV3`) until that
+// extraction lands.
 
 /// v4 `ball.action` encoder — the OPEN type-system wire shape (D-037/D-038/
-/// D-039/D-043; frozen in PROTOCOL.md §16.7/§17/§18). This is a SIBLING of the
-/// v3 `encodeAction` above: that function stays pinned to the v3 palace profile
-/// (5-key core map, `action-kind`) so the v3 golden vectors, the CLI verbs that
-/// call it, and the existing v3 round-trip tests remain byte-identical. v4 lives
-/// here; `decodeAction` reads both back by branching on `format-version`. B1's
+/// D-039/D-043; frozen in PROTOCOL.md §16.7/§17/§18). v3 support (the closed
+/// palace profile) has been removed from this file (Dreamball-y4t.15); v4 is
+/// now the only format `encodeAction`'s sibling `decodeAction` accepts. B1's
 /// `authorAction` WASM export links THIS function.
 ///
 /// Core-map keys in dCBOR length-first order (lex within equal length):
@@ -761,10 +709,20 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
     // Read the core map generically, then branch on `format-version` (D-037).
     // The version is the discriminant but it is the LAST core key in dCBOR
     // length-first order (longest key), so we collect every field first and
-    // decide v3-vs-v4 once the whole core map has been read.
+    // decide on the format once the whole core map has been read.
+    //
+    // Decoders MUST still branch on `format-version` before interpreting the
+    // rest of the core map (PROTOCOL.md §16.7) — this loop reads every field
+    // generically first for exactly that reason. `format-version: 3` (the
+    // closed v3 palace profile) is a recognized-but-REJECTED value, not an
+    // unknown one: Dreamball-y4t.15 dropped v3 `ball.action` from the core
+    // substrate, so a v3 envelope now fails cleanly with
+    // `DecodeError.UnsupportedFormatVersion` rather than silently misparsing.
+    // A legacy `"action-kind"` key (the v3 closed-palette field) falls
+    // through to the generic skip below — its value no longer needs to be
+    // captured since v3 is rejected outright regardless of its content.
     dcbor.expectTag(bytes, &cursor, dcbor.Tag.leaf) catch |e| return mapDecodeError(e);
     const core_n = dcbor.readMapHeader(bytes, &cursor) catch |e| return mapDecodeError(e);
-    var action_kind_opt: ?[]const u8 = null; // v3 "action-kind" (closed palette)
     var open_kind_opt: ?[]const u8 = null; // v4 "kind" (open string)
     var actor_opt: ?[32]u8 = null;
     var format_version: ?u64 = null;
@@ -777,9 +735,7 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
     var ci: u64 = 0;
     while (ci < core_n) : (ci += 1) {
         const k = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
-        if (std.mem.eql(u8, k, "action-kind")) {
-            action_kind_opt = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
-        } else if (std.mem.eql(u8, k, "kind")) {
+        if (std.mem.eql(u8, k, "kind")) {
             open_kind_opt = dcbor.readText(bytes, &cursor) catch |e| return mapDecodeError(e);
         } else if (std.mem.eql(u8, k, "actor")) {
             const b = dcbor.readBytes(bytes, &cursor) catch |e| return mapDecodeError(e);
@@ -872,27 +828,12 @@ pub fn decodeAction(allocator: Allocator, bytes: []const u8) !struct {
         // inspecting its contents, so the inner bytes are checked here.
         if (decoded_body) |b| try assertCanonical(b);
     } else if (fv == 3) {
-        // v3 palace profile — closed `action-kind`, no HLC, no body. Preserve
-        // the original closed-enum validation: the wire string must be one of
-        // the 9 known palace verbs.
-        // §A5/AC5 — body is a v4-only concept; a "body" key in a v3 core map
-        // is a structural error (guards against cross-version body injection).
-        if (body_opt != null) return DecodeError.InvalidValue;
-        const ak = action_kind_opt orelse return DecodeError.MissingField;
-        const kinds = [_]v2.ActionKind{
-            .palace_minted, .room_added, .avatar_inscribed, .aqueduct_created,
-            .move,          .true_naming, .inscription_updated, .inscription_orphaned,
-            .inscription_pending_embedding,
-        };
-        var found = false;
-        for (kinds) |kk| {
-            if (std.mem.eql(u8, kk.toWireString(), ak)) {
-                decoded_kind = kk.toWireString();
-                found = true;
-                break;
-            }
-        }
-        if (!found) return DecodeError.InvalidValue;
+        // v3 palace profile — CLOSED, dropped from the core substrate
+        // (Dreamball-y4t.15, 2026-08-07). Reject cleanly rather than
+        // attempting to interpret the rest of the core map: no consumers, no
+        // data to migrate, and the profile belongs with the Memory Palace
+        // extraction (Dreamball-etk), not here. See docs/PROTOCOL.md §16.7.
+        return DecodeError.UnsupportedFormatVersion;
     } else {
         return DecodeError.InvalidValue; // unknown format-version
     }
@@ -1787,78 +1728,16 @@ test "encodeTimeline AC3: concurrent heads cardinality ≥2" {
     try std.testing.expect(found_ee);
 }
 
-test "encodeAction round-trip" {
-    const allocator = std.testing.allocator;
-    var parents = [_][32]u8{ [_]u8{0x10} ** 32 };
-    const a = v2.Action{
-        .kind = v2.ActionKind.true_naming.toWireString(),
-        .parent_hashes = &parents,
-        .actor = [_]u8{0x20} ** 32,
-        .hlc = .{ 0, 0 },
-        .target_fp = [_]u8{0x30} ** 32,
-        .timestamp = 1_700_000_000,
-    };
-    const bytes = try encodeAction(allocator, a);
-    defer allocator.free(bytes);
-
-    try std.testing.expectEqual(@as(u8, 0xD8), bytes[0]);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "ball.action") != null);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "true-naming") != null);
-    try std.testing.expect(std.mem.indexOf(u8, bytes, "action-kind") != null);
-
-    var result = try decodeAction(allocator, bytes);
-    defer allocator.free(result.parent_hashes);
-    defer allocator.free(result.deps);
-    defer allocator.free(result.nacks);
-
-    try std.testing.expectEqualStrings("true-naming", result.action.kind);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x20} ** 32, &result.action.actor);
-    try std.testing.expectEqual(@as(usize, 1), result.parent_hashes.len);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x10} ** 32, &result.parent_hashes[0]);
-    try std.testing.expectEqual(@as(i64, 1_700_000_000), result.action.timestamp.?);
-    try std.testing.expect(result.action.target_fp != null);
-}
-
-test "encodeAction AC4: multi-parent + deps + nacks" {
-    const allocator = std.testing.allocator;
-    var parents = [_][32]u8{
-        [_]u8{0x01} ** 32,
-        [_]u8{0x02} ** 32,
-    };
-    const dep1: v2.ActionRef = [_]u8{0x0D} ** 32;
-    const dep2: v2.ActionRef = [_]u8{0x0E} ** 32;
-    const nack1: v2.ActionRef = [_]u8{0x0F} ** 32;
-    const deps = [_]v2.ActionRef{ dep1, dep2 };
-    const nacks = [_]v2.ActionRef{nack1};
-    const a = v2.Action{
-        .kind = v2.ActionKind.move.toWireString(),
-        .parent_hashes = &parents,
-        .actor = [_]u8{0x03} ** 32,
-        .hlc = .{ 0, 0 },
-        .deps = &deps,
-        .nacks = &nacks,
-    };
-    const bytes = try encodeAction(allocator, a);
-    defer allocator.free(bytes);
-    var result = try decodeAction(allocator, bytes);
-    defer allocator.free(result.parent_hashes);
-    defer allocator.free(result.deps);
-    defer allocator.free(result.nacks);
-
-    try std.testing.expectEqual(@as(usize, 2), result.parent_hashes.len);
-    try std.testing.expectEqual(@as(usize, 2), result.deps.len);
-    try std.testing.expectEqual(@as(usize, 1), result.nacks.len);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x01} ** 32, &result.parent_hashes[0]);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x02} ** 32, &result.parent_hashes[1]);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x0D} ** 32, &result.deps[0]);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x0E} ** 32, &result.deps[1]);
-    try std.testing.expectEqualSlices(u8, &[_]u8{0x0F} ** 32, &result.nacks[0]);
-}
+// Dreamball-y4t.15 removed the "encodeAction round-trip" and "encodeAction
+// AC4: multi-parent + deps + nacks" tests along with the v3 `encodeAction`
+// they exercised. See "decodeAction rejects format-version 3" below for the
+// regression test proving a v3 envelope now fails cleanly on decode.
 
 // ----------------------------------------------------------------------------
-// A2 — v4 ball.action codec (open kind + opaque body + HLC). The v3 tests above
-// remain the regression gate; these exercise the encodeActionV4 / decodeAction
-// v4 path. PROTOCOL.md §16.7/§17/§18.
+// A2 — v4 ball.action codec (open kind + opaque body + HLC). These exercise
+// the encodeActionV4 / decodeAction v4 path — the only format the core
+// substrate supports since v3 was dropped (Dreamball-y4t.15).
+// PROTOCOL.md §16.7/§17/§18.
 // ----------------------------------------------------------------------------
 
 test "encodeActionV4 round-trip with body (7-key core map)" {
@@ -1963,30 +1842,39 @@ test "encodeActionV4 multi-parent + deps + nacks + target-fp + timestamp" {
     try std.testing.expectEqual(@as(i64, 1_700_000_000), result.action.timestamp.?);
 }
 
-test "decodeAction dispatches on format-version: v3 envelope still decodes (regression)" {
+test "decodeAction rejects format-version 3 (v3 palace profile removed from core, Dreamball-y4t.15)" {
+    // Hand-built canonical v3 core map — the closed palace profile (5-key
+    // core map: type, actor, action-kind, parent-hashes, format-version). No
+    // encoder for this shape exists in the core substrate any more (it lives
+    // only in src/cli/internal/palace_action_v3.zig, for the palace CLI), so
+    // this test builds the bytes directly with zbor primitives to prove
+    // decodeAction still branches on format-version FIRST (PROTOCOL.md
+    // §16.7) and rejects a structurally well-formed v3 envelope cleanly,
+    // rather than silently misparsing it as v4.
     const allocator = std.testing.allocator;
-    var parents = [_][32]u8{[_]u8{0x10} ** 32};
-    const a = v2.Action{
-        .kind = v2.ActionKind.true_naming.toWireString(),
-        .parent_hashes = &parents,
-        .actor = [_]u8{0x20} ** 32,
-        .hlc = .{ 0, 0 },
-    };
-    // encodeAction (NOT V4) emits the v3 palace wire shape.
-    const bytes = try encodeAction(allocator, a);
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    defer ai.deinit();
+    const w = &ai.writer;
+    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
+    try zbor.builder.writeArray(w, 1); // core only
+    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
+    try zbor.builder.writeMap(w, 5);
+    try zbor.builder.writeTextString(w, "type");
+    try zbor.builder.writeTextString(w, v2.Action.type_string);
+    try zbor.builder.writeTextString(w, "actor");
+    try zbor.builder.writeByteString(w, &([_]u8{0x20} ** 32));
+    try zbor.builder.writeTextString(w, "action-kind");
+    try zbor.builder.writeTextString(w, "true-naming");
+    try zbor.builder.writeTextString(w, "parent-hashes");
+    try zbor.builder.writeArray(w, 1);
+    try zbor.builder.writeByteString(w, &([_]u8{0x10} ** 32));
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @as(u64, 3));
+    const bytes = try ai.toOwnedSlice();
     defer allocator.free(bytes);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "action-kind") != null);
 
-    const result = try decodeAction(allocator, bytes);
-    defer allocator.free(result.parent_hashes);
-    defer allocator.free(result.deps);
-    defer allocator.free(result.nacks);
-
-    // v3 decode yields kind from action-kind, no body, zero HLC.
-    try std.testing.expectEqualStrings("true-naming", result.action.kind);
-    try std.testing.expectEqual(@as(?[]const u8, null), result.action.body);
-    try std.testing.expectEqual(@as(u64, 0), result.action.hlc[0]);
-    try std.testing.expectEqual(@as(u64, 0), result.action.hlc[1]);
+    try std.testing.expectError(DecodeError.UnsupportedFormatVersion, decodeAction(allocator, bytes));
 }
 
 test "encodeActionV4 rejects a non-canonical body" {
@@ -2186,50 +2074,10 @@ test "A3: unknown format-version (5) returns InvalidValue" {
     try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
 }
 
-test "A3: v3 valid action-kind still decodes" {
-    const allocator = std.testing.allocator;
-    var parents = [_][32]u8{[_]u8{0x10} ** 32};
-    const a = v2.Action{
-        .kind = v2.ActionKind.palace_minted.toWireString(),
-        .parent_hashes = &parents,
-        .actor = [_]u8{0x20} ** 32,
-        .hlc = .{ 0, 0 },
-    };
-    const bytes = try encodeAction(allocator, a); // v3 wire shape
-    defer allocator.free(bytes);
-    const result = try decodeAction(allocator, bytes);
-    defer allocator.free(result.parent_hashes);
-    defer allocator.free(result.deps);
-    defer allocator.free(result.nacks);
-    try std.testing.expectEqualStrings("palace-minted", result.action.kind);
-}
-
-test "A3: v3 unknown action-kind returns InvalidValue" {
-    const allocator = std.testing.allocator;
-    // Hand-built canonical v3 core map: type(4), actor(5), action-kind(11),
-    // parent-hashes(13), format-version(14), with a verb outside the closed enum.
-    var ai = std.Io.Writer.Allocating.init(allocator);
-    defer ai.deinit();
-    const w = &ai.writer;
-    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
-    try zbor.builder.writeArray(w, 1); // core only
-    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
-    try zbor.builder.writeMap(w, 5);
-    try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, v2.Action.type_string);
-    try zbor.builder.writeTextString(w, "actor");
-    try zbor.builder.writeByteString(w, &([_]u8{0} ** 32));
-    try zbor.builder.writeTextString(w, "action-kind");
-    try zbor.builder.writeTextString(w, "unknown-verb");
-    try zbor.builder.writeTextString(w, "parent-hashes");
-    try zbor.builder.writeArray(w, 0);
-    try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @as(u64, 3));
-
-    const bytes = try ai.toOwnedSlice();
-    defer allocator.free(bytes);
-    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
-}
+// Dreamball-y4t.15 removed "A3: v3 valid action-kind still decodes" and "A3:
+// v3 unknown action-kind returns InvalidValue" — both are superseded by
+// "decodeAction rejects format-version 3" above, since a v3 envelope is now
+// rejected outright regardless of its action-kind content.
 
 test "encodeAqueduct round-trip" {
     const allocator = std.testing.allocator;
@@ -2787,11 +2635,11 @@ test "MEDIUM-5: encoder produces canonical bytes for every palace envelope" {
         try dcbor.verifyCanonical(bytes);
     }
 
-    // 3. action (no floats)
+    // 3. action (no floats) — v4 (v3 dropped from the core, Dreamball-y4t.15)
     {
         var act_ph = [_][32]u8{[_]u8{0x10} ** 32};
         const a = v2.Action{
-            .kind = v2.ActionKind.palace_minted.toWireString(),
+            .kind = "palace.minted",
             .actor = [_]u8{0x01} ** 32,
             .parent_hashes = &act_ph,
             .hlc = .{ 0, 0 },
@@ -2800,7 +2648,7 @@ test "MEDIUM-5: encoder produces canonical bytes for every palace envelope" {
             .deps = &.{},
             .nacks = &.{},
         };
-        const bytes = try encodeAction(allocator, a);
+        const bytes = try encodeActionV4(allocator, a);
         defer allocator.free(bytes);
         try dcbor.verifyCanonical(bytes);
     }
@@ -2923,50 +2771,23 @@ test "MEDIUM-5: mutating an equal-length map-key pair causes verifyCanonical to 
 }
 
 // ============================================================================
-// A5 — Broader tamper matrix + v3 golden regression guard.
+// A5 — Broader tamper matrix.
 //
 // A2 and A3 already cover: happy paths, HLC arity (AC1–2), unknown
 // format-version (AC3), empty kind (AC4), missing-field matrix (AC9–12).
 // A5 adds the remaining non-duplicate cases:
-//   AC5  — body key in a v3 envelope (structural error, cross-version)
 //   AC6  — truncated byte stream
 //   AC7  — garbage bytes (not a valid envelope)
 //   AC8  — non-canonical v4 7-key map ordering
-//   AC13 — v3 golden fixtures round-trip (regression guard for A3 additions)
+//
+// Dreamball-y4t.15 removed the original AC5 ("body key in a v3 envelope")
+// and AC13 ("v3 golden fixtures round-trip") cases: v3 `ball.action` was
+// dropped from the core substrate, so any v3 envelope — with or without a
+// "body" key — is now rejected outright by the format-version dispatch
+// (see "decodeAction rejects format-version 3" above), and the v3 golden
+// fixtures no longer round-trip through this file at all (they moved to
+// fixtures/goldens/palace-v3-manifest.json).
 // ============================================================================
-
-test "A5: decodeAction rejects body key in v3 envelope" {
-    // AC5 — "body" is v4-only; its presence in a v3 core map is a structural
-    // error (§A5/AC5).  The map is in canonical key order so assertCanonical
-    // passes; the rejection is in the v3 decode-side guard added alongside
-    // this test.
-    // Canonical key order: body(4), type(4), actor(5), action-kind(11),
-    //                      parent-hashes(13), format-version(14).
-    // At len 4: "body" (b=98) < "type" (t=116) lex.
-    const allocator = std.testing.allocator;
-    var ai = std.Io.Writer.Allocating.init(allocator);
-    defer ai.deinit();
-    const w = &ai.writer;
-    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
-    try zbor.builder.writeArray(w, 1); // core only, zero attributes
-    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
-    try zbor.builder.writeMap(w, 6); // 5 normal v3 fields + "body"
-    try zbor.builder.writeTextString(w, "body");
-    try zbor.builder.writeByteString(w, &[_]u8{0x01}); // opaque byte, canonical CBOR uint(1)
-    try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, v2.Action.type_string);
-    try zbor.builder.writeTextString(w, "actor");
-    try zbor.builder.writeByteString(w, &([_]u8{0x01} ** 32));
-    try zbor.builder.writeTextString(w, "action-kind");
-    try zbor.builder.writeTextString(w, v2.ActionKind.palace_minted.toWireString());
-    try zbor.builder.writeTextString(w, "parent-hashes");
-    try zbor.builder.writeArray(w, 0);
-    try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @as(u64, 3));
-    const bytes = try ai.toOwnedSlice();
-    defer allocator.free(bytes);
-    try std.testing.expectError(DecodeError.InvalidValue, decodeAction(allocator, bytes));
-}
 
 test "A5: decodeAction rejects truncated core map" {
     // AC6 — A valid v4 action truncated to half its byte length is incomplete
@@ -3042,78 +2863,10 @@ test "A5: decodeAction rejects non-canonical v4 map key ordering" {
     try std.testing.expectError(DecodeError.NonCanonicalInteger, decodeAction(allocator, bytes));
 }
 
-test "A5: v3 golden fixtures decode correctly (regression guard)" {
-    // AC13 — Re-encode the three v3 golden action fixtures (src/golden.zig
-    // fixtures 4, 5, 5a) and decode them, verifying that A3's decode-side
-    // additions (empty-kind guard, body-on-v3 guard, body canonicality gate)
-    // do not accidentally break valid v3 paths.
-    const allocator = std.testing.allocator;
+// Dreamball-y4t.15 removed "A5: v3 golden fixtures decode correctly
+// (regression guard)" along with the v3 `encodeAction`/`ActionKind` it
+// exercised. The three v3 action goldens it round-tripped
+// (action_v3_single_parent / _multi_parent / _deps_nacks) are preserved
+// byte-for-byte in fixtures/goldens/palace-v3-manifest.json for the Memory
+// Palace extraction (Dreamball-etk); they no longer gate this file.
 
-    // Fixture 4 — palace_minted, single parent (actor = 0x01*32, parent = 0x10*32).
-    {
-        var parents = [_][32]u8{[_]u8{0x10} ** 32};
-        const a = v2.Action{
-            .kind = v2.ActionKind.palace_minted.toWireString(),
-            .actor = [_]u8{0x01} ** 32,
-            .parent_hashes = &parents,
-            .hlc = .{ 0, 0 },
-        };
-        const bytes = try encodeAction(allocator, a);
-        defer allocator.free(bytes);
-        const result = try decodeAction(allocator, bytes);
-        defer allocator.free(result.parent_hashes);
-        defer allocator.free(result.deps);
-        defer allocator.free(result.nacks);
-        try std.testing.expectEqualStrings("palace-minted", result.action.kind);
-        try std.testing.expectEqual(@as(u8, 0x01), result.action.actor[0]);
-        try std.testing.expectEqual(@as(usize, 1), result.parent_hashes.len);
-    }
-
-    // Fixture 5 — move, multi-parent (parents = [0x10*32, 0x11*32]).
-    {
-        var parents = [_][32]u8{
-            [_]u8{0x10} ** 32,
-            [_]u8{0x11} ** 32,
-        };
-        const a = v2.Action{
-            .kind = v2.ActionKind.move.toWireString(),
-            .actor = [_]u8{0x01} ** 32,
-            .parent_hashes = &parents,
-            .hlc = .{ 0, 0 },
-        };
-        const bytes = try encodeAction(allocator, a);
-        defer allocator.free(bytes);
-        const result = try decodeAction(allocator, bytes);
-        defer allocator.free(result.parent_hashes);
-        defer allocator.free(result.deps);
-        defer allocator.free(result.nacks);
-        try std.testing.expectEqualStrings("move", result.action.kind);
-        try std.testing.expectEqual(@as(u8, 0x01), result.action.actor[0]);
-        try std.testing.expectEqual(@as(usize, 2), result.parent_hashes.len);
-    }
-
-    // Fixture 5a — inscription_updated, 1 dep + 1 nack (actor = 0x01*32,
-    //              dep = 0x20*32, nack = 0x30*32).
-    {
-        var parents = [_][32]u8{[_]u8{0x10} ** 32};
-        var deps = [_]v2.ActionRef{[_]u8{0x20} ** 32};
-        var nacks = [_]v2.ActionRef{[_]u8{0x30} ** 32};
-        const a = v2.Action{
-            .kind = v2.ActionKind.inscription_updated.toWireString(),
-            .actor = [_]u8{0x01} ** 32,
-            .parent_hashes = &parents,
-            .hlc = .{ 0, 0 },
-            .deps = &deps,
-            .nacks = &nacks,
-        };
-        const bytes = try encodeAction(allocator, a);
-        defer allocator.free(bytes);
-        const result = try decodeAction(allocator, bytes);
-        defer allocator.free(result.parent_hashes);
-        defer allocator.free(result.deps);
-        defer allocator.free(result.nacks);
-        try std.testing.expectEqualStrings("inscription-updated", result.action.kind);
-        try std.testing.expectEqual(@as(u8, 0x01), result.action.actor[0]);
-        try std.testing.expectEqual(@as(usize, 1), result.parent_hashes.len);
-    }
-}

@@ -489,6 +489,21 @@ v2 specifies.
 
 ### 13.11 Golden-bytes lock
 
+> **2026-08-07 update (Dreamball-y4t.15):** the core substrate dropped
+> `format_version 3` `ball.action` support (`ActionKind` and the v3
+> encoder/decoder were deleted from `src/protocol_v2.zig` /
+> `src/envelope_v2.zig`) because Memory Palace is being extracted to its own
+> repository (epic Dreamball-etk) and v3 is this product's closed profile,
+> not a substrate concern. Fixtures 4, 5, and 5a below (the v3 `ball.action`
+> variants) and fixtures 3/3a (the palace-profile `ball.timeline` variants)
+> no longer live in `src/golden.zig` or gate `zig build test` — they were
+> moved, byte-for-byte, to
+> [`fixtures/goldens/palace-v3-manifest.json`](../../../fixtures/goldens/palace-v3-manifest.json)
+> in the core repo as a handoff artifact. See
+> [`docs/PROTOCOL.md` §16.7](../../PROTOCOL.md#167-ballaction-wire-format-v4-only-v3-removed-from-the-core)
+> for the full rationale. The list below is retained as-written for
+> historical/PRD context; it does not describe the current core repo layout.
+
 `src/golden.zig` gains **thirteen new fixtures**. The fixtures pin
 canonical byte output for:
 

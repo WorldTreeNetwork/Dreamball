@@ -61,14 +61,12 @@ pub const GOLDEN_TIMELINE_QUIESCENT_BLAKE3: []const u8 = "6c094b282f8b695aac56a7
 /// §13.11 fixture 3a: ball.timeline concurrent — 2-element head-hashes (0xAA*32, 0xBB*32).
 pub const GOLDEN_TIMELINE_CONCURRENT_BLAKE3: []const u8 = "ff2ac3b68a9c203cd589b6ac73355239f87457a70fdcf102d6a92673ad8497eb";
 
-/// §13.11 fixture 4: ball.action single-parent (palace_minted, actor=0x01*32, parent=0x10*32).
-pub const GOLDEN_ACTION_SINGLE_PARENT_BLAKE3: []const u8 = "b28b972de27f857670b5bafc782c7a635fca34e5170026573b3ed4aa150ef26b";
-
-/// §13.11 fixture 5: ball.action multi-parent (move, actor=0x01*32, parents=[0x10*32, 0x11*32]).
-pub const GOLDEN_ACTION_MULTI_PARENT_BLAKE3: []const u8 = "a28288920342400cf68370092a913e0602ed3fb667c210be6e2549f76250d3c8";
-
-/// §13.11 fixture 5a: ball.action with deps and nacks populated (inscription_updated, 1 dep, 1 nack).
-pub const GOLDEN_ACTION_DEPS_NACKS_BLAKE3: []const u8 = "ea5fb1e975dcd9d3c229cfad27735bd3ab95751f29273284f4678098016bb619";
+// §13.11 fixtures 4/5/5a (ball.action single-parent / multi-parent /
+// deps+nacks) were v3 `ball.action` fixtures — removed here along with the
+// v3 `ActionKind`/`encodeAction` they pinned (Dreamball-y4t.15, 2026-08-07;
+// core substrate now supports only v4 `ball.action`). Their bytes/hashes are
+// preserved verbatim in fixtures/goldens/palace-v3-manifest.json for the
+// Memory Palace extraction (Dreamball-etk); they no longer gate this file.
 
 /// §13.11 fixture 6: ball.aqueduct with all numeric fields populated + conductance + phase=resonant.
 pub const GOLDEN_AQUEDUCT_BLAKE3: []const u8 = "7990491e8fcf036abb7483bf1a799046d4913f8b212c1bde92c2d9c9700f9b82";
@@ -315,66 +313,11 @@ test "golden bytes: ball.timeline concurrent (2 head-hashes)" {
     try goldenCheck(GOLDEN_TIMELINE_CONCURRENT_BLAKE3, hex, "GOLDEN_TIMELINE_CONCURRENT_BLAKE3");
 }
 
-test "golden bytes: ball.action single-parent" {
-    // §13.11 fixture 4 — single-parent palace-minted action.
-    const allocator = std.testing.allocator;
-    const v2 = @import("protocol_v2.zig");
-    const envelope_v2 = @import("envelope_v2.zig");
-    var parents = [_][32]u8{[_]u8{0x10} ** 32};
-    const a = v2.Action{
-        .kind = v2.ActionKind.palace_minted.toWireString(),
-        .actor = [_]u8{0x01} ** 32,
-        .parent_hashes = &parents,
-        .hlc = .{ 0, 0 },
-    };
-    const bytes = try envelope_v2.encodeAction(allocator, a);
-    defer allocator.free(bytes);
-    const hex = blake3Hex(bytes);
-    try goldenCheck(GOLDEN_ACTION_SINGLE_PARENT_BLAKE3, hex, "GOLDEN_ACTION_SINGLE_PARENT_BLAKE3");
-}
-
-test "golden bytes: ball.action multi-parent" {
-    // §13.11 fixture 5 — multi-parent move action (2 parent hashes).
-    const allocator = std.testing.allocator;
-    const v2 = @import("protocol_v2.zig");
-    const envelope_v2 = @import("envelope_v2.zig");
-    var parents = [_][32]u8{
-        [_]u8{0x10} ** 32,
-        [_]u8{0x11} ** 32,
-    };
-    const a = v2.Action{
-        .kind = v2.ActionKind.move.toWireString(),
-        .actor = [_]u8{0x01} ** 32,
-        .parent_hashes = &parents,
-        .hlc = .{ 0, 0 },
-    };
-    const bytes = try envelope_v2.encodeAction(allocator, a);
-    defer allocator.free(bytes);
-    const hex = blake3Hex(bytes);
-    try goldenCheck(GOLDEN_ACTION_MULTI_PARENT_BLAKE3, hex, "GOLDEN_ACTION_MULTI_PARENT_BLAKE3");
-}
-
-test "golden bytes: ball.action deps and nacks" {
-    // §13.11 fixture 5a — action with deps and nacks populated.
-    const allocator = std.testing.allocator;
-    const v2 = @import("protocol_v2.zig");
-    const envelope_v2 = @import("envelope_v2.zig");
-    var parents = [_][32]u8{[_]u8{0x10} ** 32};
-    var deps = [_]v2.ActionRef{[_]u8{0x20} ** 32};
-    var nacks = [_]v2.ActionRef{[_]u8{0x30} ** 32};
-    const a = v2.Action{
-        .kind = v2.ActionKind.inscription_updated.toWireString(),
-        .actor = [_]u8{0x01} ** 32,
-        .parent_hashes = &parents,
-        .hlc = .{ 0, 0 },
-        .deps = &deps,
-        .nacks = &nacks,
-    };
-    const bytes = try envelope_v2.encodeAction(allocator, a);
-    defer allocator.free(bytes);
-    const hex = blake3Hex(bytes);
-    try goldenCheck(GOLDEN_ACTION_DEPS_NACKS_BLAKE3, hex, "GOLDEN_ACTION_DEPS_NACKS_BLAKE3");
-}
+// Dreamball-y4t.15 removed "golden bytes: ball.action single-parent",
+// "... multi-parent", and "... deps and nacks" along with the v3
+// `ActionKind`/`encodeAction` they pinned. See the doc comment above (in
+// place of the deleted GOLDEN_ACTION_*_BLAKE3 consts) for where the bytes
+// now live.
 
 test "golden bytes: ball.aqueduct all numeric fields" {
     // §13.11 fixture 6 — aqueduct with all numeric fields populated.

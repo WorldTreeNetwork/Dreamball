@@ -535,6 +535,12 @@ pub const DecodeError = error{
     MissingField,
     InvalidValue,
     TooManyItems,
+    /// A structurally valid envelope named an unsupported `format-version`.
+    /// Distinct from the generic `InvalidValue` so callers can give a clear
+    /// message rather than a silent misparse. Notably fired by
+    /// `envelope_v2.decodeAction` for `format-version: 3` (Dreamball-y4t.15
+    /// dropped v3 `ball.action` support from the core substrate).
+    UnsupportedFormatVersion,
 };
 
 pub fn mapDecodeError(e: ReadError) DecodeError {

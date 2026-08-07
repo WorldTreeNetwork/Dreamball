@@ -19,6 +19,10 @@
 //!   6. ball.dreamball.field  — palace field (field-kind: "palace"; AC1)
 //!
 //! Wire format: TC14 — action + timeline at format-version 3; others at 2.
+//! The v3 `ball.action` wire shape (closed action-kind, no HLC/body) has been
+//! dropped from the core substrate (Dreamball-y4t.15, 2026-08-07) but this
+//! verb still authors it via `palace_action_v3.zig`, a local copy retained
+//! for the palace CLI until the Memory Palace extraction (Dreamball-etk).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -33,6 +37,7 @@ const protocol = dreamball.protocol;
 const v2 = dreamball.protocol_v2;
 const envelope = dreamball.envelope;
 const envelope_v2 = dreamball.envelope_v2;
+const palace_v3 = @import("palace_action_v3.zig");
 const signer = dreamball.signer;
 const key_file = dreamball.key_file;
 
@@ -232,7 +237,7 @@ fn runMint(gpa: Allocator, out_path: []const u8, mythos_body: []const u8) !u8 {
     // parent_hashes is empty (genesis action; AC4).
     const empty_parents: [][32]u8 = &.{};
     const action = v2.Action{
-        .kind = v2.ActionKind.palace_minted.toWireString(),
+        .kind = palace_v3.Kind.palace_minted,
         .parent_hashes = empty_parents,
         .actor = palace_fp_bytes,
         .hlc = .{ 0, 0 },
@@ -241,7 +246,7 @@ fn runMint(gpa: Allocator, out_path: []const u8, mythos_body: []const u8) !u8 {
     };
 
     // Encode unsigned to get bytes to sign.
-    const action_unsigned = try envelope_v2.encodeAction(gpa, action);
+    const action_unsigned = try palace_v3.encodeActionV3(gpa, action);
     defer gpa.free(action_unsigned);
     const action_ed_sig = try signer.signEd25519(action_unsigned, custodian_keys.classical());
     const action_mldsa_sig = try signer.signMlDsa(gpa, action_unsigned, custodian_keys);
@@ -715,14 +720,14 @@ test "encodeSignedAction produces longer envelope than unsigned" {
     const keys = try signer.HybridSigningKeys.generate();
     const empty: [][32]u8 = &.{};
     const action = v2.Action{
-        .kind = v2.ActionKind.palace_minted.toWireString(),
+        .kind = palace_v3.Kind.palace_minted,
         .parent_hashes = empty,
         .actor = keys.ed25519_public,
         .hlc = .{ 0, 0 },
         .timestamp = 1704067200000,
     };
 
-    const unsigned = try envelope_v2.encodeAction(allocator, action);
+    const unsigned = try palace_v3.encodeActionV3(allocator, action);
     defer allocator.free(unsigned);
 
     const ed_sig = try signer.signEd25519(unsigned, keys.classical());

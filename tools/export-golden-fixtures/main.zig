@@ -378,45 +378,13 @@ pub fn main() !void {
         first = false;
     }
 
-    // ── 5/6. GOLDEN_TIMELINE_{QUIESCENT,CONCURRENT} ─────────────────────────
-    {
-        var heads1 = [_][32]u8{[_]u8{0xAA} ** 32};
-        try writeTimelineFixture(gpa, &out, &first, "timeline_quiescent", &heads1, golden.GOLDEN_TIMELINE_QUIESCENT_BLAKE3);
-
-        var heads2 = [_][32]u8{ [_]u8{0xAA} ** 32, [_]u8{0xBB} ** 32 };
-        try writeTimelineFixture(gpa, &out, &first, "timeline_concurrent", &heads2, golden.GOLDEN_TIMELINE_CONCURRENT_BLAKE3);
-    }
-
-    // ── 7/8/9. v3 GOLDEN_ACTION_{SINGLE_PARENT,MULTI_PARENT,DEPS_NACKS} ─────
-    {
-        var p1 = [_][32]u8{[_]u8{0x10} ** 32};
-        try writeActionV3Fixture(gpa, &out, &first, "action_v3_single_parent", .{
-            .kind = v2.ActionKind.palace_minted.toWireString(),
-            .actor = [_]u8{0x01} ** 32,
-            .parent_hashes = &p1,
-            .hlc = .{ 0, 0 },
-        }, golden.GOLDEN_ACTION_SINGLE_PARENT_BLAKE3);
-
-        var p2 = [_][32]u8{ [_]u8{0x10} ** 32, [_]u8{0x11} ** 32 };
-        try writeActionV3Fixture(gpa, &out, &first, "action_v3_multi_parent", .{
-            .kind = v2.ActionKind.move.toWireString(),
-            .actor = [_]u8{0x01} ** 32,
-            .parent_hashes = &p2,
-            .hlc = .{ 0, 0 },
-        }, golden.GOLDEN_ACTION_MULTI_PARENT_BLAKE3);
-
-        var p3 = [_][32]u8{[_]u8{0x10} ** 32};
-        var deps = [_]v2.ActionRef{[_]u8{0x20} ** 32};
-        var nacks = [_]v2.ActionRef{[_]u8{0x30} ** 32};
-        try writeActionV3Fixture(gpa, &out, &first, "action_v3_deps_nacks", .{
-            .kind = v2.ActionKind.inscription_updated.toWireString(),
-            .actor = [_]u8{0x01} ** 32,
-            .parent_hashes = &p3,
-            .hlc = .{ 0, 0 },
-            .deps = &deps,
-            .nacks = &nacks,
-        }, golden.GOLDEN_ACTION_DEPS_NACKS_BLAKE3);
-    }
+    // GOLDEN_TIMELINE_{QUIESCENT,CONCURRENT} and the v3 GOLDEN_ACTION_*
+    // fixtures used to live here. Dreamball-y4t.15 (2026-08-07) dropped v3
+    // `ball.action` from the core substrate and moved all 5 palace-profile
+    // fixtures (the two timelines + three v3 actions) OUT of this manifest,
+    // byte-for-byte, into fixtures/goldens/palace-v3-manifest.json — see
+    // `writePalaceV3Manifest` below. They are no longer part of this core
+    // regression gate.
 
     // ── 10. GOLDEN_AQUEDUCT ──────────────────────────────────────────────────
     {
@@ -725,10 +693,13 @@ pub fn main() !void {
     defer gpa.free(manifest);
     try writeFixture(io, "fixtures/goldens/manifest.json", manifest);
 
+    try writePalaceV3Manifest(gpa, io);
+
     const stdout = std.Io.File.stdout();
     var stdout_buf: [512]u8 = undefined;
     var w = stdout.writer(io, &stdout_buf);
     try w.interface.print("export-golden-fixtures: wrote fixtures/goldens/manifest.json\n", .{});
+    try w.interface.print("export-golden-fixtures: wrote fixtures/goldens/palace-v3-manifest.json (not a core gate)\n", .{});
     try w.interface.flush();
 }
 
@@ -759,26 +730,121 @@ fn writeTimelineFixture(gpa: Allocator, out: *Buf, first: *bool, name: []const u
     first.* = false;
 }
 
-fn writeActionV3Fixture(gpa: Allocator, out: *Buf, first: *bool, name: []const u8, a: v2.Action, expected_blake3: []const u8) !void {
-    const bytes = try ev2.encodeAction(gpa, a);
+/// v3 `ball.action` fixture — PINNED, not live-encoded. Dreamball-y4t.15
+/// deleted `ev2.encodeAction` / `v2.ActionKind` (the v3 encoder + closed
+/// action-kind palette) from the core substrate, so there is no encoder left
+/// in this binary to call. Bytes come straight from the hex this tool wrote
+/// the last time a v3 encoder existed (byte-for-byte unchanged), same
+/// pattern as the `object3d` fixture above.
+fn writeActionV3FixturePinned(
+    gpa: Allocator,
+    out: *Buf,
+    first: *bool,
+    name: []const u8,
+    action_kind: []const u8,
+    actor: [32]u8,
+    parent_hashes: []const [32]u8,
+    deps: []const [32]u8,
+    nacks: []const [32]u8,
+    bytes_hex: []const u8,
+    expected_blake3: []const u8,
+) !void {
+    const bytes = try hexDecodeAlloc(gpa, bytes_hex);
     defer gpa.free(bytes);
 
     var vbuf = Buf.init(gpa);
     defer vbuf.deinit();
     try vbuf.writeAll("{\n");
-    try writeStrField(&vbuf, "      ", "action_kind", a.kind, true);
-    try writeHexField(&vbuf, "      ", "actor_hex", &a.actor, true);
-    try writeHexArrayField(&vbuf, "      ", "parent_hashes_hex", a.parent_hashes, true);
-    try writeHexArrayField(&vbuf, "      ", "deps_hex", a.deps, true);
-    try writeHexArrayField(&vbuf, "      ", "nacks_hex", a.nacks, true);
-    try writeHexFieldOpt(&vbuf, "      ", "target_fp_hex", if (a.target_fp) |tfp| &tfp else null, true);
-    try writeNumFieldOpt(&vbuf, "      ", "timestamp", a.timestamp, false);
+    try writeStrField(&vbuf, "      ", "action_kind", action_kind, true);
+    try writeHexField(&vbuf, "      ", "actor_hex", &actor, true);
+    try writeHexArrayField(&vbuf, "      ", "parent_hashes_hex", parent_hashes, true);
+    try writeHexArrayField(&vbuf, "      ", "deps_hex", deps, true);
+    try writeHexArrayField(&vbuf, "      ", "nacks_hex", nacks, true);
+    try writeHexFieldOpt(&vbuf, "      ", "target_fp_hex", null, true);
+    try writeNumFieldOpt(&vbuf, "      ", "timestamp", @as(?i64, null), false);
     try vbuf.writeAll("    }");
     const value_json = try vbuf.toOwned();
     defer gpa.free(value_json);
 
-    try writeEntry(gpa, out, first.*, name, "ball.action", 3, value_json, bytes, expected_blake3, "This is the LEGACY v3 palace-profile encoder (closed action-kind key, format-version pinned to the literal 3) -- distinct from the v4 open-kind encoder used by action_v4_unsigned/action_v4_signed below. See src/envelope_v2.zig encodeAction's doc comment.");
+    try writeEntry(gpa, out, first.*, name, "ball.action", 3, value_json, bytes, expected_blake3, "This is the LEGACY v3 palace-profile encoder (closed action-kind key, format-version pinned to the literal 3), preserved verbatim for the Memory Palace extraction (Dreamball-etk). The core substrate dropped v3 ball.action support (Dreamball-y4t.15); these bytes are pinned hex, not live-encoded, because the encoder no longer exists in this binary.");
     first.* = false;
+}
+
+/// Writes fixtures/goldens/palace-v3-manifest.json — the 5 palace-profile
+/// fixtures (v3 ball.action x3, ball.timeline x2) that Dreamball-y4t.15
+/// removed from the core regression gate (manifest.json) when v3
+/// `ball.action` was dropped from the substrate. This file is NOT a core
+/// gate: nothing in `zig build test` / `zig build export-golden-fixtures`
+/// treats a diff here as a failure. It exists so the Memory Palace
+/// extraction (Dreamball-etk) can pick up these fixtures unchanged — the
+/// bytes and hashes are byte-for-byte identical to what manifest.json used
+/// to carry under these names.
+fn writePalaceV3Manifest(gpa: Allocator, io: std.Io) !void {
+    var out = Buf.init(gpa);
+    defer out.deinit();
+
+    try out.writeAll(
+        \\{
+        \\  "$comment": "RETAINED, NOT A CORE GATE. Dreamball-y4t.15 (2026-08-07) dropped format_version 3 ball.action support from the core substrate -- ActionKind and the v3 encoder were deleted from src/protocol_v2.zig / src/envelope_v2.zig. These 5 fixtures (the closed v3 palace-action profile + the palace-profile ball.timeline entries) are preserved here VERBATIM -- same bytes_hex/blake3 they had in fixtures/goldens/manifest.json before the split -- for the Memory Palace extraction (Dreamball-etk) to pick up unchanged. Nothing in the core build treats a diff in this file as a failure; it is not regenerated from a live encoder (see tools/export-golden-fixtures/main.zig writeActionV3FixturePinned).",
+        \\  "entries": [
+        \\
+    );
+
+    var first = true;
+
+    var heads1 = [_][32]u8{[_]u8{0xAA} ** 32};
+    try writeTimelineFixture(gpa, &out, &first, "timeline_quiescent", &heads1, golden.GOLDEN_TIMELINE_QUIESCENT_BLAKE3);
+
+    var heads2 = [_][32]u8{ [_]u8{0xAA} ** 32, [_]u8{0xBB} ** 32 };
+    try writeTimelineFixture(gpa, &out, &first, "timeline_concurrent", &heads2, golden.GOLDEN_TIMELINE_CONCURRENT_BLAKE3);
+
+    try writeActionV3FixturePinned(
+        gpa,
+        &out,
+        &first,
+        "action_v3_single_parent",
+        "palace-minted",
+        [_]u8{0x01} ** 32,
+        &[_][32]u8{[_]u8{0x10} ** 32},
+        &[_][32]u8{},
+        &[_][32]u8{},
+        "d8c881d8c9a564747970656b62616c6c2e616374696f6e656163746f72582001010101010101010101010101010101010101010101010101010101010101016b616374696f6e2d6b696e646d70616c6163652d6d696e7465646d706172656e742d68617368657381582010101010101010101010101010101010101010101010101010101010101010106e666f726d61742d76657273696f6e03",
+        "b28b972de27f857670b5bafc782c7a635fca34e5170026573b3ed4aa150ef26b",
+    );
+
+    try writeActionV3FixturePinned(
+        gpa,
+        &out,
+        &first,
+        "action_v3_multi_parent",
+        "move",
+        [_]u8{0x01} ** 32,
+        &[_][32]u8{ [_]u8{0x10} ** 32, [_]u8{0x11} ** 32 },
+        &[_][32]u8{},
+        &[_][32]u8{},
+        "d8c881d8c9a564747970656b62616c6c2e616374696f6e656163746f72582001010101010101010101010101010101010101010101010101010101010101016b616374696f6e2d6b696e64646d6f76656d706172656e742d6861736865738258201010101010101010101010101010101010101010101010101010101010101010582011111111111111111111111111111111111111111111111111111111111111116e666f726d61742d76657273696f6e03",
+        "a28288920342400cf68370092a913e0602ed3fb667c210be6e2549f76250d3c8",
+    );
+
+    try writeActionV3FixturePinned(
+        gpa,
+        &out,
+        &first,
+        "action_v3_deps_nacks",
+        "inscription-updated",
+        [_]u8{0x01} ** 32,
+        &[_][32]u8{[_]u8{0x10} ** 32},
+        &[_][32]u8{[_]u8{0x20} ** 32},
+        &[_][32]u8{[_]u8{0x30} ** 32},
+        "d8c883d8c9a564747970656b62616c6c2e616374696f6e656163746f72582001010101010101010101010101010101010101010101010101010101010101016b616374696f6e2d6b696e6473696e736372697074696f6e2d757064617465646d706172656e742d68617368657381582010101010101010101010101010101010101010101010101010101010101010106e666f726d61742d76657273696f6e038264646570735820202020202020202020202020202020202020202020202020202020202020202082656e61636b7358203030303030303030303030303030303030303030303030303030303030303030",
+        "ea5fb1e975dcd9d3c229cfad27735bd3ab95751f29273284f4678098016bb619",
+    );
+
+    try out.writeAll("\n  ]\n}\n");
+
+    const manifest = try out.toOwned();
+    defer gpa.free(manifest);
+    try writeFixture(io, "fixtures/goldens/palace-v3-manifest.json", manifest);
 }
 
 fn writeMythosFixture(gpa: Allocator, out: *Buf, first: *bool, name: []const u8, m: v2.Mythos, expected_blake3: []const u8) !void {

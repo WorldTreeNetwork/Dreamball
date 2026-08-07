@@ -167,37 +167,16 @@ pub const Layout = struct {
 // §13.3 ball.timeline + ball.action
 // ============================================================================
 
-/// Palace-profile kind palette — the conventional `kind` strings the palace
-/// authors use on `ball.action`. As of v4 (D-037) the wire type carries an
-/// OPEN `kind: []const u8`, so this enum is a convenience/profile helper, NOT
-/// the wire field: it maps the 9 known palace verbs to their canonical wire
-/// strings via `toWireString()`. Other consumers author arbitrary `kind`
-/// strings (D-038 dot-namespace convention) without touching this enum.
-pub const ActionKind = enum {
-    palace_minted, // "palace-minted"
-    room_added, // "room-added"
-    avatar_inscribed, // "avatar-inscribed"
-    aqueduct_created, // "aqueduct-created"
-    move, // "move"
-    true_naming, // "true-naming"
-    inscription_updated, // "inscription-updated"
-    inscription_orphaned, // "inscription-orphaned"
-    inscription_pending_embedding, // "inscription-pending-embedding"
-
-    pub fn toWireString(self: ActionKind) []const u8 {
-        return switch (self) {
-            .palace_minted => "palace-minted",
-            .room_added => "room-added",
-            .avatar_inscribed => "avatar-inscribed",
-            .aqueduct_created => "aqueduct-created",
-            .move => "move",
-            .true_naming => "true-naming",
-            .inscription_updated => "inscription-updated",
-            .inscription_orphaned => "inscription-orphaned",
-            .inscription_pending_embedding => "inscription-pending-embedding",
-        };
-    }
-};
+// `ActionKind` (the closed 9-value v3 palace-profile enum) was deleted here
+// (Dreamball-y4t.15, 2026-08-07): format_version 3 `ball.action` — the closed
+// palace profile — was dropped from the core substrate. The Memory Palace is
+// being extracted to its own repository (Dreamball-etk) and v3 is the
+// palace's closed profile, not a substrate concern; v4 (open `kind` string,
+// D-037/D-038) is the only format `ball.action` supports here now. The
+// palace CLI verbs that still author v3 envelopes (`src/cli/internal/`) keep
+// a verbatim copy of the wire strings + encoder in
+// `src/cli/internal/palace_action_v3.zig` until that extraction lands. See
+// docs/PROTOCOL.md §16.7.
 
 pub const Timeline = struct {
     pub const format_version: u32 = 3;
@@ -221,9 +200,11 @@ pub const Action = struct {
     /// Wire type string: `"ball.action"`.
     pub const type_string: []const u8 = "ball.action";
 
-    /// OPEN kind string (D-037/D-038). Replaces the closed `action_kind` enum
-    /// of v3. Palace authors set this via `ActionKind.x.toWireString()`; other
-    /// consumers supply their own dot-namespaced verb. Wire key is `"kind"`.
+    /// OPEN kind string (D-037/D-038). v3's closed `action_kind` enum
+    /// (`ActionKind`) has been removed from the core (Dreamball-y4t.15) along
+    /// with v3 support itself; palace authors now supply a
+    /// `"palace.*"`-namespaced verb (see docs/PROTOCOL.md §18.3), other
+    /// consumers their own dot-namespaced verb. Wire key is `"kind"`.
     kind: []const u8,
     /// ACKS — previous head(s) this action acknowledges; one for linear, multiple for merges.
     parent_hashes: [][32]u8,
@@ -494,7 +475,7 @@ test "struct shape: Timeline" {
 test "struct shape: Action" {
     var parents = [_][32]u8{[_]u8{0x02} ** 32};
     const a: Action = .{
-        .kind = ActionKind.true_naming.toWireString(),
+        .kind = "true-naming",
         .parent_hashes = &parents,
         .actor = [_]u8{0x03} ** 32,
         .hlc = .{ 0, 0 },
@@ -569,14 +550,6 @@ test "struct shape: Archiform" {
 // and "AC4: palaceInvariants ..." tests along with the Object3d, FieldKind,
 // and palaceInvariants/PalaceInvariantError types they exercised.
 
-test "ActionKind: all 9 wire strings present" {
-    try std.testing.expectEqualStrings("palace-minted", ActionKind.palace_minted.toWireString());
-    try std.testing.expectEqualStrings("room-added", ActionKind.room_added.toWireString());
-    try std.testing.expectEqualStrings("avatar-inscribed", ActionKind.avatar_inscribed.toWireString());
-    try std.testing.expectEqualStrings("aqueduct-created", ActionKind.aqueduct_created.toWireString());
-    try std.testing.expectEqualStrings("move", ActionKind.move.toWireString());
-    try std.testing.expectEqualStrings("true-naming", ActionKind.true_naming.toWireString());
-    try std.testing.expectEqualStrings("inscription-updated", ActionKind.inscription_updated.toWireString());
-    try std.testing.expectEqualStrings("inscription-orphaned", ActionKind.inscription_orphaned.toWireString());
-    try std.testing.expectEqualStrings("inscription-pending-embedding", ActionKind.inscription_pending_embedding.toWireString());
-}
+// Dreamball-y4t.15 removed the "ActionKind: all 9 wire strings present" test
+// along with the `ActionKind` enum it exercised (v3 `ball.action` dropped
+// from the core; see the doc comment above `Timeline` for the rationale).
