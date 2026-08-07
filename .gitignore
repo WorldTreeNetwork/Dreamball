@@ -40,6 +40,11 @@ src/lib/bridge/*.d.ts
 # Debug / scratch artefacts (Playwright snapshots, ad-hoc screenshots, REPL dumps)
 tmp/
 
+# Rust build output. The vendored Blockchain Commons forks under vendor/ are
+# real cargo packages, so `cargo test` inside them emits a target/ dir.
+/target/
+vendor/*/target/
+
 # OS
 .DS_Store
 Thumbs.db
