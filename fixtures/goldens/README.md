@@ -1,11 +1,36 @@
 # `fixtures/goldens/` — toolchain-neutral golden vectors
 
-`manifest.json` in this directory is the toolchain-neutral form of the 20
-named golden vectors that used to live only as ZIG TEST CODE in
-`src/golden.zig`. It exists so a from-scratch implementation — concretely,
-the forthcoming Rust `bc-envelope`/`dcbor` port (Dreamball-y4t) — can
-construct the same logical inputs and compare canonical bytes **without
-running Zig, or even reading Zig source, at all**.
+This directory holds the toolchain-neutral form of the 20 named golden
+vectors that used to live only as ZIG TEST CODE in `src/golden.zig`. It
+exists so a from-scratch implementation — concretely, the forthcoming Rust
+`bc-envelope`/`dcbor` port (Dreamball-y4t) — can construct the same logical
+inputs and compare canonical bytes **without running Zig, or even reading
+Zig source, at all**.
+
+## Five files, one partition (Dreamball-y4t.11)
+
+All 20 vectors started life in one flat `manifest.json` (Dreamball-y4t.8).
+That was fine as a first cut, but 15 of the 20 were Memory Palace or
+archiform fixtures — if they had stayed in the file the Rust core's port
+treats as its regression gate, palace fixtures would have become the
+substrate's acceptance test, quietly re-cementing the exact boundary the
+substrate/Memory-Palace split (epic Dreamball-jie, Dreamball-y4t) exists to
+cut. So the 20 vectors are partitioned by destination, per the
+Dreamball-jie boundary analysis, into five files:
+
+| file | contents | destined for | gates the core build? |
+|---|---|---|---|
+| `manifest.json` | `zero_seed`, `memory_connection`, `action_v4_unsigned`, `action_v4_signed` | Rust core (Dreamball-y4t) | **yes** — the only one |
+| `palace-v3-manifest.json` | v3-format `ball.action` x3 + `ball.timeline` x2 (Dreamball-y4t.15) | memory-palace repo (Dreamball-etk) | no |
+| `palace-manifest.json` | v2-format `palace_field`, `aqueduct`, `element_tag`, `inscription`, `mythos_*` x3 | memory-palace repo (Dreamball-etk) | no |
+| `archiform-manifest.json` | `archiform`, `object3d` | archiform repo (Dreamball-h7s) | no |
+| `contested-manifest.json` | `layout`, `trust_observation` — **UNRESOLVED**, see the file's own `$comment` | undecided; filed separately on purpose so the split doesn't silently guess | no |
+
+One generator (`tools/export-golden-fixtures/main.zig`) writes all five —
+not five separate generators — and the `GoldenDrift` self-assertion against
+`src/golden.zig`'s pinned constants (see `writeEntry`) covers every entry in
+every file, not just the core manifest's. Every `bytes_hex`/`blake3` was
+verified byte-for-byte identical across the move.
 
 ## Format
 
@@ -83,12 +108,13 @@ Do not write code (in Rust or anywhere else) that asserts byte-identity
 with these Zig-produced vectors as an invariant. Comparability, not
 identity, is the property this manifest is for.
 
-## Coverage — what's in `manifest.json` vs. what's only in `src/golden.zig`
+## Coverage — what's in these manifests vs. what's only in `src/golden.zig`
 
 All 20 named golden constants in `src/golden.zig` are represented as
-manifest entries. Two `src/golden.zig` `test` blocks are **not** separate
-manifest entries because they aren't fixtures — they're invariant checks
-over fixtures already covered above:
+manifest entries, across the five files described above. Two
+`src/golden.zig` `test` blocks are **not** separate manifest entries because
+they aren't fixtures — they're invariant checks over fixtures already
+covered above:
 
 - `"C1 negative: a one-byte body perturbation flips content_hash"` — asserts
   that mutating `action_v4_unsigned`'s body changes its `content_hash`. Not

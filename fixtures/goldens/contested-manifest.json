@@ -1,0 +1,63 @@
+{
+  "$comment": "UNRESOLVED -- placement here is NOT a decision. Contains ball.layout and ball.trust-observation, the two fixtures the Dreamball-jie boundary analysis explicitly left CONTESTED rather than assigning to a destination: (1) layout -- argued to be generic spatial composition, i.e. archiform's concern, not core's and not the memory-palace's, but not yet adopted by any boundary ADR; (2) trust_observation -- argued to be an identity-layer concern that should be OFFERED to identikey-protocol rather than assumed into the memory-palace. Dreamball-y4t.11 partitioned these two out of fixtures/goldens/manifest.json into this dedicated file, byte-for-byte identical to their prior manifest.json entries, specifically so neither call gets silently resolved by filing them into archiform-manifest.json or palace-manifest.json. Nothing in the core build treats a diff in this file as a failure. Whoever adopts the boundary ADR should move these entries to their real destination and delete this file.",
+  "entries": [
+  {
+    "name": "layout",
+    "type": "ball.layout",
+    "format_version": 2,
+    "value": {
+      "placements": [
+        {
+          "child_fp_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+          "position": [0, 0, 0],
+          "facing": { "qx": 0, "qy": 0, "qz": 0, "qw": 1 }
+        },
+        {
+          "child_fp_hex": "0202020202020202020202020202020202020202020202020202020202020202",
+          "position": [1, 0, 0],
+          "facing": { "qx": 0, "qy": 0, "qz": 0, "qw": 1 }
+        }
+      ],
+      "note": null
+    },
+    "bytes_hex": "d8c883d8c9a264747970656b62616c6c2e6c61796f75746e666f726d61742d76657273696f6e028269706c6163656d656e74a366666163696e6784f90000f90000f90000f93c00686368696c642d66705820010101010101010101010101010101010101010101010101010101010101010168706f736974696f6e83f90000f90000f900008269706c6163656d656e74a366666163696e6784f90000f90000f90000f93c00686368696c642d66705820020202020202020202020202020202020202020202020202020202020202020268706f736974696f6e83f93c00f90000f90000",
+    "blake3": "00650c43112a278cefd356e1f442ad0a128b22dcbaf2dae67e00710a14aecde4"
+  },
+  {
+    "name": "trust_observation",
+    "type": "ball.trust-observation",
+    "format_version": 2,
+    "value": {
+      "observer_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "about_hex": "0202020202020202020202020202020202020202020202020202020202020202",
+      "axes": [
+        {
+          "name": "reliability",
+          "value": 0.8,
+          "range": [0, 1]
+        },
+        {
+          "name": "alignment",
+          "value": 0.6,
+          "range": [0, 1]
+        }
+      ],
+      "observed_at": null,
+      "context": null,
+      "signatures": [
+        {
+          "alg": "ed25519",
+          "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "alg": "ed25519",
+          "value_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    },
+    "bytes_hex": "d8c885d8c9a464747970657662616c6c2e74727573742d6f62736572766174696f6e6561626f757458200202020202020202020202020202020202020202020202020202020202020202686f62736572766572582001010101010101010101010101010101010101010101010101010101010101016e666f726d61742d76657273696f6e02826461786973a3646e616d656b72656c696162696c6974796572616e676582fb0000000000000000fb3ff00000000000006576616c7565fb3fe999999999999a826461786973a3646e616d6569616c69676e6d656e746572616e676582fb0000000000000000fb3ff00000000000006576616c7565fb3fe333333333333382667369676e65648267656432353531395840aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa82667369676e65648267656432353531395840bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "blake3": "b1b3418348b9aaf53023ccdee6b5789a26ef949d138d47bbcc6cf0835804bf9e",
+    "note": "Signature bytes (0xAA*64, 0xBB*64) are constant filler used to exercise the signatures[] slot -- not real Ed25519 signatures."
+  }
+  ]
+}
