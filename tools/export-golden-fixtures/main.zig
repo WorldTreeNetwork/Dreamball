@@ -598,35 +598,31 @@ pub fn main() !void {
     }
 
     // ── 18. GOLDEN_OBJECT3D ──────────────────────────────────────────────────
+    // Dreamball-h7s.1 deleted the `v2.Object3d` type and `ev2.encodeObject3d`
+    // (they only demoed the dissolved Zig-canonical authoring pipeline).
+    // The fixture is preserved as DATA: bytes come straight from the pinned
+    // `golden.GOLDEN_OBJECT3D_BYTES_HEX` constant instead of a live encode,
+    // and the JSON `value` block below is hand-written to describe the same
+    // fixed fixture (mesh "glb:tree-01", position [1,2,3], identity rotation,
+    // unit scale) it always did — so this manifest entry, including its
+    // blake3, is byte-for-byte unchanged from before the type was removed.
     {
-        const o = v2.Object3d{
-            .mesh = "glb:tree-01",
-            .position = .{ 1.0, 2.0, 3.0 },
-            .rotation = .{ .qx = 0, .qy = 0, .qz = 0, .qw = 1 },
-            .scale = .{ 1.0, 1.0, 1.0 },
-        };
-        const bytes = try ev2.encodeObject3d(gpa, o);
+        const bytes = try hexDecodeAlloc(gpa, golden.GOLDEN_OBJECT3D_BYTES_HEX);
         defer gpa.free(bytes);
 
         var vbuf = Buf.init(gpa);
         defer vbuf.deinit();
         try vbuf.writeAll("{\n");
-        try writeStrField(&vbuf, "      ", "mesh", o.mesh, true);
-        try writeFloat3Field(&vbuf, "      ", "position", o.position, true);
-        try writeQuaternionField(&vbuf, "      ", "rotation", o.rotation, true);
-        try writeFloat3Field(&vbuf, "      ", "scale", o.scale, false);
+        try writeStrField(&vbuf, "      ", "mesh", "glb:tree-01", true);
+        try writeFloat3Field(&vbuf, "      ", "position", .{ 1.0, 2.0, 3.0 }, true);
+        try writeQuaternionField(&vbuf, "      ", "rotation", .{ .qx = 0, .qy = 0, .qz = 0, .qw = 1 }, true);
+        try writeFloat3Field(&vbuf, "      ", "scale", .{ 1.0, 1.0, 1.0 }, false);
         try vbuf.writeAll("    }");
         const value_json = try vbuf.toOwned();
         defer gpa.free(value_json);
 
-        try writeEntry(gpa, &out, first, "object3d", v2.Object3d.type_string, v2.Object3d.format_version, value_json, bytes, golden.GOLDEN_OBJECT3D_BLAKE3, null);
+        try writeEntry(gpa, &out, first, "object3d", "ball.object3d", 2, value_json, bytes, golden.GOLDEN_OBJECT3D_BLAKE3, null);
         first = false;
-
-        // The struct-literal fixture must also match the historically pinned
-        // full-bytes hex constant (golden.zig locks both the bytes AND the hash).
-        const expected_bytes = try hexDecodeAlloc(gpa, golden.GOLDEN_OBJECT3D_BYTES_HEX);
-        defer gpa.free(expected_bytes);
-        if (!std.mem.eql(u8, bytes, expected_bytes)) return error.GoldenDrift;
     }
 
     // ── 19/20. C1 v4 ball.action (unsigned + signed) ────────────────────────

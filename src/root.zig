@@ -17,6 +17,10 @@ pub const graph = @import("graph.zig");
 pub const ml_dsa = @import("ml_dsa.zig");
 pub const key_file = @import("key_file.zig");
 pub const identity_envelope = @import("identity_envelope.zig");
+// DEFERRED to Dreamball-etk.1 (Dreamball-h7s.1 deletion pass, part 2): this
+// re-export is the backwards dependency arrow palace code puts on the library
+// root, but src/cli/internal/verify.zig:50 (`dreamball.mythos_chain`) is a
+// live, in-scope-CLI consumer. It leaves with the palace CLI, not before.
 pub const mythos_chain = @import("memory-palace/mythos-chain.zig");
 pub const archiform = @import("archiform.zig");
 /// Golden-bytes constants (Blake3 pins + a few full-bytes hex pins). Exported

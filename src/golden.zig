@@ -637,24 +637,15 @@ test "C1 negative: a one-byte body perturbation flips content_hash" {
     try std.testing.expect(!std.mem.eql(u8, GOLDEN_ACTION_V4_CONTENT_HASH, got));
 }
 
-test "D1 golden: ball.object3d canonical bytes + blake3" {
-    // Fixed fixture (mirrored in src/lib/__fixtures__/object3d.golden.json).
-    const allocator = std.testing.allocator;
-    const envelope_v2 = @import("envelope_v2.zig");
-    const v2 = @import("protocol_v2.zig");
-
-    const o = v2.Object3d{
-        .mesh = "glb:tree-01",
-        .position = .{ 1.0, 2.0, 3.0 },
-        .rotation = .{ .qx = 0, .qy = 0, .qz = 0, .qw = 1 },
-        .scale = .{ 1.0, 1.0, 1.0 },
-    };
-    const bytes = try envelope_v2.encodeObject3d(allocator, o);
-    defer allocator.free(bytes);
-    try expectHexEql(GOLDEN_OBJECT3D_BYTES_HEX, bytes, "object3d bytes");
-    const hex = blake3Hex(bytes);
-    try goldenCheck(GOLDEN_OBJECT3D_BLAKE3, hex, "GOLDEN_OBJECT3D_BLAKE3");
-}
+// Dreamball-h7s.1 removed the "D1 golden: ball.object3d canonical bytes +
+// blake3" test — it round-tripped `v2.Object3d{} + encodeObject3d`, both
+// deleted (demo of the dissolved Zig-canonical authoring pipeline). The
+// pinned `GOLDEN_OBJECT3D_BYTES_HEX` / `GOLDEN_OBJECT3D_BLAKE3` constants
+// above are kept as data: `tools/export-golden-fixtures/main.zig` still
+// emits the `object3d` manifest entry from them directly, so
+// `fixtures/goldens/manifest.json` is unchanged. The TS-side mirror
+// (`src/lib/__fixtures__/object3d.golden.json`, `object3d-codegen.test.ts`)
+// is untouched — out of scope for this Zig-only pass.
 
 test "AC5: mythos canonical-genesis, canonical-successor, poetic hashes are distinct" {
     // Verifies TC18 — canonical vs poetic mythos shapes produce different byte output.

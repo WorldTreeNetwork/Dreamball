@@ -38,12 +38,9 @@ pub const OmnisphericalGrid = struct {
 
 // The memory slot is now a first-class DreamBall slot living in protocol.zig
 // beside look/feel/act (see docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
-// Re-exported here so existing `v2.Memory` / `v2.MemoryNode` / etc. references
-// across the codebase keep compiling.
-pub const MemoryConnectionKind = protocol.MemoryConnectionKind;
-pub const MemoryNode = protocol.MemoryNode;
-pub const MemoryConnection = protocol.MemoryConnection;
-pub const Memory = protocol.Memory;
+// Dreamball-h7s.1 removed the `v2.Memory` / `v2.MemoryNode` / etc. re-export
+// shims below (no callers referenced them outside this file) — use
+// `protocol.Memory` / `protocol.MemoryNode` / etc. directly.
 
 // ============================================================================
 // §12.4 ball.knowledge-graph / §12.5 ball.emotional-register /
@@ -53,16 +50,10 @@ pub const Memory = protocol.Memory;
 // These four slots are now first-class DreamBall slots living in protocol.zig
 // beside look/feel/act/memory (see
 // docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md, Zig is
-// canonical). Re-exported here so existing `v2.KnowledgeGraph` / `v2.Triple` /
-// `v2.EmotionalAxis` / `v2.Interaction` / `v2.GuildPolicy` / etc. references
-// across the codebase keep compiling.
-pub const Triple = protocol.Triple;
-pub const KnowledgeGraph = protocol.KnowledgeGraph;
-pub const EmotionalAxis = protocol.EmotionalAxis;
-pub const EmotionalRegister = protocol.EmotionalRegister;
-pub const InteractionKind = protocol.InteractionKind;
-pub const Interaction = protocol.Interaction;
-pub const InteractionSet = protocol.InteractionSet;
+// canonical). Dreamball-h7s.1 removed the `v2.KnowledgeGraph` / `v2.Triple` /
+// `v2.EmotionalAxis` / `v2.Interaction` / etc. re-export shims (no external
+// callers) — use `protocol.KnowledgeGraph` / `protocol.Triple` / etc. directly.
+// `GuildPolicy` is kept: `envelope_v2.zig:writePolicy` still takes `v2.GuildPolicy`.
 pub const GuildPolicy = protocol.GuildPolicy;
 
 // ============================================================================
@@ -135,18 +126,11 @@ pub const Relic = struct {
 // §13.1 field-kind attribute on ball.dreamball.field
 // ============================================================================
 
-/// Optional `field-kind` attribute on a `ball.dreamball.field` envelope.
-/// Attribute-level addition — does NOT bump `format-version`.
-/// Unknown values MUST be preserved verbatim (open-enum rule, §13.1).
-pub const FieldKind = struct {
-    /// Wire name: "field-kind".
-    /// Values: "palace" | "room" | "ambient" | <open-enum>
-    value: []const u8,
-
-    pub const palace = "palace";
-    pub const room = "room";
-    pub const ambient = "ambient";
-};
+// Dreamball-h7s.1: the `FieldKind` struct (wire attribute `field-kind` on
+// `ball.dreamball.field`, §13.1) was removed — it wrapped a single
+// `[]const u8` and had zero callers outside its own tests; `DreamBall.field_kind`
+// is already `?[]const u8` at protocol.zig:334. The wire attribute itself is
+// untouched; only the redundant Zig wrapper type is gone.
 
 // ============================================================================
 // §13.2 ball.layout
@@ -410,53 +394,22 @@ pub const Archiform = struct {
     note: ?[]const u8 = null,
 };
 
-// ============================================================================
-// §13.10 ball.object3d
-// ============================================================================
+// Dreamball-h7s.1: `Object3d` (§13.10 `ball.object3d`) was removed — its
+// docstring said it exists to demonstrate the Zig-canonical authoring
+// pipeline, which the 2026-08-06 Rust-canonical ADR dissolved. Its golden
+// fixture is PRESERVED as data: `golden.GOLDEN_OBJECT3D_BYTES_HEX` /
+// `GOLDEN_OBJECT3D_BLAKE3` in src/golden.zig are untouched, and
+// `tools/export-golden-fixtures/main.zig` now writes the `object3d` manifest
+// entry by decoding those pinned bytes directly instead of re-deriving them
+// from a live `Object3d{}` + `encodeObject3d` call (also removed, from
+// envelope_v2.zig). `fixtures/goldens/manifest.json`'s `object3d` entry is
+// therefore byte-for-byte unchanged. See the deletion report on
+// Dreamball-h7s.1 for the full accounting.
 
-/// A minimal 3D-transform record — the second maintainer-authored type added
-/// through the Zig-canonical pipeline (sprint-003 D1). Demonstrates the
-/// general authoring path: a new Zig struct flows downward to the schema
-/// `$defs`, the generated TS type/Valibot schema/`cbor.ts` decoder, and a
-/// pinned golden vector, with zero new infrastructure. All fields live in the
-/// core leaf map (no attributes, no optionals) — the simplest possible
-/// envelope shape. Reuses the existing `Quaternion` type for `rotation`.
-pub const Object3d = struct {
-    pub const format_version: u32 = 2;
-    /// Wire type string: `"ball.object3d"`.
-    pub const type_string: []const u8 = "ball.object3d";
-
-    /// Open-enum mesh/asset identifier (e.g. "glb:tree-01", "primitive:cube").
-    mesh: []const u8,
-    /// Local-frame translation [x, y, z].
-    position: [3]f32,
-    /// Orientation (reuses the existing Quaternion type).
-    rotation: Quaternion,
-    /// Per-axis scale [x, y, z].
-    scale: [3]f32,
-};
-
-// ============================================================================
-// §13.11 palace invariant primitive (AC4)
-// ============================================================================
-
-pub const PalaceInvariantError = error{
-    /// PROTOCOL.md §13.11 fixture 1: a Field with field-kind "palace" MUST carry
-    /// a ball.mythos attribute. This error is returned when that invariant is
-    /// violated. Full enforcement lives in Epic 3 (`dreamball verify`).
-    PalaceMissingMythos,
-};
-
-/// Checks the palace-root invariant from PROTOCOL.md §13.11 fixture 1:
-/// a Field tagged `field-kind: "palace"` MUST carry a `ball.mythos` attribute.
-/// `has_mythos` should be set to true if the envelope carries any `ball.mythos` attribute.
-pub fn palaceInvariants(field_kind: ?[]const u8, has_mythos: bool) PalaceInvariantError!void {
-    if (field_kind) |fk| {
-        if (std.mem.eql(u8, fk, FieldKind.palace) and !has_mythos) {
-            return error.PalaceMissingMythos;
-        }
-    }
-}
+// Dreamball-h7s.1: `palaceInvariants` + `PalaceInvariantError` (§13.11) were
+// removed — a function named after one application (the palace CLI) had no
+// business living in the protocol core, and it had zero callers outside its
+// own test.
 
 // ============================================================================
 // Tests — sanity-check the value types round-trip through Zig defaults
@@ -501,12 +454,12 @@ test "Guild default policy has sensible slot split" {
 }
 
 test "MemoryConnectionKind strings" {
-    try std.testing.expectEqualStrings("semantic", MemoryConnectionKind.semantic.toWireString());
-    try std.testing.expectEqualStrings("emotional", MemoryConnectionKind.emotional.toWireString());
+    try std.testing.expectEqualStrings("semantic", protocol.MemoryConnectionKind.semantic.toWireString());
+    try std.testing.expectEqualStrings("emotional", protocol.MemoryConnectionKind.emotional.toWireString());
 }
 
 test "Interaction kind string" {
-    const it: Interaction = .{
+    const it: protocol.Interaction = .{
         .turn = 0,
         .actor = .{ .bytes = [_]u8{0} ** 32 },
         .kind = .speak,
@@ -611,42 +564,10 @@ test "struct shape: Archiform" {
     try std.testing.expectEqual(@as(?[]const u8, null), ar.parent_form);
 }
 
-test "struct shape: Object3d" {
-    const o: Object3d = .{
-        .mesh = "glb:tree-01",
-        .position = .{ 1.0, 2.0, 3.0 },
-        .rotation = .{ .qx = 0, .qy = 0, .qz = 0, .qw = 1 },
-        .scale = .{ 1.0, 1.0, 1.0 },
-    };
-    try std.testing.expectEqual(@as(u32, 2), Object3d.format_version);
-    try std.testing.expectEqualStrings("ball.object3d", Object3d.type_string);
-    try std.testing.expectEqualStrings("glb:tree-01", o.mesh);
-    try std.testing.expectEqual(@as(f32, 1.0), o.position[0]);
-    try std.testing.expectEqual(@as(f32, 1.0), o.rotation.qw);
-    try std.testing.expectEqual(@as(f32, 1.0), o.scale[2]);
-}
-
-test "AC2: field-kind palace and room preserved" {
-    const palace_fk: FieldKind = .{ .value = FieldKind.palace };
-    const room_fk: FieldKind = .{ .value = FieldKind.room };
-    try std.testing.expectEqualStrings("palace", palace_fk.value);
-    try std.testing.expectEqualStrings("room", room_fk.value);
-}
-
-test "AC3: unknown field-kind preserved verbatim (open-enum)" {
-    const sanctuary_fk: FieldKind = .{ .value = "sanctuary" };
-    try std.testing.expectEqualStrings("sanctuary", sanctuary_fk.value);
-}
-
-test "AC4: palaceInvariants returns PalaceMissingMythos for palace without mythos" {
-    const result = palaceInvariants("palace", false);
-    try std.testing.expectError(error.PalaceMissingMythos, result);
-    // palace with mythos is ok
-    try palaceInvariants("palace", true);
-    // non-palace field kind without mythos is ok
-    try palaceInvariants("room", false);
-    try palaceInvariants(null, false);
-}
+// Dreamball-h7s.1 removed the "struct shape: Object3d", "AC2: field-kind
+// palace and room preserved", "AC3: unknown field-kind preserved verbatim",
+// and "AC4: palaceInvariants ..." tests along with the Object3d, FieldKind,
+// and palaceInvariants/PalaceInvariantError types they exercised.
 
 test "ActionKind: all 9 wire strings present" {
     try std.testing.expectEqualStrings("palace-minted", ActionKind.palace_minted.toWireString());
