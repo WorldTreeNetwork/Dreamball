@@ -1,10 +1,9 @@
-# DRAFT — NOT FILED
+# FILED 2026-08-07
+
+**Issue:** <https://github.com/BlockchainCommons/bc-dcbor-rust/issues/6>
 
 **Target:** <https://github.com/BlockchainCommons/bc-dcbor-rust/issues/new>
-**Status:** written 2026-08-07, awaiting the project owner's authorization to
-post. Filing to a third-party public repository is Duke's call, not an agent's.
-When filed, record the issue/PR URL in `Dreamball-n8r` and in
-`vendor/dcbor/VENDOR.md`.
+**Status:** filed 2026-08-07 with the project owner's authorization.
 
 Everything below the line is the issue body, ready to paste.
 
