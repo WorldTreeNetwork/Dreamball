@@ -1,15 +1,23 @@
 /**
  * text-embed/1 — provider registry (PROTOTYPE).
  *
- * Three providers conform to the `text-embed/1` interface, wrapping the existing
- * (tested) implementations rather than rewriting them:
- *   - mock        → routes/embed.mock.ts   (deterministic, CI; 256d)
- *   - runpod      → embedding/runpod.ts    (remote GPU, Ollama qwen3; 1024d)
- *   - onnx-local  → embedding/qwen3.ts     (local ONNX weights; 1024d)
+ * Two providers conform to the `text-embed/1` interface:
+ *   - mock    → routes/embed.mock.ts   (deterministic, CI; 256d)
+ *   - runpod  → ./runpod.ts            (remote GPU, Ollama qwen3; 1024d)
  *
- * The registry order is the binding priority (decision doc §9). It reproduces
- * the precedence previously smeared across embed.ts and qwen3.ts's
- * loadQwen3Model: mock → runpod → local → (none → fail-fast).
+ * The registry order is the binding priority (decision doc §9): mock → runpod
+ * → (none → fail-fast).
+ *
+ * NO IN-PROCESS MODEL PROVIDER. There used to be a third, `onnx-local`,
+ * wrapping `embedding/qwen3.ts`, which pulled `@huggingface/transformers`
+ * (onnxruntime-node + sharp, ~600 MB installed) into an otherwise generic
+ * protocol server. It was removed on 2026-08-07: hosting a model runtime is an
+ * application concern, and this capability seam exists precisely so the model
+ * lives on the far side of an interface rather than inside the server. A
+ * consumer that wants local weights implements a `text-embed/1` provider in
+ * its own process and points the server at it; it does not get to make every
+ * `bun install` of the protocol server pay for ONNX. See
+ * docs/decisions/2026-08-07-substrate-palace-boundary.md.
  *
  * Mock-import discipline: the mock impl is reached only via a *dynamic* import
  * inside the mock provider's embedRaw, executed solely when the mock provider is
@@ -19,16 +27,11 @@
  * holds, and the AC8 grep on index.ts stays clean.
  */
 
-import { existsSync } from 'fs';
-import {
-  embed as qwen3EmbedRaw,
-  loadQwen3Model,
-} from '../../embedding/qwen3.js';
 import {
   readRunpodConfig,
   embedViaRunpod,
   type RunpodConfig,
-} from '../../embedding/runpod.js';
+} from './runpod.js';
 import type { TextEmbedProvider } from './interface.js';
 
 // ---------------------------------------------------------------------------
@@ -53,6 +56,9 @@ const mockProvider: TextEmbedProvider = {
 
 // ---------------------------------------------------------------------------
 // runpod provider — remote serverless GPU (BYO GPU exit)
+//
+// This is a ~120-line HTTP client with zero dependencies. It is the shape a
+// provider is allowed to have inside the server: a wire adapter, not a runtime.
 // ---------------------------------------------------------------------------
 
 let _runpodCfg: RunpodConfig | null = null;
@@ -73,32 +79,10 @@ const runpodProvider: TextEmbedProvider = {
 };
 
 // ---------------------------------------------------------------------------
-// onnx-local provider — local ONNX weights (BYO weights exit)
-// ---------------------------------------------------------------------------
-
-function localModelPath(): string {
-  return process.env.DREAMBALL_EMBED_MODEL_PATH ?? './models/Qwen3-Embedding-0.6B-ONNX';
-}
-
-const onnxLocalProvider: TextEmbedProvider = {
-  id: 'onnx-local',
-  category: 'service',
-  implementsVersion: '1.0',
-  nativeDim: 1024,
-  available: () => existsSync(localModelPath()),
-  // Reuse the existing fail-fast singleton loader (keeps AC10's spy target alive).
-  load: async () => {
-    await loadQwen3Model();
-  },
-  embedRaw: (content) => qwen3EmbedRaw(content),
-};
-
-// ---------------------------------------------------------------------------
 // Registry — order is binding priority
 // ---------------------------------------------------------------------------
 
 export const TEXT_EMBED_PROVIDERS: readonly TextEmbedProvider[] = [
   mockProvider,
   runpodProvider,
-  onnxLocalProvider,
 ];

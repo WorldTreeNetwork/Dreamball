@@ -5,17 +5,20 @@
  *   Request:  { content: string, contentType: SupportedContentType }
  *   Response: { vector: number[], model: string, dimension: number, truncation: string }
  *
- * The model is loaded ONCE at server boot via loadQwen3Model() in index.ts.
- * MRL truncation to 256d happens here, opaque to the client (AC3).
+ * The provider is bound ONCE at server boot via resolveTextEmbed() in index.ts.
+ * MRL truncation to 256d happens in the resolver, opaque to the client (AC3).
  *
  * Content-type allowlist (AC4): text/markdown, text/plain, text/asciidoc.
  * 415 on any unsupported value; 413 if content > 1 MB (AC5).
  * No batch or streaming endpoint exists (D-012 negative, AC6).
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
- *   This route hosts Qwen3-Embedding-0.6B via onnxruntime-node.
- *   The model weights must be placed at DREAMBALL_EMBED_MODEL_PATH before boot.
- *   See docs/decisions/2026-04-24-qwen3-embedding-loader.md.
+ *   This route hosts NO model. It binds the `text-embed/1` capability and calls
+ *   whichever provider is available: the deterministic mock, or a remote GPU
+ *   (RunPod). The in-process ONNX runtime that used to sit behind this route
+ *   was removed on 2026-08-07 — see
+ *   docs/decisions/2026-08-07-substrate-palace-boundary.md; the original
+ *   loader rationale is docs/decisions/2026-04-24-qwen3-embedding-loader.md.
  *
  * Decisions: D-012, D-002; NFR11 (sanctioned exit), NFR13, SEC6, SEC7.
  */
@@ -65,7 +68,7 @@ export const embedRoute = new Elysia().post(
     }
 
     // Resolve the text-embed/1 capability to its bound provider, then embed.
-    // Selection (mock / runpod / onnx-local) happens once in the resolver, not
+    // Selection (mock / runpod) happens once in the resolver, not
     // here — the route is provider-agnostic. resolveTextEmbed() is idempotent:
     // boot binds eagerly, this covers the lazy/test path.
     // TODO-EMBEDDING: bring-model-local-or-byo

@@ -8,13 +8,13 @@
  * ACs covered:
  *   AC1  — happy path: 200, correct D-012 schema, 256d vector, all finite
  *   AC2  — determinism: same input → byte-identical vectors
- *   AC3  — MRL truncation unit test: qwen3 adapter truncates 1024→256 (first dims)
+ *   AC3  — MRL truncation unit test: capability truncates 1024→256 (first dims)
  *   AC4  — rejects unsupported content-type: 415 + supported-set message
  *   AC5  — rejects oversize content: 413 + 1 MB limit message
  *   AC6  — no batch/stream: route module inspection
  *   AC7  — TODO-EMBEDDING markers present in route + adapter
  *   AC8  — mock determinism: blake3-seeded, not imported by index.ts
- *   AC10 — model loads once: loadQwen3Model spy
+ *   AC10 — provider binds once: provider.load() spy through resolveTextEmbed
  */
 
 // Set env before any imports so index.ts skip-listen guard fires
@@ -22,7 +22,7 @@ process.env.DREAMBALL_SERVER_NO_LISTEN = '1';
 process.env.DREAMBALL_EMBED_MOCK = '1';  // use mock backend — no live model in tests
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { moduleDir } from '../paths.js';
 
@@ -75,14 +75,15 @@ describe('AC7 — TODO-EMBEDDING markers', () => {
     expect(src).toMatch(/TODO-EMBEDDING: bring-model-local-or-byo/);
   });
 
-  it('embedding/qwen3.ts has TODO-EMBEDDING: bring-model-local-or-byo', () => {
-    const src = readFileSync(resolve(HERE, '../embedding/qwen3.ts'), 'utf8');
+  it('capabilities/text-embed/runpod.ts has TODO-EMBEDDING: bring-model-local-or-byo', () => {
+    const src = readFileSync(resolve(HERE, '../capabilities/text-embed/runpod.ts'), 'utf8');
     expect(src).toMatch(/TODO-EMBEDDING: bring-model-local-or-byo/);
   });
 
   it('at least 2 TODO-EMBEDDING markers across route + adapter', () => {
     const routeSrc = readFileSync(resolve(HERE, './embed.ts'), 'utf8');
-    const adapterSrc = readFileSync(resolve(HERE, '../embedding/qwen3.ts'), 'utf8');
+    const adapterSrc = readFileSync(
+      resolve(HERE, '../capabilities/text-embed/runpod.ts'), 'utf8');
     const combined = routeSrc + adapterSrc;
     const matches = combined.match(/TODO-EMBEDDING: bring-model-local-or-byo/g) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(2);
@@ -90,12 +91,41 @@ describe('AC7 — TODO-EMBEDDING markers', () => {
 });
 
 // ---------------------------------------------------------------------------
+// No in-process model runtime (2026-08-07 boundary cut)
+// ---------------------------------------------------------------------------
+
+describe('no in-process embedding model in dreamball-server', () => {
+  it('src/embedding/ is gone', () => {
+    expect(existsSync(resolve(HERE, '../embedding'))).toBe(false);
+  });
+
+  it('dreamball-server/package.json does not depend on @huggingface/transformers', () => {
+    const pkg = readFileSync(resolve(HERE, '../../package.json'), 'utf8');
+    expect(pkg).not.toMatch(/@huggingface\/transformers/);
+  });
+
+  it('no source file imports @huggingface/transformers or onnxruntime', () => {
+    for (const f of ['./embed.ts',
+                     '../capabilities/text-embed/providers.ts',
+                     '../capabilities/text-embed/resolver.ts',
+                     '../capabilities/text-embed/runpod.ts',
+                     '../index.ts']) {
+      const src = readFileSync(resolve(HERE, f), 'utf8');
+      // Import statements only — the words still appear in prose comments
+      // explaining what was removed, which is the point.
+      expect(src).not.toMatch(
+        /(?:from|import\()\s*['"](?:@huggingface\/transformers|onnxruntime[^'"]*)['"]/);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC3 — MRL truncation unit: first 256 dims of 1024d output
 // ---------------------------------------------------------------------------
 
-describe('AC3 — MRL truncation (unit: qwen3 adapter)', () => {
+describe('AC3 — MRL truncation (unit: text-embed capability)', () => {
   it('truncateMrl returns first 256 dims of a 1024d Float32Array', async () => {
-    const { truncateMrl } = await import('../embedding/qwen3.js');
+    const { truncateMrl } = await import('../capabilities/text-embed/truncate.js');
     // build a 1024d vector with known values
     const full = new Float32Array(1024);
     for (let i = 0; i < 1024; i++) full[i] = i * 0.001;
@@ -111,7 +141,7 @@ describe('AC3 — MRL truncation (unit: qwen3 adapter)', () => {
   });
 
   it('truncateMrl takes FIRST dims, not last', async () => {
-    const { truncateMrl } = await import('../embedding/qwen3.js');
+    const { truncateMrl } = await import('../capabilities/text-embed/truncate.js');
     const full = new Float32Array(1024);
     full[0] = 999; // mark the first
     full[1023] = -999; // mark the last
@@ -359,10 +389,20 @@ describe('AC8 — mock backend determinism', () => {
 // AC10 — model loads once at boot
 // ---------------------------------------------------------------------------
 
-describe('AC10 — model loads once (spy on loadQwen3Model)', () => {
-  it('loadQwen3Model is called at most once across multiple embed requests', async () => {
-    const qwen3Module = await import('../embedding/qwen3.js');
-    const spy = vi.spyOn(qwen3Module, 'loadQwen3Model');
+describe('AC10 — provider binds once (spy on provider.load)', () => {
+  it('the bound provider load()s at most once across multiple embed requests', async () => {
+    // The AC10 invariant survived the removal of the in-process ONNX loader:
+    // it was never about ONNX, it was about "the expensive setup runs once".
+    // That guard now lives in the resolver's binding cache, so spy there.
+    const { TEXT_EMBED_PROVIDERS } = await import(
+      '../capabilities/text-embed/providers.js');
+    const { resetTextEmbedBinding } = await import(
+      '../capabilities/text-embed/resolver.js');
+
+    resetTextEmbedBinding();
+    const provider = TEXT_EMBED_PROVIDERS.find((p) => p.available());
+    expect(provider).toBeDefined();
+    const spy = vi.spyOn(provider!, 'load');
 
     // Make 3 consecutive requests (mock mode — no actual model load)
     for (let i = 0; i < 3; i++) {
@@ -378,12 +418,10 @@ describe('AC10 — model loads once (spy on loadQwen3Model)', () => {
       );
     }
 
-    // In mock mode, loadQwen3Model should be called 0 times
-    // (mock bypasses model load entirely).
-    // In production mode, it should be called exactly once.
-    // This test verifies the spy is observable — the load-once
-    // invariant is enforced by the singleton guard in qwen3.ts.
-    expect(spy.mock.calls.length).toBeLessThanOrEqual(1);
+    // Exactly once: the first request binds and loads; requests 2 and 3 reuse
+    // the cached binding. This is now a real assertion rather than the old
+    // "<= 1" (which mock mode satisfied vacuously with 0 calls).
+    expect(spy.mock.calls.length).toBe(1);
     spy.mockRestore();
   });
 });

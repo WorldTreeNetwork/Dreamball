@@ -825,6 +825,27 @@ the palace's v3 support after the Dreamball-etk extraction. Format_version 4
 golden vectors (introduced separately in C1) remain in
 `fixtures/goldens/manifest.json` and remain the core's regression gate.
 
+**Follow-up — the rest of the palace/archiform partition, 2026-08-07
+(Dreamball-y4t.11).** This section only ever addressed the v3-format
+fixtures. The remaining v2-format-version fixtures that were still sitting
+undifferentiated in `manifest.json` — the Memory Palace domain types
+(`palace_field`, `aqueduct`, `element_tag`, `inscription`, the three
+`mythos_*` vectors) and the archiform types (`archiform`, `object3d`) — have
+now been partitioned out too, by the same non-gating logic, into
+[`fixtures/goldens/palace-manifest.json`](../fixtures/goldens/palace-manifest.json)
+and
+[`fixtures/goldens/archiform-manifest.json`](../fixtures/goldens/archiform-manifest.json)
+respectively (per the Dreamball-jie boundary analysis). Two fixtures —
+`layout` and `trust_observation` — were left CONTESTED by that analysis
+(candidate destinations argued but not adopted by a boundary ADR) and were
+moved to their own
+[`fixtures/goldens/contested-manifest.json`](../fixtures/goldens/contested-manifest.json)
+rather than guessed into either bucket. `manifest.json` now contains only
+`zero_seed`, `memory_connection`, `action_v4_unsigned`, and
+`action_v4_signed` — the four fixtures that are actually substrate-owned —
+and this is the file the Rust core's port should treat as its regression
+gate.
+
 Two things have NOT (yet) followed the core substrate off of v3, and are
 called out here rather than silently left inconsistent:
 - The palace CLI verbs (`src/cli/internal/{mint,add_room,move,rename_mythos,inscribe}.zig`)

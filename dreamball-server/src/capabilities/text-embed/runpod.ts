@@ -11,9 +11,19 @@
  * (same Ollama worker image, same model tag).
  *
  * TODO-EMBEDDING: bring-model-local-or-byo
- *   This is the "bring-your-own-GPU" exit. The local ONNX path in qwen3.ts is
- *   the "bring-model-local" exit. Either is valid; both go through the same
- *   D-012 wire shape on the wire to the client.
+ *   This is the "bring-your-own-GPU" exit, and since 2026-08-07 it is the only
+ *   non-mock provider that ships inside dreamball-server. The
+ *   "bring-model-local" exit no longer lives here: the in-process ONNX adapter
+ *   (and its ~600 MB @huggingface/transformers dependency) was removed from the
+ *   protocol server, because hosting a model runtime is an application concern
+ *   on the far side of the text-embed/1 seam. A consumer that wants local
+ *   weights implements the interface in its own process. Both exits still go
+ *   through the same D-012 wire shape to the client. See
+ *   docs/decisions/2026-08-07-substrate-palace-boundary.md.
+ *
+ * Moved from src/embedding/runpod.ts on 2026-08-07 — it is a dependency-free
+ * HTTP adapter, so it belongs behind the capability seam rather than in a
+ * top-level "embedding service" directory.
  */
 
 const RUNPOD_BASE = 'https://api.runpod.ai/v2';

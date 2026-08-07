@@ -19,8 +19,24 @@ the least invention and zero wire-format change.
 | File | Role | Maps to decision doc |
 |---|---|---|
 | `interface.ts` | The `text-embed/1` contract: 256d / `mrl-256` output, the `TextEmbedProvider` shape. A DreamBall depends on *this*, never a provider. | §3 (interface vs. provider), §4 (Category B service) |
-| `providers.ts` | Registry of conforming providers, wrapping the existing tested impls. Registry order = binding priority (mock → runpod → onnx-local). | §3.1, §9 |
+| `providers.ts` | Registry of conforming providers. Registry order = binding priority (mock → runpod). | §3.1, §9 |
 | `resolver.ts` | The single binding point (the `ld.so`). Idempotent; boot binds eagerly, the route binds lazily. Normalizes any provider's raw vector to the interface's `OUTPUT_DIM`. | §3 (resolver) |
+| `truncate.ts` | MRL prefix truncation — a property of the capability, not of any provider. | §3 |
+| `runpod.ts` | The remote-GPU provider's HTTP adapter (dependency-free). | §4 |
+
+## 2026-08-07 — the in-process provider is gone
+
+The seam did its job. `onnx-local` — which wrapped `embedding/qwen3.ts` and
+dragged `@huggingface/transformers` (onnxruntime-node + sharp, ~600 MB
+installed) into an otherwise generic protocol server — was **deleted**, along
+with `src/embedding/`. Two providers remain: `mock` and `runpod`.
+
+This is the point of the model. Hosting a model runtime is an application
+concern; the substrate declares the interface and binds whatever satisfies it.
+A consumer that wants local weights implements `text-embed/1` in its own
+process. It does not get to make every `bun install` of the protocol server pay
+for ONNX. See
+[`docs/decisions/2026-08-07-substrate-palace-boundary.md`](../../../../docs/decisions/2026-08-07-substrate-palace-boundary.md).
 
 `routes/embed.ts` and `index.ts` are now **provider-agnostic** — they call
 `resolveTextEmbed()` and never name a provider.

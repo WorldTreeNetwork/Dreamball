@@ -481,36 +481,35 @@ requirement. Land alongside the `graph-store` capability extraction.
 
 ### 12. Qwen3-Embedding-0.6B weights not bundled (S6.1 TODO-EMBEDDING)
 
-**State**: Open — S6.1 landed the `/embed` endpoint, mock seam, and ONNX adapter.
-Model weights are NOT in the repository.
+**State**: **CLOSED by removal, 2026-08-07** — the gap was "we ship an
+in-process ONNX model runtime but not its weights." The correct resolution
+turned out to be dropping the runtime, not shipping the weights.
 
-**Why deferred**: The ONNX model (`onnx-community/Qwen3-Embedding-0.6B-ONNX`) is
-~600 MB fp32 / ~150 MB uint8 quantised. Bundling it in the repo is impractical.
-The download/provision step is a deployment concern, not a code concern.
+`dreamball-server/src/embedding/` is gone: the in-process adapter
+(`qwen3.ts`) and the `@huggingface/transformers` dependency (~600 MB
+installed, via `onnxruntime-node` + `sharp`) were deleted from an otherwise
+generic protocol server. Hosting a model runtime is an application concern,
+and the `text-embed/1` capability seam
+(`dreamball-server/src/capabilities/text-embed/`) already existed to put it
+on the far side of an interface. Two providers remain: `mock` (CI) and
+`runpod` (remote GPU). `DREAMBALL_EMBED_MODEL_PATH` no longer does anything,
+and `scripts/download-embed-model.ts` will not be written.
 
-**Limitation**: `dreamball-server` fails fast at boot with:
-  `embedding model not found at <path>`
-if `DREAMBALL_EMBED_MODEL_PATH` is absent and `DREAMBALL_EMBED_MOCK` is not set.
-All CI gates use `DREAMBALL_EMBED_MOCK=1` (blake3-seeded deterministic mock).
+**Residual, stated honestly**: there is currently **no shipped local-weights
+provider**. The `text-embed/1` interface exists; an implementation of it that
+loads local ONNX weights does not. A consumer that wants local weights
+implements the interface in its own process. That is a real regression in
+out-of-the-box capability, taken deliberately.
 
-**Markers**: `TODO-EMBEDDING: bring-model-local-or-byo` appears in:
-  - `dreamball-server/src/embedding/qwen3.ts` (model-load site, ×2)
+**Markers**: `TODO-EMBEDDING: bring-model-local-or-byo` now appears in:
+  - `dreamball-server/src/capabilities/text-embed/runpod.ts` (BYO-GPU exit, ×1)
   - `dreamball-server/src/routes/embed.ts` (route handler, ×1)
   - `dreamball-server/src/routes/embed.mock.ts` (mock module, ×1)
   - `src/memory-palace/embedding-client.ts` (S4.4 client seam, ×2)
-Total ≥ 6 markers across the embedding surface.
 
-**Path forward**:
-1. Create `scripts/download-embed-model.ts` that runs:
-   `huggingface-cli download onnx-community/Qwen3-Embedding-0.6B-ONNX`
-   or uses the HF Hub API to fetch to `./models/Qwen3-Embedding-0.6B-ONNX/`.
-2. Add a CI job that provisions the model from a cache/artifact store when
-   `DREAMBALL_EMBED_MOCK` is unset (optional; mock is sufficient for sprint-001).
-3. Consider the uint8-quantised variant (`electroglyph/Qwen3-Embedding-0.6B-onnx-uint8`)
-   to reduce memory footprint; MRL prefix property is preserved under quantisation.
-4. S6.2 and S6.3 inherit this gap — they also use `DREAMBALL_EMBED_MOCK=1` in tests.
-
-See `docs/decisions/2026-04-24-qwen3-embedding-loader.md` for the full loader ADR.
+See `docs/decisions/2026-08-07-substrate-palace-boundary.md` for the removal
+rationale, and `docs/decisions/2026-04-24-qwen3-embedding-loader.md` for the
+original loader ADR it supersedes on this point.
 
 ---
 

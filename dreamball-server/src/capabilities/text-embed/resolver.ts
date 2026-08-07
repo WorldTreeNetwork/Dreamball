@@ -2,23 +2,25 @@
  * text-embed/1 — resolver (PROTOTYPE).
  *
  * The single binding point — the `ld.so` of this capability. It replaces the
- * env-var if/else that was previously split between routes/embed.ts (mock vs
- * qwen3) and embedding/qwen3.ts's loadQwen3Model (mock vs runpod vs local).
+ * env-var if/else that was previously split between routes/embed.ts and the
+ * in-process model adapter's own loader.
  *
  * resolveTextEmbed() walks the provider registry in priority order, binds the
  * first available provider, loads it, and caches the bound embedder. It is
  * idempotent: boot calls it eagerly (fail-fast); the route calls it lazily on
  * first request (covers test mode, where boot is skipped). Repeated calls reuse
- * the cached binding — so e.g. loadQwen3Model() is invoked at most once.
+ * the cached binding — so a provider's load() is invoked at most once.
  *
  * The bound embedder normalizes any provider's raw vector to the interface's
- * OUTPUT_DIM via MRL prefix truncation (reusing qwen3.ts's truncateMrl — the
- * single truncation path). The route then sees one provider-agnostic call.
+ * OUTPUT_DIM via MRL prefix truncation (./truncate.ts — the single truncation
+ * path). The route then sees one provider-agnostic call.
  *
- * See docs/decisions/2026-05-31-capability-provider-model.md §3, §9.
+ * See docs/decisions/2026-05-31-capability-provider-model.md §3, §9 and
+ * docs/decisions/2026-08-07-substrate-palace-boundary.md (why no provider in
+ * this registry hosts a model in-process).
  */
 
-import { truncateMrl } from '../../embedding/qwen3.js';
+import { truncateMrl } from './truncate.js';
 import { TEXT_EMBED_PROVIDERS } from './providers.js';
 import {
   INTERFACE,
@@ -46,7 +48,7 @@ function logResolution(providerId: string): void {
  * Bind a provider for `text-embed/1`. Idempotent — caches the first binding.
  *
  * @throws if no provider in the registry is available. The message names the
- *   degrade path the way the old loadQwen3Model fail-fast did.
+ *   degrade path the way the old in-process loader's fail-fast did.
  */
 export async function resolveTextEmbed(): Promise<BoundTextEmbedder> {
   if (_bound) return _bound;
@@ -56,8 +58,9 @@ export async function resolveTextEmbed(): Promise<BoundTextEmbedder> {
     throw new Error(
       `no provider available for capability ${INTERFACE}\n` +
         `bind one of: DREAMBALL_EMBED_MOCK=1 (mock), ` +
-        `RUNPOD_SERVERLESS_ENDPOINT_ID+RUNPOD_API_KEY (runpod), ` +
-        `or DREAMBALL_EMBED_MODEL_PATH (local ONNX; run scripts/download-embed-model.ts)`,
+        `or RUNPOD_SERVERLESS_ENDPOINT_ID+RUNPOD_API_KEY (remote GPU).\n` +
+        `dreamball-server no longer hosts a model in-process; for local ` +
+        `weights, run your own text-embed/1 provider and bind it here.`,
     );
   }
 
