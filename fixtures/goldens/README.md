@@ -45,6 +45,7 @@ verified byte-for-byte identical across the move.
 | `bytes_hex`      | the FULL canonical dCBOR bytes the Zig encoder produced for `value`, hex-encoded (not just a hash — you can diff these directly against a Rust encoder's output) |
 | `blake3`         | Blake3-256 of the raw bytes behind `bytes_hex`, hex-encoded              |
 | `note`           | present only where a fixture needs a caveat (see below)                 |
+| `superseded_bytes_hex` / `superseded_blake3` / `superseded_by` | present only on a **re-baselined** entry: the values it carried before, and the decision that replaced them. Not a second gate — nothing compares against them — they are the audit trail, so a reader can diff the change instead of taking "we re-baselined" on faith. Currently only the two v4 `ball.action` entries. |
 
 ## Regenerating
 
@@ -64,6 +65,58 @@ running the generator twice in a row produces byte-identical files.
 `src/golden.zig` itself is untouched and still the thing Zig's test suite
 gates on; this manifest is a **read-only export**, not a replacement, while
 the Zig protocol core is still in service.
+
+### Exception: the two v4 `ball.action` entries are PINNED, not live-encoded
+
+`action_v4_unsigned` and `action_v4_signed` were **re-baselined onto real
+Gordian Envelope on 2026-08-07** (decision: `Dreamball-y4t.16`;
+implementation: `Dreamball-y4t.18`). Their `bytes_hex`/`blake3` are pinned
+hex constants in `tools/export-golden-fixtures/main.zig`, produced by
+`crates/identikey-log` in the `identikey-protocol` repo:
+
+```
+cargo run -p identikey-log --example dump_goldens
+```
+
+The Zig `encodeActionV4` implements the *pre-Gordian* shape and cannot
+produce these bytes; teaching it to is explicitly out of scope, because the
+whole Zig substrate is what the Rust port replaces (epic `Dreamball-y4t`).
+This is the same pattern `object3d` and `writeActionV3FixturePinned` already
+use for "the live encoder is gone."
+
+What the generator still does live: run the Zig encoder and assert its
+output equals the **superseded** constants in `src/golden.zig`, writing them
+into each entry's `superseded_bytes_hex` / `superseded_blake3` fields. So the
+record of what we moved away from is self-checking rather than copied out,
+and `zig build export-golden-fixtures` stays idempotent — re-running it can
+no longer quietly re-assert the old bytes over the new ones, which was the
+hazard the "re-running the generator is the wrong move" warning below was
+written to guard against.
+
+Three things changed at once, and every byte moved:
+
+| | pre-Gordian | now |
+|---|---|---|
+| subject-only envelope | `200([201(core)])` | `200(201(core))` — no array |
+| attributes | 2-element arrays `["deps", v]` | real assertions: `{predicate: object}` |
+| `signed` | text string `"signed"` | the KNOWN VALUE `3` |
+| signature | raw Ed25519 over the literal canonical bytes | tagged `Signature` (`#6.40020`) over the SHA-256 digest of the **wrapped** unsigned envelope |
+
+The third is the reason for all of it: a signature over a digest tree
+**survives elision** of an assertion, so a partially redacted op remains
+verifiable. That is the property an append-only, multi-party op log most
+wants, and it is proven — not asserted — by
+`crates/identikey-log/tests/elision.rs` in `identikey-protocol`.
+
+Consequences to expect: `content_hash` (blake3 over the canonical unsigned
+envelope bytes) changes for **every** op. What did *not* change: the logical
+`value`, and `actor_hex` — the identity derived from the all-zeros seed is
+the one thing the re-baselining left alone. The core map's bytes are also
+byte-identical; in the unsigned vector the *only* difference is the removed
+`81`.
+
+`docs/PROTOCOL.md` still describes the pre-Gordian shape and needs the
+matching rewrite; that is tracked separately, not silently assumed here.
 
 ## The re-baselining posture — READ THIS BEFORE TREATING A DIFF AS A BUG
 
@@ -107,6 +160,14 @@ and get a diff:
 Do not write code (in Rust or anywhere else) that asserts byte-identity
 with these Zig-produced vectors as an invariant. Comparability, not
 identity, is the property this manifest is for.
+
+**This has now happened once, at format level rather than byte level** — see
+"Exception: the two v4 `ball.action` entries are PINNED" above. The
+re-baselining followed step 3 exactly (bc-envelope wins; record why), with
+two refinements worth reusing: the superseded values are kept *in the entry*
+(`superseded_bytes_hex`, `superseded_blake3`, `superseded_by`) rather than
+only in prose, and the generator asserts the live Zig encoder still produces
+them, so neither side of the diff is a claim taken on faith.
 
 ## Coverage — what's in these manifests vs. what's only in `src/golden.zig`
 

@@ -176,6 +176,92 @@ fn writeQuaternionField(buf: *Buf, indent: []const u8, key: []const u8, q: v2.Qu
 /// Asserts the freshly computed blake3 against the `src/golden.zig` constant
 /// so this tool can never silently drift from the pinned Zig test — if it
 /// fires, `src/golden.zig` and this tool disagree and one of them is wrong.
+// ---------------------------------------------------------------------------
+// The re-baselined v4 ball.action bytes (Dreamball-y4t.18)
+// ---------------------------------------------------------------------------
+//
+// PINNED, not live-encoded. Produced by crates/identikey-log in the
+// identikey-protocol repo, on bc-envelope 0.43.0 / bc-components 0.31.1 /
+// dcbor 0.25.2, from the same logical value the Zig `v2.Action` literal in
+// `main` describes. Regenerate with:
+//
+//     cargo run -p identikey-log --example dump_goldens
+//
+// See the long comment at the v4 block in `main` for why these are pinned and
+// what changed. The corresponding pre-Gordian constants still live in
+// `src/golden.zig` and are still what the live Zig encoder emits -- this tool
+// asserts that, and writes them into each entry's `superseded_*` fields.
+
+/// `200(201(core))` -- a bare Gordian subject. Byte-for-byte identical to the
+/// superseded vector from offset 4 onward; only the `81` (array-of-1) is gone.
+const GORDIAN_ACTION_V4_UNSIGNED_BYTES_HEX = "d8c8d8c9a763686c63821b0000018bcfe568000764626f647943820102646b696e64781a776f726c64747265652e6b616e62616e2d636172642e6d6f766564747970656b62616c6c2e616374696f6e656163746f7258203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da296d706172656e742d68617368657381582010101010101010101010101010101010101010101010101010101010101010106e666f726d61742d76657273696f6e04";
+/// blake3 of the above == the op's `content_hash`.
+const GORDIAN_ACTION_V4_UNSIGNED_BLAKE3 = "cd1afaeec8d6af64b5e1b2e907acbf42ed68316d80e5e430ef3a92e9cbae78c3";
+/// `200([200(201(core)), {3: 201(40020([2, sig]))}])` -- the unsigned envelope
+/// wrapped, carrying one `'signed'` assertion whose predicate is the known
+/// value 3 and whose object is a tagged Ed25519 `Signature`.
+const GORDIAN_ACTION_V4_SIGNED_BYTES_HEX = "d8c882d8c8d8c9a763686c63821b0000018bcfe568000764626f647943820102646b696e64781a776f726c64747265652e6b616e62616e2d636172642e6d6f766564747970656b62616c6c2e616374696f6e656163746f7258203b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da296d706172656e742d68617368657381582010101010101010101010101010101010101010101010101010101010101010106e666f726d61742d76657273696f6e04a103d8c9d99c54820258406ce51ce17e05c5db30980200443eade191f3ea4aacf16741c5fba2e3af0349f7dba77a80e74bc3c9a09d9c1dfa23de193366116a8028bc1f737a11caaa460d06";
+const GORDIAN_ACTION_V4_SIGNED_BLAKE3 = "28d0cfa146da697b031bf8d414e0eeb0cb0b083a0d86471b1d6b78349753230a";
+/// The Ed25519 signature itself: RFC 8032 over the 32-byte SHA-256 digest of
+/// the WRAPPED unsigned envelope (not over the canonical bytes, which is what
+/// the superseded vector signed).
+const GORDIAN_ACTION_V4_SIGNATURE_HEX = "6ce51ce17e05c5db30980200443eade191f3ea4aacf16741c5fba2e3af0349f7dba77a80e74bc3c9a09d9c1dfa23de193366116a8028bc1f737a11caaa460d06";
+
+/// Writes a re-baselined entry: pinned `bytes_hex`/`blake3` plus the
+/// `superseded_bytes_hex`/`superseded_blake3` the entry used to carry.
+///
+/// The superseded values are not a second gate -- nothing compares against
+/// them -- they are the audit trail, so a reader can diff the change rather
+/// than take "we re-baselined" on faith. Recording them in the entry (not only
+/// in prose) also lets a consumer assert it is looking at the post-change
+/// manifest.
+fn writeRebaselinedEntry(
+    allocator: Allocator,
+    out: *Buf,
+    first: bool,
+    name: []const u8,
+    wire_type: []const u8,
+    format_version: u32,
+    value_json: []const u8,
+    bytes_hex: []const u8,
+    blake3_hex: []const u8,
+    superseded_bytes_hex: []const u8,
+    superseded_blake3_hex: []const u8,
+    note: []const u8,
+) !void {
+    // Self-check the pin: the declared blake3 must actually be the blake3 of
+    // the declared bytes, or the constants above have drifted apart.
+    const bytes = try hexDecodeAlloc(allocator, bytes_hex);
+    defer allocator.free(bytes);
+    const observed = try blake3HexAlloc(allocator, bytes);
+    defer allocator.free(observed);
+    if (!std.mem.eql(u8, observed, blake3_hex)) {
+        std.debug.print(
+            "\n  PINNED-CONSTANT DRIFT: {s}\n  observed: {s}\n  declared: {s}\n",
+            .{ name, observed, blake3_hex },
+        );
+        return error.GoldenDrift;
+    }
+
+    if (!first) try out.writeAll(",\n");
+    try out.writeAll("  {\n");
+    try out.print("    \"name\": \"{s}\",\n", .{name});
+    try out.print("    \"type\": \"{s}\",\n", .{wire_type});
+    try out.print("    \"format_version\": {d},\n", .{format_version});
+    try out.writeAll("    \"value\": ");
+    try out.writeAll(value_json);
+    try out.writeAll(",\n");
+    try out.print("    \"bytes_hex\": \"{s}\",\n", .{bytes_hex});
+    try out.print("    \"blake3\": \"{s}\",\n", .{blake3_hex});
+    try out.print("    \"superseded_bytes_hex\": \"{s}\",\n", .{superseded_bytes_hex});
+    try out.print("    \"superseded_blake3\": \"{s}\",\n", .{superseded_blake3_hex});
+    try out.writeAll("    \"superseded_by\": \"Dreamball-y4t.16 (decision) / Dreamball-y4t.18 (implementation), 2026-08-07\",\n");
+    try out.writeAll("    \"note\": ");
+    try writeEscapedString(out, note);
+    try out.writeByte('\n');
+    try out.writeAll("  }");
+}
+
 fn writeEntry(
     allocator: Allocator,
     out: *Buf,
@@ -240,7 +326,7 @@ pub fn main() !void {
 
     try out.writeAll(
         \\{
-        \\  "$comment": "CORE REGRESSION GATE. Generated by tools/export-golden-fixtures (zig build export-golden-fixtures). Destined for the Rust IdentiKey core (Dreamball-y4t) -- these ARE the substrate's regression gate; the GoldenDrift self-check in this tool asserts every entry against src/golden.zig before writing. Do not hand-edit -- re-run the generator. Contains ONLY substrate-owned fixtures (ball.dreamball, ball.memory, v4 ball.action). Memory Palace, archiform, and two contested fixtures were partitioned OUT of this file by Dreamball-y4t.11 (per the Dreamball-jie boundary analysis) into fixtures/goldens/palace-manifest.json + palace-v3-manifest.json, fixtures/goldens/archiform-manifest.json, and fixtures/goldens/contested-manifest.json respectively -- none of those three gate the core build. See fixtures/goldens/README.md for the re-baselining posture: a Zig-vs-Rust byte difference here is a QUESTION to investigate, not proof the Zig bytes are authoritative.",
+        \\  "$comment": "CORE REGRESSION GATE. Generated by tools/export-golden-fixtures (zig build export-golden-fixtures). Destined for the Rust IdentiKey core (Dreamball-y4t) -- these ARE the substrate's regression gate; the GoldenDrift self-check in this tool asserts every entry against src/golden.zig before writing. Do not hand-edit -- re-run the generator. NOTE (Dreamball-y4t.18, 2026-08-07): the two v4 ball.action entries were RE-BASELINED onto real Gordian Envelope per the Dreamball-y4t.16 decision; their bytes are pinned hex produced by crates/identikey-log (identikey-protocol), not by the Zig encoder, and each carries superseded_bytes_hex/superseded_blake3 recording what it held before. content_hash changed for every v4 op as a result. Contains ONLY substrate-owned fixtures (ball.dreamball, ball.memory, v4 ball.action). Memory Palace, archiform, and two contested fixtures were partitioned OUT of this file by Dreamball-y4t.11 (per the Dreamball-jie boundary analysis) into fixtures/goldens/palace-manifest.json + palace-v3-manifest.json, fixtures/goldens/archiform-manifest.json, and fixtures/goldens/contested-manifest.json respectively -- none of those three gate the core build. See fixtures/goldens/README.md for the re-baselining posture: a Zig-vs-Rust byte difference here is a QUESTION to investigate, not proof the Zig bytes are authoritative.",
         \\  "entries": [
         \\
     );
@@ -318,12 +404,41 @@ pub fn main() !void {
     // byte-for-byte; none of those four files gate this core build.
 
     // ── 19/20. C1 v4 ball.action (unsigned + signed) ────────────────────────
+    //
+    // RE-BASELINED ONTO REAL GORDIAN ENVELOPE, 2026-08-07 (Dreamball-y4t.16
+    // decided it; Dreamball-y4t.18 landed it). These two entries are the only
+    // ones in this file whose bytes are NOT what the live Zig encoder emits,
+    // and that is deliberate and permanent:
+    //
+    //   * The Zig `encodeActionV4` implements the pre-Gordian shape --
+    //     `200([201(core)])`, attributes as 2-element arrays, raw Ed25519 over
+    //     the literal canonical bytes. That shape is NOT Gordian Envelope; it
+    //     borrows the #6.200/#6.201 tags and diverges structurally, and
+    //     bc-envelope's decoder rejects it outright.
+    //   * The substrate now IS Gordian Envelope (crates/identikey-log in the
+    //     identikey-protocol repo). Its bytes are `200(201(core))` for a bare
+    //     subject, real single-entry-map assertions, `'signed'` as the KNOWN
+    //     VALUE 3, and a signature over the wrapped subject's SHA-256 digest
+    //     tree -- which is the point, because such a signature SURVIVES
+    //     ELISION.
+    //   * Rewriting the Zig encoder to emit Gordian bytes is out of scope: the
+    //     whole Zig substrate is what the Rust port replaces (epic
+    //     Dreamball-y4t). So the new bytes are PINNED HEX here, exactly the
+    //     pattern `object3d` and `writeActionV3FixturePinned` already
+    //     established for "the live encoder can no longer produce this".
+    //
+    // What we still do live: run the Zig encoder and assert its output equals
+    // the SUPERSEDED constants. That keeps the record of what we moved away
+    // from self-checking rather than a copied-out claim, and it keeps
+    // `zig build export-golden-fixtures` idempotent and honest -- re-running
+    // it can no longer quietly re-assert the old bytes over the new ones.
     {
         const seed: [Ed25519.KeyPair.seed_length]u8 = .{0} ** Ed25519.KeyPair.seed_length;
         const kp = try Ed25519.KeyPair.generateDeterministic(seed);
         const actor = kp.public_key.toBytes();
         const actor_hex = try hexAlloc(gpa, &actor);
         defer gpa.free(actor_hex);
+        // The identity is the one thing the re-baselining did NOT move.
         if (!std.mem.eql(u8, golden.GOLDEN_ACTION_V4_ACTOR_HEX, actor_hex)) return error.GoldenDrift;
 
         var parents = [_][32]u8{[_]u8{0x10} ** 32};
@@ -336,16 +451,52 @@ pub fn main() !void {
             .hlc = .{ 1_700_000_000_000, 7 },
         };
 
-        const unsigned = try ev2.encodeActionV4(gpa, a);
-        defer gpa.free(unsigned);
+        // ---- the superseded (pre-Gordian) bytes, still produced live ------
+        const legacy_unsigned = try ev2.encodeActionV4(gpa, a);
+        defer gpa.free(legacy_unsigned);
+        const legacy_unsigned_hex = try hexAlloc(gpa, legacy_unsigned);
+        defer gpa.free(legacy_unsigned_hex);
+        if (!std.mem.eql(u8, golden.GOLDEN_ACTION_V4_UNSIGNED_BYTES_HEX, legacy_unsigned_hex)) return error.GoldenDrift;
+        const legacy_unsigned_blake3 = try blake3HexAlloc(gpa, legacy_unsigned);
+        defer gpa.free(legacy_unsigned_blake3);
+        if (!std.mem.eql(u8, golden.GOLDEN_ACTION_V4_CONTENT_HASH, legacy_unsigned_blake3)) return error.GoldenDrift;
+
+        const legacy_sig = (try kp.sign(legacy_unsigned, null)).toBytes();
+        const legacy_sigs = [_]protocol.Signature{.{ .alg = "ed25519", .value = &legacy_sig }};
+        const legacy_signed = try ev2.encodeActionV4Signed(gpa, a, &legacy_sigs);
+        defer gpa.free(legacy_signed);
+        const legacy_signed_hex = try hexAlloc(gpa, legacy_signed);
+        defer gpa.free(legacy_signed_hex);
+        if (!std.mem.eql(u8, golden.GOLDEN_ACTION_V4_SIGNED_BYTES_HEX, legacy_signed_hex)) return error.GoldenDrift;
+        const legacy_signed_blake3 = try blake3HexAlloc(gpa, legacy_signed);
+        defer gpa.free(legacy_signed_blake3);
 
         const action_v4_note =
-            "actor is the Ed25519 PUBLIC key deterministically derived from the " ++
-            "all-zeros 32-byte seed (actor_seed_hex) via RFC 8032 keygen -- a " ++
-            "PUBLIC, shared test vector, not a secret. Any RFC-8032-compliant " ++
-            "implementation (including bc-envelope's Rust Ed25519 stack) must " ++
-            "re-derive the identical actor and, for the signed variant, the " ++
-            "identical deterministic signature over the unsigned bytes.";
+            "RE-BASELINED 2026-08-07 onto real Gordian Envelope (bc-envelope 0.43.0), " ++
+            "per the Dreamball-y4t.16 decision, landed by Dreamball-y4t.18. The " ++
+            "superseded_* fields hold the pre-Gordian values this entry carried " ++
+            "before, and the Zig encoder in tools/export-golden-fixtures still " ++
+            "produces exactly those, so the record is self-checking rather than " ++
+            "copied out. WHAT CHANGED: (1) a subject-only envelope is 200(201(core)), " ++
+            "not 200([201(core)]) -- the one-element array is gone, and it is the " ++
+            "only difference in the unsigned vector (the core map bytes are " ++
+            "byte-identical); (2) attributes are real Gordian assertions -- " ++
+            "single-entry maps {predicate: object} -- and 'signed' is the KNOWN " ++
+            "VALUE 3, not the text string \"signed\"; (3) the signature is a tagged " ++
+            "Signature (#6.40020) over the SHA-256 digest of the WRAPPED unsigned " ++
+            "envelope, not raw Ed25519 over the literal canonical bytes. (3) is the " ++
+            "reason for the whole change: a signature over a digest tree survives " ++
+            "ELISION of an assertion, so a partially redacted op is still verifiable " ++
+            "-- see crates/identikey-log/tests/elision.rs in identikey-protocol. " ++
+            "CONSEQUENCE: content_hash = blake3(canonical unsigned envelope bytes) " ++
+            "changes for every op. UNCHANGED: the logical value, and actor_hex -- " ++
+            "the Ed25519 PUBLIC key deterministically derived from the all-zeros " ++
+            "32-byte seed (actor_seed_hex) via RFC 8032 keygen, a PUBLIC shared test " ++
+            "vector, not a secret. Ed25519 is deterministic and Gordian orders " ++
+            "assertions by digest, so any conformant Gordian Envelope implementation " ++
+            "must still reproduce these bytes exactly, signature included. These " ++
+            "bytes are PINNED HEX: the Zig encoder cannot produce them and will not " ++
+            "be taught to, because the Zig substrate is what the Rust port replaces.";
 
         {
             var vbuf = Buf.init(gpa);
@@ -363,27 +514,22 @@ pub fn main() !void {
             const value_json = try vbuf.toOwned();
             defer gpa.free(value_json);
 
-            // encodeActionV4's golden.zig pin is the FULL BYTES constant
-            // (GOLDEN_ACTION_V4_UNSIGNED_BYTES_HEX), not a blake3 -- verified
-            // against that constant (and the content_hash) just below, so no
-            // blake3 cross-check is passed to writeEntry here.
-            try writeEntry(gpa, &out, first, "action_v4_unsigned", v2.Action.type_string, 4, value_json, unsigned, null, action_v4_note);
+            try writeRebaselinedEntry(
+                gpa,
+                &out,
+                first,
+                "action_v4_unsigned",
+                v2.Action.type_string,
+                4,
+                value_json,
+                GORDIAN_ACTION_V4_UNSIGNED_BYTES_HEX,
+                GORDIAN_ACTION_V4_UNSIGNED_BLAKE3,
+                legacy_unsigned_hex,
+                legacy_unsigned_blake3,
+                action_v4_note,
+            );
             first = false;
-
-            const expected_unsigned = try hexDecodeAlloc(gpa, golden.GOLDEN_ACTION_V4_UNSIGNED_BYTES_HEX);
-            defer gpa.free(expected_unsigned);
-            if (!std.mem.eql(u8, unsigned, expected_unsigned)) return error.GoldenDrift;
-            var ch: [32]u8 = undefined;
-            std.crypto.hash.Blake3.hash(unsigned, &ch, .{});
-            const ch_hex = try hexAlloc(gpa, &ch);
-            defer gpa.free(ch_hex);
-            if (!std.mem.eql(u8, golden.GOLDEN_ACTION_V4_CONTENT_HASH, ch_hex)) return error.GoldenDrift;
         }
-
-        const sig = (try kp.sign(unsigned, null)).toBytes();
-        const sigs = [_]protocol.Signature{.{ .alg = "ed25519", .value = &sig }};
-        const signed = try ev2.encodeActionV4Signed(gpa, a, &sigs);
-        defer gpa.free(signed);
 
         {
             var vbuf = Buf.init(gpa);
@@ -395,19 +541,28 @@ pub fn main() !void {
             try writeHexField(&vbuf, "      ", "actor_hex", &actor, true);
             try writeHexField(&vbuf, "      ", "body_hex", &body, true);
             try vbuf.print("      \"hlc\": [{d}, {d}],\n", .{ a.hlc[0], a.hlc[1] });
-            try vbuf.writeAll("      \"signatures\": [{ \"alg\": \"ed25519\", \"value_hex\": \"");
-            const sig_hex = try hexAlloc(gpa, &sig);
-            defer gpa.free(sig_hex);
-            try vbuf.print("{s}\" }}]\n", .{sig_hex});
+            try vbuf.print(
+                "      \"signatures\": [{{ \"alg\": \"ed25519\", \"covers\": \"sha256 digest of the wrapped unsigned envelope\", \"value_hex\": \"{s}\" }}]\n",
+                .{GORDIAN_ACTION_V4_SIGNATURE_HEX},
+            );
             try vbuf.writeAll("    }");
             const value_json = try vbuf.toOwned();
             defer gpa.free(value_json);
 
-            try writeEntry(gpa, &out, first, "action_v4_signed", v2.Action.type_string, 4, value_json, signed, null, action_v4_note);
-
-            const expected_signed = try hexDecodeAlloc(gpa, golden.GOLDEN_ACTION_V4_SIGNED_BYTES_HEX);
-            defer gpa.free(expected_signed);
-            if (!std.mem.eql(u8, signed, expected_signed)) return error.GoldenDrift;
+            try writeRebaselinedEntry(
+                gpa,
+                &out,
+                first,
+                "action_v4_signed",
+                v2.Action.type_string,
+                4,
+                value_json,
+                GORDIAN_ACTION_V4_SIGNED_BYTES_HEX,
+                GORDIAN_ACTION_V4_SIGNED_BLAKE3,
+                legacy_signed_hex,
+                legacy_signed_blake3,
+                action_v4_note,
+            );
         }
     }
 
