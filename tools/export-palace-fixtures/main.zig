@@ -71,6 +71,18 @@ const REGISTRY_PATH = "src/memory-palace/seed/archiform-registry.json";
 
 const FIXTURES_ROOT = "tests/fixtures";
 
+// v3 `ball.action` wire-string constants this tool constructs. `ActionKind`
+// (the closed v3 enum) was deleted from the core in Dreamball-y4t.15;
+// `v2.Action.kind` is now an open wire string (D-037/D-038). These two
+// values are the only ones this tool needs; they are byte-identical to
+// `src/cli/internal/palace_action_v3.zig`'s `Kind.palace_minted` /
+// `Kind.room_added` (kept local here rather than importing an internal CLI
+// module from a standalone tool package).
+const ActionKindWire = struct {
+    const palace_minted: []const u8 = "palace-minted";
+    const room_added: []const u8 = "room-added";
+};
+
 // A fixed clock value so action/timeline timestamps are stable in shape.
 const NOW_MS: i64 = 1_700_000_000_000;
 
@@ -123,7 +135,7 @@ fn encodeSignedAction(
     try zbor.builder.writeTextString(w, "actor");
     try zbor.builder.writeByteString(w, &a.actor);
     try zbor.builder.writeTextString(w, "action-kind");
-    try zbor.builder.writeTextString(w, a.action_kind.toWireString());
+    try zbor.builder.writeTextString(w, a.kind);
     try zbor.builder.writeTextString(w, "parent-hashes");
     try zbor.builder.writeArray(w, a.parent_hashes.len);
     for (a.parent_hashes) |ph| try zbor.builder.writeByteString(w, &ph);
@@ -341,52 +353,16 @@ fn buildTimeline(gpa: Allocator, palace_fp: [32]u8, heads: [][32]u8) !Built {
     return .{ .fp = blake3Hash(bytes), .bytes = bytes };
 }
 
-/// Build a ball.timeline whose `head-hashes` attribute carries an ARRAY of
-/// byte-strings (rather than the canonical repeated `[label, bstr]` attribute
-/// pairs `encodeTimeline` emits).
-///
-/// palace_verify.zig's `parseTimelineHeadHashes` expects the array shape; it is
-/// the only shape from which invariant (e) ("head-hashes are timeline leaves")
-/// can read a non-empty head set and therefore trip. The head we pass is a
-/// NON-leaf action (referenced as a parent by another action), so verify's leaf
-/// check fires with "not a leaf". This is a deliberately adversarial fixture —
-/// the whole point of palace-head-hashes-wrong is a malformed timeline.
-fn buildTimelineHeadsAsArray(gpa: Allocator, palace_fp: [32]u8, heads: []const [32]u8) !Built {
-    const zbor = @import("zbor");
-    const dcbor = dreamball.dcbor;
-
-    var ai = std.Io.Writer.Allocating.init(gpa);
-    errdefer ai.deinit();
-    const w = &ai.writer;
-    try zbor.builder.writeTag(w, dcbor.Tag.envelope);
-    // outer array: leaf-map + 1 head-hashes attribute pair
-    try zbor.builder.writeArray(w, 2);
-
-    try zbor.builder.writeTag(w, dcbor.Tag.leaf);
-    try zbor.builder.writeMap(w, 3);
-    try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, v2.Timeline.type_string);
-    try zbor.builder.writeTextString(w, "palace-fp");
-    try zbor.builder.writeByteString(w, &palace_fp);
-    try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @intCast(v2.Timeline.format_version));
-
-    // Single attribute: ["head-hashes", [<bstr32>...]]
-    try zbor.builder.writeArray(w, 2);
-    try zbor.builder.writeTextString(w, "head-hashes");
-    try zbor.builder.writeArray(w, heads.len);
-    for (heads) |hh| try zbor.builder.writeByteString(w, &hh);
-
-    const bytes = try ai.toOwnedSlice();
-    return .{ .fp = blake3Hash(bytes), .bytes = bytes };
-}
-
 fn buildSignedAction(
     gpa: Allocator,
     keys: signer.HybridSigningKeys,
     a: v2.Action,
 ) !Built {
-    const unsigned = try envelope_v2.encodeAction(gpa, a);
+    // The v3 `encodeAction` this used to call was deleted from the core
+    // (Dreamball-y4t.15); `encodeSignedAction` below reproduces byte-identical
+    // v3 wire bytes and, called with an empty signature list, IS the unsigned
+    // encoding.
+    const unsigned = try encodeSignedAction(gpa, a, &.{});
     defer gpa.free(unsigned);
     const ed_sig = try signer.signEd25519(unsigned, keys.classical());
     const mldsa_sig = try signer.signMlDsa(gpa, unsigned, keys);
@@ -472,11 +448,12 @@ fn generatePalace(gpa: Allocator, fw: *FixtureWriter, mutation: Mutation) !void 
     // Mint action (genesis; empty parents).
     const empty_parents: [][32]u8 = &.{};
     const mint_action = try buildSignedAction(gpa, custodian, .{
-        .action_kind = .palace_minted,
+        .kind = ActionKindWire.palace_minted,
         .parent_hashes = empty_parents,
         .actor = custodian_fp,
         .target_fp = custodian_fp,
         .timestamp = NOW_MS,
+        .hlc = .{ 0, 0 },
     });
 
     // Room field (omitted for no_room).
@@ -506,11 +483,12 @@ fn generatePalace(gpa: Allocator, fw: *FixtureWriter, mutation: Mutation) !void 
     var have_room_action = false;
     if (include_room) {
         room_action = try buildSignedAction(gpa, custodian, .{
-            .action_kind = .room_added,
+            .kind = ActionKindWire.room_added,
             .parent_hashes = room_parents,
             .actor = room_actor,
             .target_fp = room.fp,
             .timestamp = NOW_MS + 1000,
+            .hlc = .{ 0, 0 },
         });
         have_room_action = true;
     }
@@ -530,14 +508,14 @@ fn generatePalace(gpa: Allocator, fw: *FixtureWriter, mutation: Mutation) !void 
     // palace_fp is needed inside the timeline; compute palace field last, so use a
     // placeholder palace_fp here (verify does not cross-check timeline.palace_fp).
     //
-    // For head_not_leaf the timeline must use the ARRAY-form head-hashes encoding
-    // (see buildTimelineHeadsAsArray) — the only shape palace_verify's
-    // parseTimelineHeadHashes reads non-empty, hence the only shape from which
-    // invariant (e) can trip. Other fixtures use the canonical encoder.
-    const timeline = if (mutation == .head_not_leaf)
-        try buildTimelineHeadsAsArray(gpa, [_]u8{0} ** 32, heads_buf[0..])
-    else
-        try buildTimeline(gpa, [_]u8{0} ** 32, heads_buf[0..]);
+    // All mutations, including head_not_leaf, use the canonical encoder —
+    // encodeTimeline's real repeated-attribute-pair shape. (Dreamball-mh0:
+    // this generator used to hand-shape head_not_leaf's timeline as a single
+    // ["head-hashes", [bstr...]] attribute to match the buggy
+    // `parseTimelineHeadHashes`, which never read the encoder's real output.
+    // Now that the reader is fixed, the canonical shape is what makes
+    // invariant (e) fire for the right reason.)
+    const timeline = try buildTimeline(gpa, [_]u8{0} ** 32, heads_buf[0..]);
 
     // Optional second agent (two_agents mutation).
     var second_agent: Built = undefined;
@@ -621,20 +599,22 @@ fn generateBrokenMythos(gpa: Allocator, fw: *FixtureWriter) ![32]u8 {
 
     const empty_parents: [][32]u8 = &.{};
     const mint_action = try buildSignedAction(gpa, custodian, .{
-        .action_kind = .palace_minted,
+        .kind = ActionKindWire.palace_minted,
         .parent_hashes = empty_parents,
         .actor = custodian_fp,
         .target_fp = custodian_fp,
         .timestamp = NOW_MS,
+        .hlc = .{ 0, 0 },
     });
     const room = try buildRoomField(gpa, custodian, "library");
     var room_parents = [_][32]u8{mint_action.fp};
     const room_action = try buildSignedAction(gpa, custodian, .{
-        .action_kind = .room_added,
+        .kind = ActionKindWire.room_added,
         .parent_hashes = room_parents[0..],
         .actor = custodian_fp,
         .target_fp = room.fp,
         .timestamp = NOW_MS + 1000,
+        .hlc = .{ 0, 0 },
     });
     var heads = [_][32]u8{room_action.fp};
     const timeline = try buildTimeline(gpa, [_]u8{0} ** 32, heads[0..]);

@@ -134,6 +134,21 @@ describe('round-trip parity: Mythos (CLI-path)', () => {
 		const second = decodeMythos(bytes);
 		expect(JSON.stringify(first)).toBe(JSON.stringify(second));
 	});
+
+	// Regression test for Dreamball-cv9: `predecessor` is written into the
+	// CORE map by `encodeMythos` (envelope_v2.zig), not as an attribute pair.
+	// A reader that looks for it among the attribute pairs (the pre-fix bug)
+	// would decode `predecessor` as `undefined` here.
+	it('decodes predecessor from a non-genesis mythos (Dreamball-cv9)', () => {
+		const bytes = loadFixture('mythos-nongenesis.cbor');
+		const decoded = decodeMythos(bytes);
+		expect(decoded['is-genesis']).toBe(false);
+		expect(decoded.predecessor).toBeDefined();
+		expect(decoded.predecessor).toMatch(/^b58:/);
+		expect(decoded.body).toBe('the library deepens');
+		const result = v.safeParse(MythosSchema, decoded);
+		expect(result.success).toBe(true);
+	});
 });
 
 // ── AC2: decode-only envelopes — decode succeeds + schema validates ────────────

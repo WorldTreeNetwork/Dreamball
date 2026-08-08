@@ -164,6 +164,23 @@ pub fn main() !void {
         try writeFixture(io, "fixtures/envelope_golden/mythos.cbor", bytes);
     }
 
+    // ── mythos (non-genesis, with predecessor) ──────────────────────────────
+    // Regression fixture for Dreamball-cv9: `predecessor` is written into the
+    // CORE map by encodeMythos (envelope_v2.zig), not as an attribute pair.
+    // Round-tripping this through decodeMythos catches a reader that looks in
+    // the wrong half of the envelope for it.
+    {
+        const m = v2.Mythos{
+            .is_genesis = false,
+            .predecessor = [_]u8{0xAB} ** 32,
+            .body = "the library deepens",
+            .authored_at = 1_700_000_100,
+        };
+        const bytes = try ev2.encodeMythos(gpa, m);
+        defer gpa.free(bytes);
+        try writeFixture(io, "fixtures/envelope_golden/mythos-nongenesis.cbor", bytes);
+    }
+
     // ── archiform ────────────────────────────────────────────────────────────
     {
         const ar = v2.Archiform{

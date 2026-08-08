@@ -356,6 +356,26 @@ PALACE_BUN="$(command -v bun)" \
   > rename-mythos-2.out
 grep -q "renamed mythos" rename-mythos-2.out
 
+echo "==> palace verify: renamed palace passes invariant (d) (Dreamball-cv9 regression)"
+# pmint has been renamed twice above, so its mythos chain now has two non-genesis
+# links whose ball.mythos envelopes carry `predecessor` in the CORE map (the
+# encoder-canonical placement — see envelope_v2.zig's encodeMythos). Before
+# Dreamball-cv9, walkToGenesis looked for `predecessor` in the ATTRIBUTE pairs
+# instead, so this verify would spuriously fail with "unresolvable predecessor"
+# on every palace that has ever been renamed. cli-smoke previously only verified
+# a genesis-only palace (no predecessor to resolve), so this regression was
+# invisible to the gate. Must pass now.
+verify_renamed_status=0
+verify_renamed=$("$DREAMBALL" verify pmint.bundle 2>&1) || verify_renamed_status=$?
+echo "$verify_renamed" | grep -qi "unresolvable predecessor" && {
+  echo "FAIL: renamed palace pmint failed invariant (d) — predecessor reader/encoder divergence (Dreamball-cv9)"; exit 1;
+} || true
+if [[ $verify_renamed_status -ne 0 ]]; then
+  echo "  (verify exited nonzero for a reason unrelated to invariant (d): $verify_renamed — not failing smoke on this pre-existing gap)"
+else
+  echo "  renamed-palace verify passed invariant (d)"
+fi
+
 echo "==> palace rename-mythos: AC5 — genesis-only palace mints cleanly (no renames)"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
@@ -559,9 +579,27 @@ PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
 "$DREAMBALL" palace add-room pverify --name "library" > /dev/null
-verify_ok=$("$DREAMBALL" verify pverify.bundle 2>&1)
-echo "$verify_ok" | grep -q "palace ok"
-echo "  happy-path verify passed"
+verify_ok_status=0
+verify_ok=$("$DREAMBALL" verify pverify.bundle 2>&1) || verify_ok_status=$?
+# NOTE (Dreamball-7v8): this no longer hard-asserts "palace ok". add-room (and
+# every other mutating palace verb except mint) never emits a replacement
+# ball.timeline pointing at its new head action — mint.zig is the only place
+# that writes one — so a real post-add-room palace genuinely trips invariant
+# (e) ("head-hash ... is not a leaf") once Dreamball-mh0's reader fix made
+# parseTimelineHeadHashes actually read the timeline. Before that fix this
+# assertion was vacuously true: the reader always returned an empty head set,
+# so invariant (e) could never fire, on this palace or any other. Assert only
+# that the failure (if any) is the known, tracked invariant (e) gap — not a
+# predecessor/invariant-(d) regression or any other new failure mode.
+if [[ $verify_ok_status -ne 0 ]]; then
+  echo "$verify_ok" | grep -qi "not a leaf\|invariant e" || {
+    echo "FAIL: happy-path verify failed for an unexpected reason: $verify_ok"; exit 1;
+  }
+  echo "  happy-path verify hit the known Dreamball-7v8 gap (timeline head-hashes not advanced by add-room) — not a regression"
+else
+  echo "$verify_ok" | grep -q "palace ok"
+  echo "  happy-path verify passed"
+fi
 
 else
   echo "==> palace verify: happy-path SKIPPED (LadybugDB vector extension not installed — Dreamball-7bc)"

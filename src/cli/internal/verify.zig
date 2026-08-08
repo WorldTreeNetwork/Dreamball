@@ -452,49 +452,33 @@ fn parseTimelineHeadHashes(gpa: Allocator, buf: []const u8) ![][32]u8 {
         };
         pos += lbl.len;
         if (std.mem.eql(u8, lbl.key, "head-hashes")) {
-            if (pos >= buf.len or (buf[pos] & 0xe0) != CBOR_MAJOR_ARR) {
+            // The encoder (envelope_v2.encodeTimeline) writes one repeated
+            // attribute pair per hash — [2]("head-hashes", bstr[32]) — not a
+            // single pair whose value is an array of byte strings. See
+            // Dreamball-mh0.
+            if (pos >= buf.len or (buf[pos] & 0xe0) != CBOR_MAJOR_BSTR) {
                 pos += skipCborItem(buf, pos) catch break;
                 continue;
             }
-            const ha_info = buf[pos] & 0x1f;
-            var ha_count: u64 = 0;
-            var ha_hlen: usize = 1;
-            switch (ha_info) {
-                0...23 => { ha_count = ha_info; },
-                24 => {
-                    if (pos + 1 >= buf.len) break;
-                    ha_count = buf[pos + 1];
-                    ha_hlen = 2;
-                },
-                else => break,
+            const vib = buf[pos];
+            const vi = vib & 0x1f;
+            var vlen: usize = 0;
+            var vhlen: usize = 1;
+            if (vi <= 23) { vlen = vi; }
+            else if (vi == 24) {
+                if (pos + 1 >= buf.len) break;
+                vlen = buf[pos + 1];
+                vhlen = 2;
             }
-            pos += ha_hlen;
-            for (0..@as(usize, @intCast(ha_count))) |_| {
-                if (pos >= buf.len) break;
-                const vib = buf[pos];
-                if ((vib & 0xe0) != CBOR_MAJOR_BSTR) {
-                    pos += skipCborItem(buf, pos) catch break;
-                    continue;
+            if (vlen == 32) {
+                const vstart = pos + vhlen;
+                if (vstart + 32 <= buf.len) {
+                    var fp: [32]u8 = undefined;
+                    @memcpy(&fp, buf[vstart .. vstart + 32]);
+                    try result.append(gpa, fp);
                 }
-                const vi = vib & 0x1f;
-                var vlen: usize = 0;
-                var vhlen: usize = 1;
-                if (vi <= 23) { vlen = vi; }
-                else if (vi == 24) {
-                    if (pos + 1 >= buf.len) break;
-                    vlen = buf[pos + 1];
-                    vhlen = 2;
-                }
-                if (vlen == 32) {
-                    const vstart = pos + vhlen;
-                    if (vstart + 32 <= buf.len) {
-                        var fp: [32]u8 = undefined;
-                        @memcpy(&fp, buf[vstart .. vstart + 32]);
-                        try result.append(gpa, fp);
-                    }
-                }
-                pos += vhlen + vlen;
             }
+            pos += vhlen + vlen;
         } else {
             pos += skipCborItem(buf, pos) catch break;
         }

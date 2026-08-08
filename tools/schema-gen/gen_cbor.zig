@@ -491,7 +491,12 @@ const BODY =
     \\export function decodeMythos(bytes: Uint8Array): Mythos {
     \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
     \\  const isGenesis = core['is-genesis'] as boolean;
-    \\  let predecessor: `b58:${string}` | undefined;
+    \\  // predecessor lives in the CORE map alongside is-genesis (envelope_v2.zig
+    \\  // writeMap(core_len) block). Read it there first; fall back to an
+    \\  // attribute pair for tolerance of older/foreign encoders — see
+    \\  // Dreamball-cv9.
+    \\  let predecessor: `b58:${string}` | undefined =
+    \\    core['predecessor'] !== undefined ? b58Bytes(core['predecessor']) : undefined;
     \\  let about: `b58:${string}` | undefined;
     \\  let form: string | undefined;
     \\  let body: string | undefined;
@@ -502,7 +507,7 @@ const BODY =
     \\  let author: `b58:${string}` | undefined;
     \\  let authoredAt: number | undefined;
     \\  for (const [k, v] of attrs) {
-    \\    if (k === 'predecessor') predecessor = b58Bytes(v);
+    \\    if (k === 'predecessor') predecessor = predecessor ?? b58Bytes(v);
     \\    else if (k === 'about') about = b58Bytes(v);
     \\    else if (k === 'form') form = v as string;
     \\    else if (k === 'body') body = v as string;
