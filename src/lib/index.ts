@@ -18,6 +18,8 @@ export { default as OmnisphericalLens } from './lenses/OmnisphericalLens.svelte'
 export { default as FlatLens } from './lenses/FlatLens.svelte';
 export { default as PhoneLens } from './lenses/PhoneLens.svelte';
 export { default as SplatLens } from './lenses/SplatLens.svelte';
+export { default as ShellLens } from './lenses/ShellLens.svelte';
+export { SHELL_MESH_URL } from './lenses/shell-mesh.js';
 
 export {
 	SPLAT_MEDIA_TYPES,
@@ -69,6 +71,17 @@ export {
 export { parseDreamBall, safeParseDreamBall } from './parse.js';
 
 export { ALL_LENSES, type LensName } from './lenses/lens-types.js';
+
+export {
+	transmittableLocator,
+	locatorFromSearchParams,
+	isTransmittableError,
+	TransmittableNotFoundError,
+	TransmittableVerifyError,
+	TransmittableParseError,
+	type TransmittableLocator,
+	type TransmittableError
+} from './transmittable.js';
 
 export { MockBackend, mockBall } from './backend/MockBackend.js';
 export { HttpBackend } from './backend/HttpBackend.js';

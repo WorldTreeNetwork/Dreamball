@@ -144,6 +144,31 @@ WASM over FFI and over subprocess.
 
 Each runtime holds different capabilities but shares the same wire format.
 
+### 3.1 Transmittable locator (store keys, not identity)
+
+A **Transmittable** is `{ bucket, filename }` — an object-store locator
+for signed `.ball` bytes. It is an app-level adapter, not a wire type
+(no `ball.transmittable` envelope, no codegen). The bytes are
+`application/ball+cbor`; the only decode path is `dreamball.wasm`
+`verifyBall` then `parseBall`. A DreamBall's identity remains its
+Ed25519 fingerprint. `GET /dreamballs/:fp` is unchanged.
+
+Error vocabulary (TypeScript, `src/lib/transmittable.ts`):
+
+| Case | Code |
+|---|---|
+| Object missing | `transmittable-not-found` |
+| wasm verify failed | `transmittable-verify-failed` |
+| wasm parse failed | `transmittable-parse-failed` |
+
+Empty query params are "no locator", not a not-found. Secret keys never
+ride this path. Fetch implementation is `add-transmittable-fetch`.
+
+The viewer-shell mesh (Star Tamagotchi glTF at
+`/characters/star-tamagotchi.glb`) is independent of this locator: the
+`shell` lens always loads that URL; inner contents arrive later via the
+locator.
+
 ---
 
 ## 4. The three crypto tiers

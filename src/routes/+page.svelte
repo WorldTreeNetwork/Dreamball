@@ -29,6 +29,7 @@
 			<li><a href="/demo/wearer">Scenario 3 — Wearer + Observer</a></li>
 			<li><a href="/demo/splat">Bonus — Gaussian Splat Lens</a></li>
 			<li><a href="/demo/star">★ Star Tamagotchi — first character DreamBall (glTF in a ball)</a></li>
+			<li><a href="/demo/shell">Shell — canonical 3D container (Star Tamagotchi mesh)</a></li>
 		</ul>
 	</section>
 

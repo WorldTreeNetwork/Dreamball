@@ -11,6 +11,7 @@
 	<a href="/demo/wearer">Wearer</a>
 	<a href="/demo/splat">Splat</a>
 	<a href="/demo/star">★ Star</a>
+	<a href="/demo/shell">Shell</a>
 </nav>
 
 <div class="demo-wrap">

@@ -22,7 +22,7 @@
     argTypes: {
       lens: {
         control: { type: 'select' },
-        options: ['thumbnail', 'avatar', 'knowledge-graph', 'emotional-state', 'omnispherical', 'flat', 'phone', 'splat'],
+        options: ['thumbnail', 'avatar', 'knowledge-graph', 'emotional-state', 'omnispherical', 'flat', 'phone', 'splat', 'shell'],
         description: 'Active lens to render'
       },
       ballType: {

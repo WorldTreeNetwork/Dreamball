@@ -28,6 +28,7 @@
 	import PalaceLens from '../lenses/palace/PalaceLens.svelte';
 	import RoomLens from '../lenses/room/RoomLens.svelte';
 	import InscriptionLens from '../lenses/inscription/InscriptionLens.svelte';
+	import ShellLens from '../lenses/ShellLens.svelte';
 	import { isSplatAsset } from '../splat/media-types.js';
 	import { untrack } from 'svelte';
 
@@ -248,6 +249,8 @@
 			fallback={inscriptionMeta?.fallback ?? []}
 			{store}
 		/>
+	{:else if effectiveLens === 'shell'}
+		<ShellLens ball={filteredBall} />
 	{:else}
 		<FlatLens ball={filteredBall} />
 	{/if}
