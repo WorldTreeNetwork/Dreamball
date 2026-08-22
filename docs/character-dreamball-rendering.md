@@ -77,6 +77,28 @@ The repo fixture (`static/characters/star-tamagotchi.ball`) uses a
 **site-relative** asset URL (`/characters/star-tamagotchi.glb`) so the demo is
 self-contained; a distributed character ball would carry an absolute URL.
 
+## Viewer-shell mesh (same GLB)
+
+Star Tamagotchi is also the canonical **viewer-shell** mesh — the 3D
+container `ShellLens` always loads, independent of whatever Transmittable
+contents sit inside. Until a dedicated container mesh exists, this character
+glTF is the stand-in. Do not hunt for a missing pokeball `.blend`.
+
+| | |
+|---|---|
+| Runtime asset | `static/characters/star-tamagotchi.glb`, served at `/characters/star-tamagotchi.glb` |
+| Capsule | `static/characters/star-tamagotchi.ball` — `look.asset` pointer + Blake3 hash; wasm parse/verify unchanged |
+| Frame | AvatarModel auto-fit: recentre, largest AABB axis = `fit` (default 2), lift so the base sits on `y = 0`. No Star-specific scale |
+| Provenance | `/Users/dukejones/work/Family/StarTamagotchi/Star Tomagatchi.blend` stays **outside** this repo. Do not re-export. Do not copy the GLB to `static/shell/` |
+
+The repo GLB is already optimized (~1 MB / 18k tris, webp textures).
+`SHELL_MESH_URL` in `src/lib/lenses/shell-mesh.ts` is the shell-lens constant;
+AvatarLens still reads `look.asset`. Both paths share the bytes and the
+auto-fit contract. `/demo/star` (`lens="avatar"`) is unchanged.
+
+A clean clone with no `.blend` files loads the shell from
+`static/characters/star-tamagotchi.glb` without Blender.
+
 ## Where this is going
 
 Today Star is *only* a glTF in a ball. Next she carries `act` / `memory` /

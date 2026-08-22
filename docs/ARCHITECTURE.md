@@ -167,7 +167,8 @@ ride this path. Fetch implementation is `add-transmittable-fetch`.
 The viewer-shell mesh (Star Tamagotchi glTF at
 `/characters/star-tamagotchi.glb`) is independent of this locator: the
 `shell` lens always loads that URL; inner contents arrive later via the
-locator.
+locator. Path, capsule, AvatarModel auto-fit, and Blender provenance:
+[`character-dreamball-rendering.md`](character-dreamball-rendering.md).
 
 ---
 
