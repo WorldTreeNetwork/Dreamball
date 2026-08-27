@@ -157,26 +157,20 @@ fn runAddRoom(
     };
     defer gpa.free(bundle_content);
 
-    // Bundle format: one hex fp per line. Line 0 = palace fp.
-    var palace_fp: [32]u8 = undefined;
-    var action_fp_prev: ?[32]u8 = null;
-    var line_idx: usize = 0;
-    var it = std.mem.splitScalar(u8, bundle_content, '\n');
-    while (it.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len != 64) continue;
-        if (line_idx == 0) {
-            palace_fp = hexDecode(trimmed) catch continue;
-        } else if (line_idx == 4) {
-            // Line 4 = current head action fp (per palace-mint bundle order)
-            action_fp_prev = hexDecode(trimmed) catch null;
-        }
-        line_idx += 1;
-    }
-    if (line_idx < 1) {
+    // Bundle format: one hex fp per line. Line 0 = palace envelope fp.
+    const bundle_fps = try palace_mint.parseBundleFps(gpa, bundle_content);
+    defer gpa.free(bundle_fps);
+    if (bundle_fps.len < 1) {
         try io.writeAllStderr("error: invalid palace bundle\n");
         return 2;
     }
+    const palace_fp = bundle_fps[0];
+    const action_fp_prev: ?[32]u8 = if (bundle_fps.len > 4) bundle_fps[4] else null;
+
+    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
+    defer gpa.free(cas_dir_path);
+    const append = try palace_mint.nextAppend(gpa, cas_dir_path, bundle_fps, palace_fp, action_fp_prev);
+    defer gpa.free(append.parent_hashes);
 
     // ── 2. Load custodian key ─────────────────────────────────────────────────
     const key_path = try std.fmt.allocPrint(gpa, "{s}.key", .{palace_path});
@@ -253,11 +247,7 @@ fn runAddRoom(
     }
 
     // ── 4. Build room-added action (dual-signed by custodian) ─────────────────
-    const parent_hashes: [][32]u8 = if (action_fp_prev) |pfp|
-        try gpa.dupe([32]u8, &[_][32]u8{pfp})
-    else
-        try gpa.dupe([32]u8, &[_][32]u8{});
-    defer gpa.free(parent_hashes);
+    const parent_hashes = append.parent_hashes;
 
     const actor_fp = Fingerprint.fromEd25519(custodian_keys.ed25519_public).bytes;
 
@@ -283,6 +273,9 @@ fn runAddRoom(
     defer gpa.free(action_signed_bytes);
     const action_fp = palace_mint.blake3Hash(action_signed_bytes);
 
+    const timeline_adv = try palace_mint.encodeReplacementTimeline(gpa, append.timeline_palace_fp, action_fp);
+    defer gpa.free(timeline_adv.bytes);
+
     // ── 5. Staging directory ──────────────────────────────────────────────────
     var cwd_buf: [4096]u8 = undefined;
     cwd_buf[0] = 0;
@@ -301,7 +294,7 @@ fn runAddRoom(
     try std.Io.Dir.cwd().createDir(io.io(), staging_path, .default_dir);
 
     // Collect envelope entries to stage
-    var entries_buf: [5]palace_mint.EnvelopeEntry = undefined;
+    var entries_buf: [6]palace_mint.EnvelopeEntry = undefined;
     var n_entries: usize = 0;
 
     // Room field envelope always staged
@@ -310,6 +303,9 @@ fn runAddRoom(
 
     // Action envelope always staged
     entries_buf[n_entries] = .{ .fp = action_fp, .bytes = action_signed_bytes };
+    n_entries += 1;
+
+    entries_buf[n_entries] = .{ .fp = timeline_adv.fp, .bytes = timeline_adv.bytes };
     n_entries += 1;
 
     // Mythos envelope if provided
@@ -381,19 +377,19 @@ fn runAddRoom(
     }
 
     // ── 7. Promote staging → final CAS (SEC11 atomic rename) ─────────────────
-    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
-    defer gpa.free(cas_dir_path);
     std.Io.Dir.cwd().createDir(io.io(), cas_dir_path, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
     };
 
-    // Promote all staged envelopes (room + action + optional mythos + optional archiform)
-    var promote_fps_buf: [5][32]u8 = undefined;
+    // Promote all staged envelopes (room + action + timeline + optional mythos/archiform)
+    var promote_fps_buf: [6][32]u8 = undefined;
     var n_promote: usize = 0;
     promote_fps_buf[n_promote] = room_fp;
     n_promote += 1;
     promote_fps_buf[n_promote] = action_fp;
+    n_promote += 1;
+    promote_fps_buf[n_promote] = timeline_adv.fp;
     n_promote += 1;
     if (mythos_fp) |mfp| {
         promote_fps_buf[n_promote] = mfp;
@@ -410,35 +406,19 @@ fn runAddRoom(
     std.Io.Dir.cwd().deleteDir(io.io(), staging_path) catch {};
 
     // ── 7b. Append new fps to palace bundle ───────────────────────────────────
-    // The palace bundle is the canonical ordered list of all envelope fps for this
-    // palace.  After a successful add-room we append: room_fp, action_fp (and
-    // optional mythos/archiform fps) so `palace verify` and `palace show` can find
-    // all envelopes by scanning the bundle.
+    // The palace bundle is the operational contains list. After a successful
+    // add-room we append: room_fp, action_fp, replacement timeline_fp (and
+    // optional mythos/archiform fps) so `palace verify` and `palace show` can
+    // find all envelopes by scanning the bundle. Last ball.timeline wins.
     {
-        const room_fp_hex_append = palace_mint.hexArray(&room_fp);
-        // Build append string: room_fp + action_fp + optional fps
-        var lines_buf: std.ArrayList(u8) = .empty;
-        defer lines_buf.deinit(gpa);
-        try lines_buf.appendSlice(gpa, &room_fp_hex_append);
-        try lines_buf.append(gpa, '\n');
-        try lines_buf.appendSlice(gpa, &action_fp_hex_arr);
-        try lines_buf.append(gpa, '\n');
-        if (mythos_fp) |mfp| {
-            const mhex = palace_mint.hexArray(&mfp);
-            try lines_buf.appendSlice(gpa, &mhex);
-            try lines_buf.append(gpa, '\n');
-        }
-        if (archiform_fp) |afp| {
-            const ahex = palace_mint.hexArray(&afp);
-            try lines_buf.appendSlice(gpa, &ahex);
-            try lines_buf.append(gpa, '\n');
-        }
-        // Append to the existing palace bundle file: concatenate existing + new fps
-        var combined: std.ArrayList(u8) = .empty;
-        defer combined.deinit(gpa);
-        try combined.appendSlice(gpa, bundle_content);
-        try combined.appendSlice(gpa, lines_buf.items);
-        try palace_mint.writeBytesToPath(bundle_path, combined.items);
+        var extra: std.ArrayList([32]u8) = .empty;
+        defer extra.deinit(gpa);
+        try extra.append(gpa, room_fp);
+        try extra.append(gpa, action_fp);
+        try extra.append(gpa, timeline_adv.fp);
+        if (mythos_fp) |mfp| try extra.append(gpa, mfp);
+        if (archiform_fp) |afp| try extra.append(gpa, afp);
+        try palace_mint.appendHexFpsToBundleFile(gpa, bundle_path, bundle_content, extra.items);
     }
 
     // ── 8. Report ─────────────────────────────────────────────────────────────

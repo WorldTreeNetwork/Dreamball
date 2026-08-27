@@ -109,24 +109,19 @@ fn runMove(
     };
     defer gpa.free(bundle_content);
 
-    var palace_fp: [32]u8 = undefined;
-    var action_fp_prev: ?[32]u8 = null;
-    var line_idx: usize = 0;
-    var it = std.mem.splitScalar(u8, bundle_content, '\n');
-    while (it.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len != 64) continue;
-        if (line_idx == 0) {
-            palace_fp = hexDecode(trimmed) catch continue;
-        } else if (line_idx == 4) {
-            action_fp_prev = hexDecode(trimmed) catch null;
-        }
-        line_idx += 1;
-    }
-    if (line_idx < 1) {
+    const bundle_fps = try palace_mint.parseBundleFps(gpa, bundle_content);
+    defer gpa.free(bundle_fps);
+    if (bundle_fps.len < 1) {
         try io.writeAllStderr("error: invalid palace bundle\n");
         return 2;
     }
+    const palace_fp = bundle_fps[0];
+    const action_fp_prev: ?[32]u8 = if (bundle_fps.len > 4) bundle_fps[4] else null;
+
+    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
+    defer gpa.free(cas_dir_path);
+    const append = try palace_mint.nextAppend(gpa, cas_dir_path, bundle_fps, palace_fp, action_fp_prev);
+    defer gpa.free(append.parent_hashes);
 
     // ── 2. Load custodian key ─────────────────────────────────────────────────
     const key_path = try std.fmt.allocPrint(gpa, "{s}.key", .{palace_path});
@@ -147,11 +142,7 @@ fn runMove(
     };
 
     // ── 4. Build move action (dual-signed) ────────────────────────────────────
-    const parent_hashes: [][32]u8 = if (action_fp_prev) |pfp|
-        try gpa.dupe([32]u8, &[_][32]u8{pfp})
-    else
-        try gpa.dupe([32]u8, &[_][32]u8{});
-    defer gpa.free(parent_hashes);
+    const parent_hashes = append.parent_hashes;
 
     const actor_fp = Fingerprint.fromEd25519(custodian_keys.ed25519_public).bytes;
 
@@ -177,6 +168,9 @@ fn runMove(
     defer gpa.free(action_signed_bytes);
     const action_fp = palace_mint.blake3Hash(action_signed_bytes);
 
+    const timeline_adv = try palace_mint.encodeReplacementTimeline(gpa, append.timeline_palace_fp, action_fp);
+    defer gpa.free(timeline_adv.bytes);
+
     // ── 5. Staging ────────────────────────────────────────────────────────────
     var cwd_buf: [4096]u8 = undefined;
     cwd_buf[0] = 0;
@@ -194,9 +188,10 @@ fn runMove(
 
     try std.Io.Dir.cwd().createDir(io.io(), staging_path, .default_dir);
 
-    var entries_buf: [1]palace_mint.EnvelopeEntry = undefined;
+    var entries_buf: [2]palace_mint.EnvelopeEntry = undefined;
     entries_buf[0] = .{ .fp = action_fp, .bytes = action_signed_bytes };
-    try palace_mint.writeStagingFiles(staging_path, entries_buf[0..1]);
+    entries_buf[1] = .{ .fp = timeline_adv.fp, .bytes = timeline_adv.bytes };
+    try palace_mint.writeStagingFiles(staging_path, entries_buf[0..2]);
 
     // Write bundle manifest for bridge
     // Format: palace_fp, avatar_fp (doc to move), to_room_fp, action_fp
@@ -236,15 +231,15 @@ fn runMove(
     }
 
     // ── 7. Promote staging → final CAS ───────────────────────────────────────
-    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
-    defer gpa.free(cas_dir_path);
     std.Io.Dir.cwd().createDir(io.io(), cas_dir_path, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
     };
 
-    try palace_mint.promoteStagingFiles(gpa, staging_path, cas_dir_path, &[_][32]u8{action_fp});
+    try palace_mint.promoteStagingFiles(gpa, staging_path, cas_dir_path, &[_][32]u8{ action_fp, timeline_adv.fp });
     std.Io.Dir.cwd().deleteDir(io.io(), staging_path) catch {};
+
+    try palace_mint.appendHexFpsToBundleFile(gpa, bundle_path, bundle_content, &[_][32]u8{ action_fp, timeline_adv.fp });
 
     // ── 8. Report ─────────────────────────────────────────────────────────────
     try io.printStdout(

@@ -239,24 +239,19 @@ fn runInscribe(
     };
     defer gpa.free(bundle_content);
 
-    var palace_fp: [32]u8 = undefined;
-    var action_fp_prev: ?[32]u8 = null;
-    var line_idx: usize = 0;
-    var it = std.mem.splitScalar(u8, bundle_content, '\n');
-    while (it.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len != 64) continue;
-        if (line_idx == 0) {
-            palace_fp = hexDecode(trimmed) catch continue;
-        } else if (line_idx == 4) {
-            action_fp_prev = hexDecode(trimmed) catch null;
-        }
-        line_idx += 1;
-    }
-    if (line_idx < 1) {
+    const bundle_fps = try palace_mint.parseBundleFps(gpa, bundle_content);
+    defer gpa.free(bundle_fps);
+    if (bundle_fps.len < 1) {
         try io.writeAllStderr("error: invalid palace bundle\n");
         return 2;
     }
+    const palace_fp = bundle_fps[0];
+    const action_fp_prev: ?[32]u8 = if (bundle_fps.len > 4) bundle_fps[4] else null;
+
+    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
+    defer gpa.free(cas_dir_path);
+    const append = try palace_mint.nextAppend(gpa, cas_dir_path, bundle_fps, palace_fp, action_fp_prev);
+    defer gpa.free(append.parent_hashes);
 
     // ── 2. Load custodian key ─────────────────────────────────────────────────
     const key_path = try std.fmt.allocPrint(gpa, "{s}.key", .{palace_path});
@@ -330,11 +325,7 @@ fn runInscribe(
     }
 
     // ── 8. Build avatar-inscribed action (dual-signed) ────────────────────────
-    const parent_hashes: [][32]u8 = if (action_fp_prev) |pfp|
-        try gpa.dupe([32]u8, &[_][32]u8{pfp})
-    else
-        try gpa.dupe([32]u8, &[_][32]u8{});
-    defer gpa.free(parent_hashes);
+    const parent_hashes = append.parent_hashes;
 
     const actor_fp = Fingerprint.fromEd25519(custodian_keys.ed25519_public).bytes;
 
@@ -360,6 +351,9 @@ fn runInscribe(
     defer gpa.free(action_signed_bytes);
     const action_fp = palace_mint.blake3Hash(action_signed_bytes);
 
+    const timeline_adv = try palace_mint.encodeReplacementTimeline(gpa, append.timeline_palace_fp, action_fp);
+    defer gpa.free(timeline_adv.bytes);
+
     // ── 9. Staging directory ──────────────────────────────────────────────────
     var cwd_buf: [4096]u8 = undefined;
     cwd_buf[0] = 0;
@@ -378,12 +372,14 @@ fn runInscribe(
     try std.Io.Dir.cwd().createDir(io.io(), staging_path, .default_dir);
 
     // Stage all envelopes
-    var entries_buf: [5]palace_mint.EnvelopeEntry = undefined;
+    var entries_buf: [6]palace_mint.EnvelopeEntry = undefined;
     var n_entries: usize = 0;
 
     entries_buf[n_entries] = .{ .fp = inscription_fp, .bytes = inscription_bytes };
     n_entries += 1;
     entries_buf[n_entries] = .{ .fp = action_fp, .bytes = action_signed_bytes };
+    n_entries += 1;
+    entries_buf[n_entries] = .{ .fp = timeline_adv.fp, .bytes = timeline_adv.bytes };
     n_entries += 1;
     if (mythos_bytes_owned) |mb| {
         entries_buf[n_entries] = .{ .fp = mythos_fp.?, .bytes = mb };
@@ -457,18 +453,18 @@ fn runInscribe(
     }
 
     // ── 11. Promote staging → final CAS ──────────────────────────────────────
-    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
-    defer gpa.free(cas_dir_path);
     std.Io.Dir.cwd().createDir(io.io(), cas_dir_path, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
     };
 
-    var promote_fps_buf: [5][32]u8 = undefined;
+    var promote_fps_buf: [6][32]u8 = undefined;
     var n_promote: usize = 0;
     promote_fps_buf[n_promote] = inscription_fp;
     n_promote += 1;
     promote_fps_buf[n_promote] = action_fp;
+    n_promote += 1;
+    promote_fps_buf[n_promote] = timeline_adv.fp;
     n_promote += 1;
     if (mythos_fp) |mfp| {
         promote_fps_buf[n_promote] = mfp;
@@ -481,6 +477,17 @@ fn runInscribe(
 
     try palace_mint.promoteStagingFiles(gpa, staging_path, cas_dir_path, promote_fps_buf[0..n_promote]);
     std.Io.Dir.cwd().deleteDir(io.io(), staging_path) catch {};
+
+    {
+        var extra: std.ArrayList([32]u8) = .empty;
+        defer extra.deinit(gpa);
+        try extra.append(gpa, inscription_fp);
+        try extra.append(gpa, action_fp);
+        try extra.append(gpa, timeline_adv.fp);
+        if (mythos_fp) |mfp| try extra.append(gpa, mfp);
+        if (archiform_fp) |afp| try extra.append(gpa, afp);
+        try palace_mint.appendHexFpsToBundleFile(gpa, bundle_path, bundle_content, extra.items);
+    }
 
     // ── 12. Report ────────────────────────────────────────────────────────────
     const insc_fp_hex_str = try palace_mint.hexEncode(gpa, &inscription_fp);

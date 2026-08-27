@@ -155,28 +155,25 @@ fn runRenameMythos(
     };
     defer gpa.free(bundle_content);
 
-    // Parse palace fp (line 0) and current head action fp (line 4).
-    var palace_fp: [32]u8 = undefined;
-    var current_head_action_fp: ?[32]u8 = null;
-    var current_mythos_fp: ?[32]u8 = null;
-    var line_idx: usize = 0;
-    var it = std.mem.splitScalar(u8, bundle_content, '\n');
-    while (it.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len != 64) continue;
-        switch (line_idx) {
-            0 => palace_fp = hexDecode(trimmed) catch continue,
-            // Bundle order from palace_mint.zig: palace, oracle, mythos, registry, action, timeline
-            2 => current_mythos_fp = hexDecode(trimmed) catch null,
-            4 => current_head_action_fp = hexDecode(trimmed) catch null,
-            else => {},
-        }
-        line_idx += 1;
-    }
-    if (line_idx < 1) {
+    // Bundle order from palace_mint.zig: palace, oracle, mythos, registry, action, timeline.
+    // Later verbs append more fps; last ball.mythos / ball.timeline in the list win.
+    const bundle_fps = try palace_mint.parseBundleFps(gpa, bundle_content);
+    defer gpa.free(bundle_fps);
+    if (bundle_fps.len < 1) {
         try io.writeAllStderr("error: invalid palace bundle\n");
         return 2;
     }
+    const palace_fp = bundle_fps[0];
+    // Line 2 is the mint-era canonical mythos. Room `--mythos` envelopes also
+    // live in the bundle, so last-wins would steal the predecessor; keep the
+    // mint-era slot (pre-7v8 behaviour). Timeline heads are independent.
+    const current_mythos_fp: ?[32]u8 = if (bundle_fps.len > 2) bundle_fps[2] else null;
+    const current_head_action_fp: ?[32]u8 = if (bundle_fps.len > 4) bundle_fps[4] else null;
+
+    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
+    defer gpa.free(cas_dir_path);
+    const append = try palace_mint.nextAppend(gpa, cas_dir_path, bundle_fps, palace_fp, current_head_action_fp);
+    defer gpa.free(append.parent_hashes);
 
     // ── 2. Load custodian key ─────────────────────────────────────────────────
     const key_path = try std.fmt.allocPrint(gpa, "{s}.key", .{palace_path});
@@ -221,11 +218,7 @@ fn runRenameMythos(
     // ── 5. Build "true-naming" action (dual-signed by custodian) ─────────────
     const actor_fp = Fingerprint.fromEd25519(custodian_keys.ed25519_public).bytes;
 
-    const parent_hashes: [][32]u8 = if (current_head_action_fp) |pfp|
-        try gpa.dupe([32]u8, &[_][32]u8{pfp})
-    else
-        try gpa.dupe([32]u8, &[_][32]u8{});
-    defer gpa.free(parent_hashes);
+    const parent_hashes = append.parent_hashes;
 
     const action = v2.Action{
         .kind = palace_v3.Kind.true_naming,
@@ -249,6 +242,9 @@ fn runRenameMythos(
     defer gpa.free(action_signed_bytes);
     const action_fp = palace_mint.blake3Hash(action_signed_bytes);
 
+    const timeline_adv = try palace_mint.encodeReplacementTimeline(gpa, append.timeline_palace_fp, action_fp);
+    defer gpa.free(timeline_adv.bytes);
+
     // ── 6. Staging directory ──────────────────────────────────────────────────
     var cwd_buf: [4096]u8 = undefined;
     cwd_buf[0] = 0;
@@ -266,10 +262,11 @@ fn runRenameMythos(
 
     try std.Io.Dir.cwd().createDir(io.io(), staging_path, .default_dir);
 
-    // Stage: new mythos + signed action.
+    // Stage: new mythos + signed action + replacement timeline.
     try palace_mint.writeStagingFiles(staging_path, &[_]palace_mint.EnvelopeEntry{
         .{ .fp = new_mythos_fp, .bytes = new_mythos_bytes },
         .{ .fp = action_fp, .bytes = action_signed_bytes },
+        .{ .fp = timeline_adv.fp, .bytes = timeline_adv.bytes },
     });
 
     // Write bundle manifest for bridge.
@@ -322,8 +319,6 @@ fn runRenameMythos(
     }
 
     // ── 8. Promote staging → final CAS (SEC11 atomic rename) ─────────────────
-    const cas_dir_path = try std.fmt.allocPrint(gpa, "{s}.cas", .{palace_path});
-    defer gpa.free(cas_dir_path);
     std.Io.Dir.cwd().createDir(io.io(), cas_dir_path, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
@@ -332,9 +327,16 @@ fn runRenameMythos(
     try palace_mint.promoteStagingFiles(gpa, staging_path, cas_dir_path, &[_][32]u8{
         new_mythos_fp,
         action_fp,
+        timeline_adv.fp,
     });
 
     std.Io.Dir.cwd().deleteDir(io.io(), staging_path) catch {};
+
+    try palace_mint.appendHexFpsToBundleFile(gpa, bundle_path, bundle_content, &[_][32]u8{
+        new_mythos_fp,
+        action_fp,
+        timeline_adv.fp,
+    });
 
     // ── 9. Report ─────────────────────────────────────────────────────────────
     const new_mythos_fp_report = try palace_mint.hexEncode(gpa, &new_mythos_fp);

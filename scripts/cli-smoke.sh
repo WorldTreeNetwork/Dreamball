@@ -371,10 +371,10 @@ echo "$verify_renamed" | grep -qi "unresolvable predecessor" && {
   echo "FAIL: renamed palace pmint failed invariant (d) — predecessor reader/encoder divergence (Dreamball-cv9)"; exit 1;
 } || true
 if [[ $verify_renamed_status -ne 0 ]]; then
-  echo "  (verify exited nonzero for a reason unrelated to invariant (d): $verify_renamed — not failing smoke on this pre-existing gap)"
-else
-  echo "  renamed-palace verify passed invariant (d)"
+  echo "FAIL: renamed palace pmint failed verify: $verify_renamed"; exit 1;
 fi
+echo "$verify_renamed" | grep -q "palace ok"
+echo "  renamed-palace verify passed"
 
 echo "==> palace rename-mythos: AC5 — genesis-only palace mints cleanly (no renames)"
 PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
@@ -579,27 +579,9 @@ PALACE_BRIDGE_DIR="$REPO_DIR/src/lib/bridge" \
 PALACE_DB_PATH="$WORK/palace-smoke.db" \
 PALACE_BUN="$(command -v bun)" \
 "$DREAMBALL" palace add-room pverify --name "library" > /dev/null
-verify_ok_status=0
-verify_ok=$("$DREAMBALL" verify pverify.bundle 2>&1) || verify_ok_status=$?
-# NOTE (Dreamball-7v8): this no longer hard-asserts "palace ok". add-room (and
-# every other mutating palace verb except mint) never emits a replacement
-# ball.timeline pointing at its new head action — mint.zig is the only place
-# that writes one — so a real post-add-room palace genuinely trips invariant
-# (e) ("head-hash ... is not a leaf") once Dreamball-mh0's reader fix made
-# parseTimelineHeadHashes actually read the timeline. Before that fix this
-# assertion was vacuously true: the reader always returned an empty head set,
-# so invariant (e) could never fire, on this palace or any other. Assert only
-# that the failure (if any) is the known, tracked invariant (e) gap — not a
-# predecessor/invariant-(d) regression or any other new failure mode.
-if [[ $verify_ok_status -ne 0 ]]; then
-  echo "$verify_ok" | grep -qi "not a leaf\|invariant e" || {
-    echo "FAIL: happy-path verify failed for an unexpected reason: $verify_ok"; exit 1;
-  }
-  echo "  happy-path verify hit the known Dreamball-7v8 gap (timeline head-hashes not advanced by add-room) — not a regression"
-else
-  echo "$verify_ok" | grep -q "palace ok"
-  echo "  happy-path verify passed"
-fi
+verify_ok=$("$DREAMBALL" verify pverify.bundle 2>&1)
+echo "$verify_ok" | grep -q "palace ok"
+echo "  happy-path verify passed"
 
 else
   echo "==> palace verify: happy-path SKIPPED (LadybugDB vector extension not installed — Dreamball-7bc)"

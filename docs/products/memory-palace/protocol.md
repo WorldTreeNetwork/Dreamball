@@ -155,6 +155,16 @@ the timeline to exactly one palace. Re-signing on append is still
 required, but the core digest does not churn — the Merkle tree
 over attributes is what changes.
 
+Until Gordian elision lands (epic Dreamball-y4t), the palace CLI cannot
+mutate that attribute in place: every envelope is content-addressed, so
+a changed `head-hashes` set is a *new* `ball.timeline` with a new fp.
+Each mutating verb (`add-room`, `inscribe`, `move`, `rename-mythos`)
+encodes a replacement envelope whose sole head is the action just
+appended, stores it in CAS, and records the new fp in the palace bundle.
+Verifiers take the last `ball.timeline` in the bundle as current.
+`Palace.contains` stays the mint-time snapshot — the same pattern rooms
+already use. See Dreamball-7v8.
+
 **Format bump.** The shift from `head-hash` (singular, v2) to
 `head-hashes` (set, v3) is a wire change. v2 timelines with a
 single `head-hash` are accepted on read and rewritten as a

@@ -596,6 +596,148 @@ pub fn promoteStagingFiles(
     }
 }
 
+// ── Timeline advance (Dreamball-7v8) ──────────────────────────────────────────
+// `ball.timeline` is content-addressed. A mutating palace verb cannot rewrite
+// the mint-time envelope in place (that would change its fp and break CAS).
+// Each append therefore encodes a *replacement* envelope whose head set is the
+// new leaf action, stores it, and records the new fp in the palace bundle.
+//
+// Palace.contains stays the mint-time snapshot — the same pattern rooms already
+// use (see show.zig: rooms added after mint live on later bundle lines, not in
+// the field envelope). verify.zig / show.zig take the last `ball.timeline` in
+// the bundle as current.
+//
+// The replacement's `palace-fp` is copied from the current timeline (the
+// Ed25519-derived identity mint writes), not bundle line 0 (the palace
+// envelope's Blake3). Those are different fingerprints.
+
+pub const CurrentTimeline = struct {
+    fp: [32]u8,
+    palace_fp: [32]u8,
+    head_hashes: [][32]u8,
+};
+
+pub const NextAppend = struct {
+    parent_hashes: [][32]u8,
+    timeline_palace_fp: [32]u8,
+};
+
+pub const TimelineAdvance = struct {
+    bytes: []u8,
+    fp: [32]u8,
+};
+
+/// Parse newline-delimited 64-char hex fps from a palace bundle.
+pub fn parseBundleFps(allocator: Allocator, bundle_content: []const u8) ![][32]u8 {
+    var fps: std.ArrayList([32]u8) = .empty;
+    errdefer fps.deinit(allocator);
+    var it = std.mem.splitScalar(u8, bundle_content, '\n');
+    while (it.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len != 64) continue;
+        var fp: [32]u8 = undefined;
+        _ = std.fmt.hexToBytes(&fp, trimmed) catch continue;
+        try fps.append(allocator, fp);
+    }
+    return fps.toOwnedSlice(allocator);
+}
+
+/// Last `ball.timeline` in the bundle, scanned last-to-first so a replacement
+/// appended by a mutating verb wins over the mint-time original. Caller owns
+/// `head_hashes` and must free it.
+pub fn loadCurrentTimeline(
+    allocator: Allocator,
+    cas_path: []const u8,
+    bundle_fps: []const [32]u8,
+) !?CurrentTimeline {
+    var i = bundle_fps.len;
+    while (i > 0) {
+        i -= 1;
+        const hex = hexArray(&bundle_fps[i]);
+        const path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ cas_path, &hex }) catch continue;
+        defer allocator.free(path);
+        const bytes = helpers.readFile(allocator, path) catch continue;
+        defer allocator.free(bytes);
+        const decoded = envelope_v2.decodeTimeline(allocator, bytes) catch continue;
+        if (decoded.note_buf) |nb| allocator.free(nb);
+        if (decoded.head_hashes.len == 0) {
+            allocator.free(decoded.head_hashes);
+            continue;
+        }
+        return .{
+            .fp = bundle_fps[i],
+            .palace_fp = decoded.palace_fp,
+            .head_hashes = decoded.head_hashes,
+        };
+    }
+    return null;
+}
+
+/// Parent hashes for the next action = current timeline heads (the leaves
+/// being replaced). Falls back to `fallback_parent` (mint-era bundle line 4)
+/// only when no timeline is in CAS — the pre-7v8 heuristic.
+pub fn nextAppend(
+    allocator: Allocator,
+    cas_path: []const u8,
+    bundle_fps: []const [32]u8,
+    palace_envelope_fp: [32]u8,
+    fallback_parent: ?[32]u8,
+) !NextAppend {
+    const current = try loadCurrentTimeline(allocator, cas_path, bundle_fps);
+    if (current) |c| {
+        defer allocator.free(c.head_hashes);
+        return .{
+            .parent_hashes = try allocator.dupe([32]u8, c.head_hashes),
+            .timeline_palace_fp = c.palace_fp,
+        };
+    }
+    const parents = if (fallback_parent) |p|
+        try allocator.dupe([32]u8, &[_][32]u8{p})
+    else
+        try allocator.dupe([32]u8, &[_][32]u8{});
+    return .{
+        .parent_hashes = parents,
+        .timeline_palace_fp = palace_envelope_fp,
+    };
+}
+
+/// Encode a replacement `ball.timeline` whose sole head is `new_head`.
+/// Caller owns `bytes` and must free it.
+pub fn encodeReplacementTimeline(
+    allocator: Allocator,
+    palace_fp: [32]u8,
+    new_head: [32]u8,
+) !TimelineAdvance {
+    var heads = [_][32]u8{new_head};
+    const timeline = v2.Timeline{
+        .palace_fp = palace_fp,
+        .head_hashes = &heads,
+    };
+    const bytes = try envelope_v2.encodeTimeline(allocator, timeline);
+    return .{ .bytes = bytes, .fp = blake3Hash(bytes) };
+}
+
+/// Append hex fps as newline-terminated lines onto an existing palace bundle.
+pub fn appendHexFpsToBundleFile(
+    allocator: Allocator,
+    bundle_path: []const u8,
+    existing: []const u8,
+    fps: []const [32]u8,
+) !void {
+    var combined: std.ArrayList(u8) = .empty;
+    defer combined.deinit(allocator);
+    try combined.appendSlice(allocator, existing);
+    if (existing.len > 0 and existing[existing.len - 1] != '\n') {
+        try combined.append(allocator, '\n');
+    }
+    for (fps) |fp| {
+        const h = hexArray(&fp);
+        try combined.appendSlice(allocator, &h);
+        try combined.append(allocator, '\n');
+    }
+    try writeBytesToPath(bundle_path, combined.items);
+}
+
 // ── Bridge subprocess invocation ──────────────────────────────────────────────
 // Spawns: bun run src/lib/bridge/palace-mint.ts <staging_path> <bundle_path>
 // Returns the bridge process exit code. Non-zero means roll back.
@@ -772,4 +914,46 @@ test "SPECS table is consistent with AC2" {
     try std.testing.expectEqualStrings("mythos-file", SPECS[2].long);
     try std.testing.expectEqualStrings("help", SPECS[3].long);
     try std.testing.expect(!SPECS[3].takes_value);
+}
+
+test "parseBundleFps skips non-hex lines and keeps order" {
+    const allocator = std.testing.allocator;
+    const a = [_]u8{0x01} ** 32;
+    const b = [_]u8{0xab} ** 32;
+    const ha = hexArray(&a);
+    const hb = hexArray(&b);
+    const content = try std.fmt.allocPrint(allocator, "{s}\nnot-a-fp\n{s}\n", .{ &ha, &hb });
+    defer allocator.free(content);
+    const fps = try parseBundleFps(allocator, content);
+    defer allocator.free(fps);
+    try std.testing.expectEqual(@as(usize, 2), fps.len);
+    try std.testing.expectEqualSlices(u8, &a, &fps[0]);
+    try std.testing.expectEqualSlices(u8, &b, &fps[1]);
+}
+
+test "encodeReplacementTimeline head is the new action and palace-fp is identity" {
+    const allocator = std.testing.allocator;
+    const palace_fp = [_]u8{0x11} ** 32;
+    const new_head = [_]u8{0xab} ** 32;
+    const adv = try encodeReplacementTimeline(allocator, palace_fp, new_head);
+    defer allocator.free(adv.bytes);
+
+    var decoded = try envelope_v2.decodeTimeline(allocator, adv.bytes);
+    defer allocator.free(decoded.head_hashes);
+    defer if (decoded.note_buf) |nb| allocator.free(nb);
+
+    try std.testing.expectEqual(@as(usize, 1), decoded.head_hashes.len);
+    try std.testing.expectEqualSlices(u8, &new_head, &decoded.head_hashes[0]);
+    try std.testing.expectEqualSlices(u8, &palace_fp, &decoded.palace_fp);
+    try std.testing.expectEqualSlices(u8, &blake3Hash(adv.bytes), &adv.fp);
+}
+
+test "parseBundleFps ignores a missing trailing newline on the last fp" {
+    const allocator = std.testing.allocator;
+    const a = [_]u8{0x02} ** 32;
+    const ha = hexArray(&a);
+    const fps = try parseBundleFps(allocator, &ha);
+    defer allocator.free(fps);
+    try std.testing.expectEqual(@as(usize, 1), fps.len);
+    try std.testing.expectEqualSlices(u8, &a, &fps[0]);
 }
