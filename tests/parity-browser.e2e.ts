@@ -139,7 +139,7 @@ function writeKnownGapsEntry(): void {
 **Why**: kuzu-wasm@0.11.3 browser QUERY_VECTOR_INDEX returned fps not matching
 @ladybugdb/core server ground truth. D-015 set-equality contract violated.
 
-**NFR11 relaxation**: K-NN queries in the browser must route to jelly-server
+**NFR11 relaxation**: K-NN queries in the browser must route to dreamball-server
 HTTP /kNN endpoint. Offline K-NN is degraded for MVP. Epic 6 must add the
 /kNN route.
 

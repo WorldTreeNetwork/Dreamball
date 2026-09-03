@@ -1,6 +1,6 @@
 .{
     .name = .dreamball,
-    .version = "0.0.0",
+    .version = "0.0.1",
     .fingerprint = 0x2701c9ed2ff457cb,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{

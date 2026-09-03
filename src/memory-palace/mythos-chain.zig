@@ -1,10 +1,10 @@
 //! mythos-chain.zig — pure walk-to-genesis verifier utility.
 //!
-//! Exported for use by `jelly verify` (S3.6 `palace_verify.zig` imports
+//! Exported for use by `dreamball verify` (S3.6 `palace_verify.zig` imports
 //! this directly — no copy). See docs/PROTOCOL.md §13.8 mythos semantics
 //! and Story 3.4 AC6 / TC18.
 //!
-//! Canonical mythos (the kind managed by `jelly palace rename-mythos`) form
+//! Canonical mythos (the kind managed by `dreamball palace rename-mythos`) form
 //! a single append-only chain: genesis → successor → successor → …. Each
 //! successor carries a `predecessor` field that is the Blake3 fingerprint of
 //! the prior canonical mythos envelope. There MUST be exactly one genesis in
@@ -51,7 +51,7 @@ pub const CasLookupFn = *const fn (fp: *const [32]u8, userdata: ?*anyopaque) ?[]
 
 // ── Minimal CBOR parser for mythos fields ────────────────────────────────────
 //
-// We only need to extract two fields from a jelly.mythos envelope:
+// We only need to extract two fields from a ball.mythos envelope:
 //   - is-genesis (bool)
 //   - predecessor (optional 32-byte bstr)
 //
@@ -188,25 +188,28 @@ fn readTstr(buf: []const u8, pos: usize) ScanError!struct { key: []const u8, len
     return .{ .key = buf[start..end], .len = hlen + @as(usize, @intCast(slen)) };
 }
 
-/// Parsed fields from a jelly.mythos envelope.
+/// Parsed fields from a ball.mythos envelope.
 const MythosFields = struct {
     is_genesis: bool = false,
     predecessor: ?[32]u8 = null,
 };
 
-/// Scan the CBOR bytes of a jelly.mythos envelope and extract is-genesis and
+/// Scan the CBOR bytes of a ball.mythos envelope and extract is-genesis and
 /// predecessor. Tolerates extra fields (open-schema rule).
 ///
 /// The dCBOR encoding emitted by `envelope_v2.encodeMythos` is:
-///   tag(200) [ tag(201){map{ "type", "is-genesis", "format-version" }}, attribute-arrays… ]
-/// Attributes that carry predecessor:
-///   [2]( "predecessor", bstr[32] )
-/// Attributes that carry is-genesis:
-///   The core map already has "is-genesis" → bool.
+///   tag(200) [ tag(201){map{ "type", "is-genesis", "predecessor"?, "format-version" }}, attribute-arrays… ]
+/// `predecessor` (when present) lives in the CORE map (tag 201), written
+/// alongside "is-genesis" — see `envelope_v2.zig:1349-1358`. It is NOT an
+/// attribute pair. (Dreamball-cv9: readers previously looked only in the
+/// attribute pairs, where the encoder never puts it, so `walkToGenesis`
+/// reported `unresolvable_predecessor` for every non-genesis mythos.)
 ///
-/// We scan two places:
-///   1. The core map (tag 201) for "is-genesis".
-///   2. Any 2-element [label, value] attribute for "predecessor".
+/// We scan two places, core first:
+///   1. The core map (tag 201) for "is-genesis" and "predecessor".
+///   2. Any 2-element [label, value] attribute for "predecessor", as a
+///      fallback for tolerance of foreign/older encoders — never emitted
+///      by our own `encodeMythos`, but cheap to accept.
 fn parseMythosFields(buf: []const u8) !MythosFields {
     var fields = MythosFields{};
     if (buf.len < 2) return fields;
@@ -290,6 +293,33 @@ fn parseMythosFields(buf: []const u8) !MythosFields {
                 fields.is_genesis = buf[pos] == CBOR_SIMPLE_TRUE;
                 pos += try skipCborItem(buf, pos);
             }
+        } else if (std.mem.eql(u8, key_res.key, "predecessor")) {
+            // predecessor lives here in the core map — see Dreamball-cv9.
+            if (pos < buf.len) {
+                const vib = buf[pos];
+                if ((vib & 0xe0) == CBOR_MAJOR_BSTR) {
+                    const vinfo = vib & 0x1f;
+                    var vlen: usize = 0;
+                    var vhlen: usize = 1;
+                    if (vinfo <= 23) {
+                        vlen = vinfo;
+                    } else if (vinfo == 24) {
+                        if (pos + 1 < buf.len) {
+                            vlen = buf[pos + 1];
+                            vhlen = 2;
+                        }
+                    }
+                    if (vlen == 32) {
+                        const vstart = pos + vhlen;
+                        if (vstart + 32 <= buf.len) {
+                            var pred: [32]u8 = undefined;
+                            @memcpy(&pred, buf[vstart .. vstart + 32]);
+                            fields.predecessor = pred;
+                        }
+                    }
+                }
+                pos += skipCborItem(buf, pos) catch break;
+            }
         } else {
             // Skip value.
             pos += skipCborItem(buf, pos) catch break;
@@ -320,8 +350,10 @@ fn parseMythosFields(buf: []const u8) !MythosFields {
         };
         pos += lbl_res.len;
 
-        if (std.mem.eql(u8, lbl_res.key, "predecessor")) {
-            // Value should be bstr[32].
+        if (std.mem.eql(u8, lbl_res.key, "predecessor") and fields.predecessor == null) {
+            // Value should be bstr[32]. Fallback only — our own encoder
+            // always puts predecessor in the core map (see above); this
+            // path tolerates a foreign encoder that used the attribute form.
             if (pos >= buf.len) break;
             const vib = buf[pos];
             if ((vib & 0xe0) == CBOR_MAJOR_BSTR) {
@@ -462,16 +494,19 @@ const TestCas = struct {
     }
 };
 
-/// Build a minimal dCBOR-encoded jelly.mythos envelope for testing.
-/// Only encodes the fields walkToGenesis cares about.
+/// Build a minimal dCBOR-encoded ball.mythos envelope for testing, mirroring
+/// the real encoder (`envelope_v2.encodeMythos`) exactly: predecessor lives
+/// in the CORE map, not as a trailing attribute pair. See Dreamball-cv9 —
+/// this helper used to (wrongly) emit predecessor as an attribute, which
+/// meant these tests validated the buggy reader against a fixture shaped to
+/// match it rather than against real encoder output.
 fn buildTestMythosBytes(
     allocator: Allocator,
     is_genesis: bool,
     predecessor: ?*const [32]u8,
 ) ![]u8 {
     // We build a hand-crafted dCBOR bytes that parseMythosFields can read.
-    // Format: tag(200) [ tag(201) {map("is-genesis"→bool, "type"→"jelly.mythos", "format-version"→2)},
-    //                    optional ["predecessor", bstr[32]] ]
+    // Format: tag(200) [ tag(201) {map("type", "is-genesis", "predecessor"?, "format-version")} ]
     const zbor = @import("zbor");
     const dcbor_mod = @import("../dcbor.zig");
 
@@ -479,33 +514,28 @@ fn buildTestMythosBytes(
     errdefer ai.deinit();
     const w = &ai.writer;
 
-    const attr_count: u64 = if (predecessor != null) 1 else 0;
-
     try zbor.builder.writeTag(w, dcbor_mod.Tag.envelope);
-    try zbor.builder.writeArray(w, 1 + attr_count);
+    try zbor.builder.writeArray(w, 1);
 
-    // Core: tag(201) { map of 3 }
+    // Core: tag(201) { map }
     try zbor.builder.writeTag(w, dcbor_mod.Tag.leaf);
-    // "format-version"(14) > "is-genesis"(10) > "type"(4)
-    // canonical order: "type"(4), "is-genesis"(10), "format-version"(14)
-    try zbor.builder.writeMap(w, 3);
+    // canonical key order: "type"(4), "is-genesis"(10), "predecessor"(11, optional), "format-version"(14)
+    const core_len: u64 = if (predecessor != null) 4 else 3;
+    try zbor.builder.writeMap(w, core_len);
     try zbor.builder.writeTextString(w, "type");
-    try zbor.builder.writeTextString(w, "jelly.mythos");
+    try zbor.builder.writeTextString(w, "ball.mythos");
     try zbor.builder.writeTextString(w, "is-genesis");
     if (is_genesis) {
         try zbor.builder.writeTrue(w);
     } else {
         try zbor.builder.writeFalse(w);
     }
-    try zbor.builder.writeTextString(w, "format-version");
-    try zbor.builder.writeInt(w, @as(u64, 2));
-
-    // Attribute: predecessor
     if (predecessor) |pred| {
-        try zbor.builder.writeArray(w, 2);
         try zbor.builder.writeTextString(w, "predecessor");
         try zbor.builder.writeByteString(w, pred);
     }
+    try zbor.builder.writeTextString(w, "format-version");
+    try zbor.builder.writeInt(w, @as(u64, 2));
 
     return ai.toOwnedSlice();
 }

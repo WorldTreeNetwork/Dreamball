@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# server-smoke.sh — End-to-end smoke test for jelly-server.
+# server-smoke.sh — End-to-end smoke test for dreamball-server.
 #
 # Starts the server, curls through the main routes, asserts expected
 # structure, then kills the server. Must complete in < 60 seconds.
@@ -98,10 +98,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-info "Starting jelly-server on port $PORT..."
-# JELLY_EMBED_MOCK=1: use deterministic blake3-seeded mock (no Qwen3 weights needed in CI).
-# The real model is deferred per TODO-EMBEDDING in jelly-server/src/routes/embed.ts.
-JELLY_SERVER_PORT=$PORT JELLY_EMBED_MOCK=1 bun run "${REPO_ROOT}/jelly-server/src/index.ts" &
+info "Starting dreamball-server on port $PORT..."
+# DREAMBALL_EMBED_MOCK=1: use deterministic blake3-seeded mock (no Qwen3 weights needed in CI).
+# The real model is deferred per TODO-EMBEDDING in dreamball-server/src/routes/embed.ts.
+DREAMBALL_SERVER_PORT=$PORT DREAMBALL_EMBED_MOCK=1 bun run "${REPO_ROOT}/dreamball-server/src/index.ts" &
 SERVER_PID=$!
 
 # Wait for the server to be ready (up to 15 seconds)
@@ -292,7 +292,7 @@ if [ -n "$TOOL_FP" ] && [ -n "$TOOL_SECRET" ] && [ -n "$FP" ] && [ -n "$GUILD_FP
     assert_ok "POST /dreamballs/:fp/transmit" "$STATUS" "$BODY"
     assert_not_contains "transmit does NOT leak secret_key_b58" "$BODY" '"secret_key_b58"'
   elif [ "$STATUS" -eq 503 ]; then
-    green "  SKIP  transmit (jelly CLI not built)"
+    green "  SKIP  transmit (dreamball CLI not built)"
     ((PASS++)) || true
   else
     green "  SKIP  transmit (status $STATUS — CLI may not be built)"
@@ -314,7 +314,7 @@ if [ -n "$FP" ] && [ -n "$GUILD_FP" ]; then
     if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 201 ]; then
       assert_ok "POST /relics (seal-relic)" "$STATUS" "$BODY"
     elif [ "$STATUS" -eq 503 ]; then
-      green "  SKIP  seal-relic (jelly CLI not built)"
+      green "  SKIP  seal-relic (dreamball CLI not built)"
       ((PASS++)) || true
     else
       green "  SKIP  seal-relic (status $STATUS)"
@@ -385,7 +385,7 @@ fi
 # ─── S6.3 AC9: K-NN round-trip block ────────────────────────────────────────
 
 info "=== 16. K-NN round-trip (S6.3 AC9: mint→addRoom→inscribe 3 docs→kNN query) ==="
-KNN_SMOKE_OUT=$(JELLY_EMBED_MOCK=1 bun run "${REPO_ROOT}/scripts/knn-smoke.ts" 2>&1)
+KNN_SMOKE_OUT=$(DREAMBALL_EMBED_MOCK=1 bun run "${REPO_ROOT}/scripts/knn-smoke.ts" 2>&1)
 KNN_SMOKE_EXIT=$?
 echo "$KNN_SMOKE_OUT"
 if [ "$KNN_SMOKE_EXIT" -eq 0 ]; then

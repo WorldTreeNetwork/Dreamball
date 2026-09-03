@@ -1,5 +1,5 @@
 <!--
-  Deep-link handler for `jelly palace open`.
+  Deep-link handler for `dreamball palace open`.
 
   Route: /demo/palace/<fp>
 
@@ -36,7 +36,7 @@
 	</div>
 
 	<p class="hint">
-		Opened via <code>jelly palace open</code>. The palace fingerprint above
+		Opened via <code>dreamball palace open</code>. The palace fingerprint above
 		identifies which palace bundle is loaded. Once Epic 5 ships, this slot
 		will render the full omnispherical room graph.
 	</p>

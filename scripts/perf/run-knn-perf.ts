@@ -1,7 +1,7 @@
 /**
  * run-knn-perf.ts — S6.3 AC3 perf runner (R5 mitigation).
  *
- * Called by scripts/perf/embedding.sh with JELLY_EMBED_MOCK=1.
+ * Called by scripts/perf/embedding.sh with DREAMBALL_EMBED_MOCK=1.
  * Measures ONLY the kNN query round-trip (query-embed + vector-index lookup).
  * Corpus setup (500 CREATE + upsertEmbedding) is excluded from timing.
  *

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "Dreamball",
+  "project_id": "f41f16f0-da57-4f5d-97db-444536d22d09"
+}

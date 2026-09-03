@@ -1,4 +1,4 @@
-//! `jelly grow <in> --key <keyfile> [flags...]` — update slots and re-sign.
+//! `dreamball grow <in> --key <keyfile> [flags...]` — update slots and re-sign.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -17,6 +17,7 @@ const SPECS = [_]args_mod.Spec{
     .{ .long = "set-voice" },
     .{ .long = "set-model" },
     .{ .long = "set-system-prompt" },
+    .{ .long = "set-look" },
     .{ .long = "revision-bump", .takes_value = false },
     .{ .long = "help", .takes_value = false },
 };
@@ -25,9 +26,9 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     var parsed = try args_mod.parse(gpa, argv, &SPECS);
     defer parsed.deinit();
 
-    if (parsed.flag(9) or parsed.positional.items.len == 0) {
+    if (parsed.flag(10) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly grow <in.jelly> --key <keyfile> [flags]
+            \\dreamball grow <in.ball> --key <keyfile> [flags]
             \\  --out <path>             write updated file here (default: in-place)
             \\  --stage <seed|dreamball> set the stage value
             \\  --set-name <str>
@@ -35,6 +36,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
             \\  --set-voice <str>
             \\  --set-model <str>
             \\  --set-system-prompt <str>
+            \\  --set-look <look.json>   attach a ball.look scene slot (assets/url/background)
             \\  --revision-bump          increment revision by 1
             \\
         );
@@ -51,10 +53,13 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     const in_bytes = try helpers.readFile(gpa, in_path);
     defer gpa.free(in_bytes);
 
-    var db = try dreamball.envelope.decodeDreamBallSubject(in_bytes);
-    // grow currently supports only core + basic string attributes. Nested
-    // slot updates are restricted to personality/voice/model/system-prompt —
-    // we don't parse the prior attribute tree out of the input node yet.
+    // Decode subject + every prior assertion into an arena. Prior attributes
+    // (name, feel, act, …) survive into the re-encoded envelope unless this
+    // grow explicitly overwrites them; signEnvelope re-encodes from `db`
+    // before the arena is freed.
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    var db = try dreamball.envelope.decodeDreamBall(arena.allocator(), in_bytes);
 
     if (parsed.get(2)) |stage_str| {
         db.stage = dreamball.Stage.fromString(stage_str) orelse {
@@ -88,7 +93,19 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     }
     if (act) |a| db.act = a;
 
-    if (parsed.flag(8)) db.revision += 1;
+    // --set-look: attach (or replace) the look slot from a standalone
+    // ball.look JSON, then re-sign below. Decoded into the same arena as the
+    // rest of `db` so its strings survive until signEnvelope re-encodes.
+    if (parsed.get(8)) |look_path| {
+        const look_json = try helpers.readFile(gpa, look_path);
+        defer gpa.free(look_json);
+        db.look = dreamball.json.readLook(arena.allocator(), look_json) catch {
+            try io.writeAllStderr("error: --set-look: invalid ball.look JSON\n");
+            return 2;
+        };
+    }
+
+    if (parsed.flag(9)) db.revision += 1;
     db.updated = io.unixSeconds();
     if (db.stage == .seed) db.stage = .dreamball;
 

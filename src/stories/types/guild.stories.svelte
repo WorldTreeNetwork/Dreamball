@@ -1,5 +1,5 @@
 <!--
-  Guild type tour — shows a jelly.dreamball.guild in every applicable lens.
+  Guild type tour — shows a ball.dreamball.guild in every applicable lens.
   Meaningful lenses: thumbnail (guild chip), flat (guild-name, keyspace-root-hash,
   member list, policy slots), phone.
   Skipped: avatar/splat (no look), knowledge-graph (no triples by default),

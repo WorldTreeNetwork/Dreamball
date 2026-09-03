@@ -18,14 +18,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-JELLY="$REPO_DIR/zig-out/bin/jelly"
-WORK="$(mktemp -d -t jelly-e2e-crypto.XXXXXX)"
+DREAMBALL="$REPO_DIR/zig-out/bin/dreamball"
+WORK="$(mktemp -d -t dreamball-e2e-crypto.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
 cd "$WORK"
 
-echo "==> Pre-flight: jelly CLI built?"
-if [[ ! -x "$JELLY" ]]; then
+echo "==> Pre-flight: dreamball CLI built?"
+if [[ ! -x "$DREAMBALL" ]]; then
   (cd "$REPO_DIR" && zig build)
 fi
 
@@ -44,50 +44,50 @@ fi
 
 echo "==> 1. Mint a real Ed25519-signed Agent DreamBall"
 if [[ "$MODE" == "real" ]]; then
-  "$JELLY" mint --out alice.jelly --type agent --name "alice" --ml-dsa-server "$RECRYPT_SERVER_URL"
+  "$DREAMBALL" mint --out alice.ball --type agent --name "alice" --ml-dsa-server "$RECRYPT_SERVER_URL"
 else
-  "$JELLY" mint --out alice.jelly --type agent --name "alice"
+  "$DREAMBALL" mint --out alice.ball --type agent --name "alice"
 fi
-test -s alice.jelly
-test -s alice.jelly.key
+test -s alice.ball
+test -s alice.ball.key
 
 echo "==> 2. Verify Ed25519 signature passes"
-"$JELLY" verify alice.jelly
+"$DREAMBALL" verify alice.ball
 # TODO-CRYPTO: in real mode, verify both signatures pass strict policy.
 # Blocked on recrypt-server adding POST /sign/ml-dsa — tracked in
 # docs/known-gaps.md.
 
 echo "==> 3. Mint a Guild"
-"$JELLY" mint --out guild.jelly --type guild --name "the-hummingbirds"
+"$DREAMBALL" mint --out guild.ball --type guild --name "the-hummingbirds"
 
 echo "==> 4. Join Alice to the Guild"
-"$JELLY" join-guild alice.jelly --guild guild.jelly --key alice.jelly.key > /dev/null
-"$JELLY" verify alice.jelly  # re-verify after re-sign
+"$DREAMBALL" join-guild alice.ball --guild guild.ball --key alice.ball.key > /dev/null
+"$DREAMBALL" verify alice.ball  # re-verify after re-sign
 
 echo "==> 5. Mint a Tool"
-"$JELLY" mint --out tool.jelly --type tool --name "haiku-compose"
+"$DREAMBALL" mint --out tool.ball --type tool --name "haiku-compose"
 
 echo "==> 6. Transmit Tool to Alice via the Guild"
-ALICE_FP=$("$JELLY" show alice.jelly | grep fingerprint | awk '{print $2}')
-GUILD_FP=$("$JELLY" show guild.jelly | grep fingerprint | awk '{print $2}')
-"$JELLY" transmit tool.jelly \
+ALICE_FP=$("$DREAMBALL" show alice.ball | grep fingerprint | awk '{print $2}')
+GUILD_FP=$("$DREAMBALL" show guild.ball | grep fingerprint | awk '{print $2}')
+"$DREAMBALL" transmit tool.ball \
   --to "$ALICE_FP" \
   --via-guild "$GUILD_FP" \
-  --sender-key tool.jelly.key \
-  --out transmission.jelly > /dev/null
-test -s transmission.jelly
+  --sender-key tool.ball.key \
+  --out transmission.ball > /dev/null
+test -s transmission.ball
 # TODO-CRYPTO: in real mode, the tool-envelope field should be recrypt-
 # wrapped, not plaintext. Blocked on Phase D recrypt integration.
 
 echo "==> 7. Seal a Relic under the Guild"
-"$JELLY" seal-relic tool.jelly --for-guild "$GUILD_FP" --out sealed.jelly > /dev/null
-test -s sealed.jelly
+"$DREAMBALL" seal-relic tool.ball --for-guild "$GUILD_FP" --out sealed.ball > /dev/null
+test -s sealed.ball
 # TODO-CRYPTO: in real mode, the sealed payload is proxy-recrypted under
 # the Guild keyspace. Blocked on Phase D.
 
 echo "==> 8. Unlock the Relic"
-"$JELLY" unlock sealed.jelly --out unlocked.jelly > /dev/null
-cmp tool.jelly unlocked.jelly
+"$DREAMBALL" unlock sealed.ball --out unlocked.ball > /dev/null
+cmp tool.ball unlocked.ball
 # TODO-CRYPTO: real unlock requires Guild member key. Blocked on Phase D.
 
 if [[ "$MODE" == "real" ]]; then
@@ -95,9 +95,9 @@ if [[ "$MODE" == "real" ]]; then
   echo "==> REAL CRYPTO MODE — additional checks"
   echo "    Once Phase D lands, this section should:"
   echo "    - Verify isFullySigned(.strict) on every envelope"
-  echo "    - Confirm sealed.jelly's payload is real ciphertext (not plaintext)"
+  echo "    - Confirm sealed.ball's payload is real ciphertext (not plaintext)"
   echo "    - Prove only Guild members can unlock"
-  echo "    - Confirm transmission.jelly's tool-envelope is recrypt-wrapped"
+  echo "    - Confirm transmission.ball's tool-envelope is recrypt-wrapped"
   echo ""
   echo "    These checks are currently documented but not asserted — they"
   echo "    flip on when recrypt-server exposes POST /sign/ml-dsa + the"

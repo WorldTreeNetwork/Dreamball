@@ -1,6 +1,6 @@
-//! `jelly seal-relic <inner.jelly> --for-guild=<guild-fp-b58> --out=<relic.jelly> [--hint=<text>]`
+//! `dreamball seal-relic <inner.ball> --for-guild=<guild-fp-b58> --out=<relic.ball> [--hint=<text>]`
 //!
-//! Produces a `jelly.dreamball.relic` that wraps the inner DreamBall. The
+//! Produces a `ball.dreamball.relic` that wraps the inner DreamBall. The
 //! actual encryption is MOCKED (A2): the inner bytes are stored verbatim as
 //! the sealed payload, and the sealed-payload-hash is the Blake3 of those
 //! bytes. TODO-CRYPTO: replace with real recrypt proxy-recryption before prod.
@@ -26,7 +26,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(3) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly seal-relic <inner.jelly> --for-guild <guild-fp-b58> --out <relic.jelly> [--hint <text>]
+            \\dreamball seal-relic <inner.ball> --for-guild <guild-fp-b58> --out <relic.ball> [--hint <text>]
             \\
         );
         return 0;

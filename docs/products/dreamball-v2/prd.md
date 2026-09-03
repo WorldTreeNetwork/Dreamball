@@ -20,15 +20,15 @@ The v2 sprint closes all of those gaps in one coordinated cut, anchored by a sin
 
 **P2 — End-user wearer.** A person who picks up an Avatar DreamBall and "wears" it. They speak/move and their avatar representation animates with them — the "jelly bean" metaphor, where the DreamBall sits on their character like an inventory object but is expressive. Low technical. Pain: no concept of wearing exists.
 
-**P3 — Aspect author.** A creator minting new DreamBalls. Uses either the extended Zig CLI or the Svelte web authoring UI. Medium technical. Pain: v1 CLI only knows about the monolithic `jelly.dreamball` envelope; it can't directly produce any of the six typed variants.
+**P3 — Aspect author.** A creator minting new DreamBalls. Uses either the extended Zig CLI or the Svelte web authoring UI. Medium technical. Pain: v1 CLI only knows about the monolithic `ball.dreamball` envelope; it can't directly produce any of the six typed variants.
 
 ## User Journeys
 
 **Journey 1 — Transmission (Alice's Tool → Bob's Agent, via Guild).**
-Alice uses `jelly mint --type=tool --out alice-tool.jelly --name "haiku-compose"` to produce a Tool DreamBall carrying a skill definition. Bob already has `bob-agent.jelly`, an Agent-type container with `model`, `personality-master-prompt`, and a `memory` slot. Both are members of a Guild whose fingerprint is `g:abc…`. Alice runs `jelly transmit alice-tool.jelly --to=bob-fp --via-guild=g:abc…`. The jelly server (A2 mock-crypto stub, real wire-format) records the transmission. Bob's runtime re-fetches his Agent, sees the newly attached Tool in the Agent's `skills` list (via the Guild-delegated capability), and the renderer's skill-list lens shows the new skill lighting up.
+Alice uses `dreamball mint --type=tool --out alice-tool.ball --name "haiku-compose"` to produce a Tool DreamBall carrying a skill definition. Bob already has `bob-agent.ball`, an Agent-type container with `model`, `personality-master-prompt`, and a `memory` slot. Both are members of a Guild whose fingerprint is `g:abc…`. Alice runs `dreamball transmit alice-tool.ball --to=bob-fp --via-guild=g:abc…`. The dreamball server (A2 mock-crypto stub, real wire-format) records the transmission. Bob's runtime re-fetches his Agent, sees the newly attached Tool in the Agent's `skills` list (via the Guild-delegated capability), and the renderer's skill-list lens shows the new skill lighting up.
 
 **Journey 2 — Unlock (Relic reveal).**
-A sealed Relic DreamBall is published at a known URL. Any observer can download it — it's an opaque DragonBall blob. A Guild member who holds the Guild's unlock credential runs `jelly unlock mysterious.jelly --guild=g:…`. The server mock-decrypts (real zip/dCBOR framing, mocked crypto), and the renderer's omnispherical viewer animates the reveal: the sealed dragon peels open, the inner DreamBall (Avatar + Field combo) fades in, and the lens switches to show what was sealed.
+A sealed Relic DreamBall is published at a known URL. Any observer can download it — it's an opaque DragonBall blob. A Guild member who holds the Guild's unlock credential runs `dreamball unlock mysterious.ball --guild=g:…`. The server mock-decrypts (real zip/dCBOR framing, mocked crypto), and the renderer's omnispherical viewer animates the reveal: the sealed dragon peels open, the inner DreamBall (Avatar + Field combo) fades in, and the lens switches to show what was sealed.
 
 **Journey 3 — Wearer + Observer.**
 A wearer loads an Avatar DreamBall in their browser tab and hits "wear". Their character (or stand-in avatar) now displays the DreamBall's visual aspect. In a second browser tab (same machine or different), an observer connects to the same session. The observer sees the wearer's avatar animated with whatever input the wearer feeds (text, webcam, inventory interaction) but does *not* see the Agent memory or any private slots. The wearer's own view shows the full Agent panel (memory graph, emotional register) in addition to the Avatar.
@@ -52,43 +52,43 @@ A wearer loads an Avatar DreamBall in their browser tab and hits "wear". Their c
 
 FR1. [MVP] The system shall bump `format-version` to `2` in every new envelope type introduced this sprint and keep `format-version: 1` working for v1-shaped envelopes.
 
-FR2. [MVP] The system shall define six typed DreamBall classes: `jelly.dreamball.avatar`, `jelly.dreamball.agent`, `jelly.dreamball.tool`, `jelly.dreamball.relic`, `jelly.dreamball.field`, `jelly.dreamball.guild` — each expressed as a `type` value in the core.
+FR2. [MVP] The system shall define six typed DreamBall classes: `ball.dreamball.avatar`, `ball.dreamball.agent`, `ball.dreamball.tool`, `ball.dreamball.relic`, `ball.dreamball.field`, `ball.dreamball.guild` — each expressed as a `type` value in the core.
 
-FR3. [MVP] The system shall define a `jelly.memory` envelope (directed-graph memory store with labeled connections including at least `semantic`, `emotional`, `temporal`) and include it as an optional attribute on Agent-type DreamBalls.
+FR3. [MVP] The system shall define a `ball.memory` envelope (directed-graph memory store with labeled connections including at least `semantic`, `emotional`, `temporal`) and include it as an optional attribute on Agent-type DreamBalls.
 
-FR4. [MVP] The system shall define a `jelly.knowledge-graph` envelope (ambient knowledge, triple-shaped) and include it as an optional attribute on Agent-type DreamBalls.
+FR4. [MVP] The system shall define a `ball.knowledge-graph` envelope (ambient knowledge, triple-shaped) and include it as an optional attribute on Agent-type DreamBalls.
 
-FR5. [MVP] The system shall define a `jelly.emotional-register` envelope (named emotional axes with current values in a normalized range) and include it as an optional attribute on Agent-type DreamBalls.
+FR5. [MVP] The system shall define a `ball.emotional-register` envelope (named emotional axes with current values in a normalized range) and include it as an optional attribute on Agent-type DreamBalls.
 
-FR6. [MVP] The system shall define a `jelly.interaction-set` envelope (captured interaction histories) and include it as an optional attribute on Agent-type DreamBalls.
+FR6. [MVP] The system shall define a `ball.interaction-set` envelope (captured interaction histories) and include it as an optional attribute on Agent-type DreamBalls.
 
-FR7. [MVP] The system shall define `jelly.guild` as a first-class envelope that carries a Guild fingerprint, a members list (fingerprints), a keyspace reference (recrypt-compatible), and a permission policy per slot (which members can read/write which slots).
+FR7. [MVP] The system shall define `ball.guild` as a first-class envelope that carries a Guild fingerprint, a members list (fingerprints), a keyspace reference (recrypt-compatible), and a permission policy per slot (which members can read/write which slots).
 
 FR8. [MVP] The system shall allow a DreamBall of any type to declare Guild membership via a `guild` attribute whose value is a Guild fingerprint; membership grants delegated access per the Guild's policy.
 
-FR9. [MVP] The system shall define a `jelly.relic` envelope that wraps a sealed DreamBall payload plus unlock metadata (which Guild's keyspace can unlock, a reveal-hint string, a sealed-until timestamp).
+FR9. [MVP] The system shall define a `ball.relic` envelope that wraps a sealed DreamBall payload plus unlock metadata (which Guild's keyspace can unlock, a reveal-hint string, a sealed-until timestamp).
 
-FR10. [MVP] The system shall define `jelly.transmission` as a signed, auditable record of a Tool's transfer from one party to another DreamBall (source fingerprint, target DreamBall fingerprint, via-guild fingerprint, Tool envelope).
+FR10. [MVP] The system shall define `ball.transmission` as a signed, auditable record of a Tool's transfer from one party to another DreamBall (source fingerprint, target DreamBall fingerprint, via-guild fingerprint, Tool envelope).
 
-FR11. [MVP] The system shall treat the `.jelly` file as a well-specified zip-like bundle: dCBOR envelope + optional sidecar attachments (textures, splats, embedded scripts), with a canonical header (magic `JELY`, version, flags, seal-type) as already defined in v1 `sealing.zig` extended for v2 attachments.
+FR11. [MVP] The system shall treat the `.ball` file as a well-specified zip-like bundle: dCBOR envelope + optional sidecar attachments (textures, splats, embedded scripts), with a canonical header (magic `BALL`, version, flags, seal-type) as already defined in v1 `sealing.zig` extended for v2 attachments.
 
 FR12. [MVP] The system shall preserve dCBOR canonical ordering (smallest-int, sorted map keys, no floats) for every v2 envelope, extending the existing `golden.zig` bytes-lock with v2 golden fixtures.
 
-FR13. [Growth] The system shall define a `jelly.field` envelope carrying omnispherical-grid parameters (pole definitions, three-camera onion layer depths, ambient palette) consumed by the renderer's omnispherical lens.
+FR13. [Growth] The system shall define a `ball.field` envelope carrying omnispherical-grid parameters (pole definitions, three-camera onion layer depths, ambient palette) consumed by the renderer's omnispherical lens.
 
-FR14. [Growth] The system shall allow a `jelly.relic` to nest recursively — a Relic can wrap another Relic — for layered reveals.
+FR14. [Growth] The system shall allow a `ball.relic` to nest recursively — a Relic can wrap another Relic — for layered reveals.
 
 ### Zig CLI extension (FR15–FR23)
 
 FR15. [MVP] The system shall accept `--type=<avatar|agent|tool|relic|field|guild>` on the `mint` command and produce the correct typed envelope for each.
 
-FR16. [MVP] The system shall add a `transmit <tool.jelly> --to=<fp> --via-guild=<fp> --out=<transmission.jelly>` command that produces a `jelly.transmission` record.
+FR16. [MVP] The system shall add a `transmit <tool.ball> --to=<fp> --via-guild=<fp> --out=<transmission.ball>` command that produces a `ball.transmission` record.
 
-FR17. [MVP] The system shall add a `join-guild <dreamball.jelly> --guild=<guild.jelly> --key=<keyfile>` command that appends a Guild membership attribute and re-signs the DreamBall.
+FR17. [MVP] The system shall add a `join-guild <dreamball.ball> --guild=<guild.ball> --key=<keyfile>` command that appends a Guild membership attribute and re-signs the DreamBall.
 
-FR18. [MVP] The system shall add a `seal-relic <inner.jelly> --for-guild=<guild.jelly> --out=<sealed.jelly>` command that wraps a DreamBall inside a `jelly.relic` envelope using mocked encryption with a clear `TODO-CRYPTO` marker.
+FR18. [MVP] The system shall add a `seal-relic <inner.ball> --for-guild=<guild.ball> --out=<sealed.ball>` command that wraps a DreamBall inside a `ball.relic` envelope using mocked encryption with a clear `TODO-CRYPTO` marker.
 
-FR19. [MVP] The system shall add an `unlock <relic.jelly> --guild=<guild.jelly> --key=<keyfile> --out=<inner.jelly>` command that reverses `seal-relic` (mocked decrypt).
+FR19. [MVP] The system shall add an `unlock <relic.ball> --guild=<guild.ball> --key=<keyfile> --out=<inner.ball>` command that reverses `seal-relic` (mocked decrypt).
 
 FR20. [MVP] The system shall keep every v1 command (`mint`, `grow`, `seal`, `unseal`, `show`, `verify`, `export-json`, `import-json`) working on v1 envelopes.
 
@@ -108,11 +108,11 @@ FR26. [MVP] The generated TypeScript shall be checked into the repo (not generat
 
 FR27. [Growth] The generator shall emit Storybook-compatible type examples (one canonical instance per type) for the Svelte lib's Storybook.
 
-### Jelly MCP server (FR28–FR31)
+### Dreamball MCP server (FR28–FR31)
 
 FR28. [MVP] The system shall ship an MCP server (stdio transport) exposing at minimum: `mint_dreamball`, `transmit_skill`, `seal_relic`, `unlock_relic`, `join_guild`, `list_dreamballs`, `show_dreamball`, `verify_dreamball`.
 
-FR29. [MVP] Each MCP tool shall be thin — it wraps the Zig `jelly` CLI via subprocess and returns structured output so an AI agent can compose DreamBalls interactively.
+FR29. [MVP] Each MCP tool shall be thin — it wraps the Zig `dreamball` CLI via subprocess and returns structured output so an AI agent can compose DreamBalls interactively.
 
 FR30. [MVP] The MCP server shall be invocable from Claude Code via an entry the user can add to their `.mcp.json` or `settings.json` (documented in README).
 
@@ -134,7 +134,7 @@ FR37. [MVP] The library shall include a `<SealedRelic relic={...} onUnlock={...}
 
 FR38. [MVP] The library shall include a `<Wearer ball={...} sourceTrack={...} />` component driving the Avatar's facial/body rig from `sourceTrack` (MediaStream for webcam, text input for typed speech).
 
-FR39. [MVP] The library shall read DreamBalls via a `JellyBackend` interface with a default implementation that HTTP-calls a local `jelly-server` daemon (A2). The backend interface is mockable for Vitest.
+FR39. [MVP] The library shall read DreamBalls via a `DreamballBackend` interface with a default implementation that HTTP-calls a local `dreamball-server` daemon (A2). The backend interface is mockable for Vitest.
 
 FR40. [MVP] Every backend crypto call shall carry a `TODO-CRYPTO: replace before prod` marker; the mock backend produces structurally-correct bytes but does *not* provide cryptographic authenticity.
 
@@ -146,13 +146,13 @@ FR42. [Growth] The library shall expose a `<Guild guild={...} members={...} />` 
 
 FR43. [MVP] The showcase SvelteKit app (`src/routes/`) shall include a `/demo` route that walks through Demo D's three scenarios (Transmission, Unlock, Wearer) in a guided UI.
 
-FR44. [MVP] The `/demo/transmission` scenario shall fully exercise: Alice minting a Tool, Bob minting an Agent, both joining a Guild, Alice transmitting, Bob's Agent displaying the new skill. All backed by the mock `jelly-server`.
+FR44. [MVP] The `/demo/transmission` scenario shall fully exercise: Alice minting a Tool, Bob minting an Agent, both joining a Guild, Alice transmitting, Bob's Agent displaying the new skill. All backed by the mock `dreamball-server`.
 
 FR45. [MVP] The `/demo/unlock` scenario shall show a sealed Relic card and animate the reveal when the user clicks "Unlock with Guild Key".
 
 FR46. [MVP] The `/demo/wearer` scenario shall use `getUserMedia` to capture the wearer's webcam, map it to the Avatar rig, and render a second "observer" pane that sees only the Avatar + Field slice (private slots are null in the observer view).
 
-FR47. [MVP] The showcase shall provide a "start the demo server" script (`bun run demo`) that starts the local `jelly-server` daemon and the Vite dev server in parallel.
+FR47. [MVP] The showcase shall provide a "start the demo server" script (`bun run demo`) that starts the local `dreamball-server` daemon and the Vite dev server in parallel.
 
 FR48. [Growth] The showcase shall support a two-tab observer mode where the second tab shares state via BroadcastChannel for local multi-observer testing.
 
@@ -185,9 +185,9 @@ NFR6. [polyglot hygiene] The repo is polyglot Zig + TypeScript + Svelte. Zig is 
 ### In Scope
 
 - Protocol v2 with six typed envelopes plus memory/knowledge-graph/emotional-register/interaction-set/guild/relic/transmission auxiliary types
-- Zig `jelly` CLI extended with typed mint, transmit, join-guild, seal-relic, unlock, inventory
+- Zig `dreamball` CLI extended with typed mint, transmit, join-guild, seal-relic, unlock, inventory
 - CBOR → TypeScript type generation as a Zig tool
-- jelly MCP server (thin wrapper around the CLI)
+- dreamball MCP server (thin wrapper around the CLI)
 - Svelte 5 + Threlte renderer library with seven lenses
 - SvelteKit showcase app implementing Demo D
 - Mocked crypto with uniform TODO markers
@@ -230,7 +230,7 @@ Requires real crypto wire-up plus multi-hop delegation semantics.
 ## Assumptions & Risks
 
 - **Assumption**: Threlte + Svelte 5 runes are production-ready. *Mitigation*: use the Svelte MCP server's `list-sections` + `get-documentation` tools to confirm each API before use.
-- **Assumption**: Zig 0.16's `std.compress.zstd` will gain a compressor mid-sprint. *Mitigation*: the `.jelly` zip-bundle format works uncompressed; compression remains optional and deferred.
+- **Assumption**: Zig 0.16's `std.compress.zstd` will gain a compressor mid-sprint. *Mitigation*: the `.ball` zip-bundle format works uncompressed; compression remains optional and deferred.
 - **Risk**: Mocked crypto that *looks* real may leak into production by accident. *Mitigation*: the uniform `TODO-CRYPTO: replace before prod` marker lets CI/grep catch every site; NFR4 makes this explicit.
 - **Risk**: The six-type taxonomy may prove too narrow (or too wide) once the renderer is built. *Mitigation*: envelopes are versioned and additive; adding a seventh type in v2.1 requires no breaking change.
 - **Risk**: Polyglot dev experience is painful (two test runners, two package managers, two build tools). *Mitigation*: the `scripts/` directory gathers the common recipes (`scripts/cli-smoke.sh`, a new `scripts/all-check.sh`); README documents the workflow clearly.
@@ -251,7 +251,7 @@ Requires real crypto wire-up plus multi-hop delegation semantics.
 - `src/json.zig` — v1 JSON export/import; extend for v2 types.
 - `src/graph.zig` — v1 fleet cycle detection; reused for Guild member graphs.
 - `src/golden.zig` — canonical byte-lock; extend with v2 fixtures.
-- `docs/PROTOCOL.md` — v1 wire format (§4.2 `jelly.look` already marked evolving for form-independence).
+- `docs/PROTOCOL.md` — v1 wire format (§4.2 `ball.look` already marked evolving for form-independence).
 - `docs/VISION.md` — living why-doc; §4 needs the omnispherical/three-camera addition.
 - `docs/products/dreamball-v2/` — this PRD's home.
 - `src/lib/` — Svelte library root (from `sv` template).

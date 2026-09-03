@@ -1,7 +1,15 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    // Default to Zig's bundled musl libc on Linux (native arch); macOS
+    // stays native. Override with `-Dtarget=native`. Rationale + toolchain
+    // history in docs/decisions/2026-05-24-hermetic-musl-default-linux.md.
+    const builtin = @import("builtin");
+    const default_target: std.Target.Query = if (builtin.os.tag == .linux)
+        .{ .cpu_arch = builtin.target.cpu.arch, .os_tag = .linux, .abi = .musl }
+    else
+        .{};
+    const target = b.standardTargetOptions(.{ .default_target = default_target });
     const optimize = b.standardOptimizeOption(.{});
 
     // Build options. ML-DSA-87 VERIFY is linked into the WASM module by
@@ -14,7 +22,7 @@ pub fn build(b: *std.Build) void {
     const pq_wasm = b.option(
         bool,
         "pq-wasm",
-        "Link ML-DSA-87 verify into jelly.wasm. Default: true.",
+        "Link ML-DSA-87 verify into dreamball.wasm. Default: true.",
     ) orelse true;
 
     const build_opts = b.addOptions();
@@ -95,12 +103,28 @@ pub fn build(b: *std.Build) void {
     exe_mod.addImport("zbor", zbor_mod);
 
     const exe = b.addExecutable(.{
-        .name = "jelly",
+        .name = "dreamball",
         .root_module = exe_mod,
     });
-    b.installArtifact(exe);
+    const exe_install = b.addInstallArtifact(exe, .{});
+    b.getInstallStep().dependOn(&exe_install.step);
+    // `ball` convenience alias → dreamball (relative symlink in the same bin dir).
+    // Hung off the exe's install step (not getInstallStep) to avoid a dependency cycle.
+    const ball_alias = b.addSystemCommand(&.{ "ln", "-sf", "dreamball", b.getInstallPath(.bin, "ball") });
+    ball_alias.step.dependOn(&exe_install.step);
+    b.getInstallStep().dependOn(&ball_alias.step);
 
-    const run_step = b.step("run", "Run the jelly CLI");
+    // `cli` — install ONLY the dreamball CLI (+ the `ball` alias), without
+    // pulling in the wasm-host / fixture / schemagen helper artifacts that
+    // hang off the default install step. Release packaging cross-compiles
+    // this step per target (`zig build cli -Dtarget=… -Doptimize=ReleaseSafe`)
+    // so a release build stays fast and never has to cross-compile a host
+    // helper that isn't shipped. See .github/workflows/release.yml.
+    const cli_step = b.step("cli", "Build just the dreamball CLI for release packaging");
+    cli_step.dependOn(&exe_install.step);
+    cli_step.dependOn(&ball_alias.step);
+
+    const run_step = b.step("run", "Run the dreamball CLI");
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
@@ -118,19 +142,109 @@ pub fn build(b: *std.Build) void {
     const smoke_step = b.step("smoke", "Run end-to-end CLI smoke test");
     smoke_step.dependOn(&smoke_cmd.step);
 
-    // schema-gen — Zig tool that emits src/lib/generated/*.ts
+    // codegen-common — neutral shared codegen primitives (graph-store/1).
+    // Owns ArchiformCtx, loadArchiform (schema-read + pin-verify), blake3,
+    // structured-log helpers, and generator identity. Imported by BOTH the
+    // core schema-gen orchestrator and the graph-store orchestrator so
+    // neither imports the other (closes the §2 DDL leak; Dreamball-9dq).
+    const codegen_common_mod = b.createModule(.{
+        .root_source_file = b.path("tools/codegen-common/codegen_common.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // schema-gen — D-030 Option A JSON-Schema-canonical orchestrator.
+    // Dispatches to the per-target generators (gen_zig, gen_ts,
+    // gen_valibot, gen_cbor) and the per-archiform generators under
+    // `tools/schema-gen/`. graph-store/1: gen_cypher moved out to the
+    // graph-store orchestrator; this exe no longer emits schema.cypher.
+    // Legacy static-text generator deleted in Story 1.5 (cutover).
     const schemagen_mod = b.createModule(.{
         .root_source_file = b.path("tools/schema-gen/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    schemagen_mod.addImport("codegen_common", codegen_common_mod);
     const schemagen_exe = b.addExecutable(.{
         .name = "schema-gen",
         .root_module = schemagen_mod,
     });
     const schemagen_run = b.addRunArtifact(schemagen_exe);
-    const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts");
+    const schemagen_step = b.step("schemagen", "Regenerate src/lib/generated/*.ts (core protocol + per-archiform projections)");
     schemagen_step.dependOn(&schemagen_run.step);
+
+    // graphstore-schema — graph-store-owned DDL generator (graph-store/1).
+    // Regenerates `src/memory-palace/schema.cypher` from the memory-palace
+    // archiform schema. Kept separate from `schemagen` so the protocol core
+    // never compiles the graph store's DDL (gen_cypher). `bun run codegen`
+    // runs this after `schemagen`.
+    const graphstore_schema_mod = b.createModule(.{
+        .root_source_file = b.path("tools/graphstore-schema/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    graphstore_schema_mod.addImport("codegen_common", codegen_common_mod);
+    const graphstore_schema_exe = b.addExecutable(.{
+        .name = "graphstore-schema",
+        .root_module = graphstore_schema_mod,
+    });
+    const graphstore_schema_run = b.addRunArtifact(graphstore_schema_exe);
+    const graphstore_schema_step = b.step("graphstore-schema", "Regenerate src/memory-palace/schema.cypher (graph-store DDL)");
+    graphstore_schema_step.dependOn(&graphstore_schema_run.step);
+
+    // Story 3.2 — gen_cli unit tests (AC4 confirmation-fixture coverage).
+    // Tests live inline in tools/schema-gen/gen_cli.zig under the
+    // `test "AC4: …"` blocks. Wired here so `zig build test` exercises them.
+    const gen_cli_test_mod = b.createModule(.{
+        .root_source_file = b.path("tools/schema-gen/gen_cli.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    // gen_cli (and main.zig, which it imports) reference the shared
+    // `codegen_common` module — wire it into the test module too.
+    gen_cli_test_mod.addImport("codegen_common", codegen_common_mod);
+    const gen_cli_tests = b.addTest(.{
+        .root_module = gen_cli_test_mod,
+    });
+    const run_gen_cli_tests = b.addRunArtifact(gen_cli_tests);
+    const gen_cli_test_step = b.step(
+        "gen-cli-test",
+        "Run the Story 3.2 gen_cli AC4 confirmation-fixture tests",
+    );
+    gen_cli_test_step.dependOn(&run_gen_cli_tests.step);
+    test_step.dependOn(&run_gen_cli_tests.step);
+
+    // schemagen-spike — Story 1.1 codegen-inversion spike.
+    // Reads tools/schema-gen/spike/schemas/*.json and emits byte-equivalent
+    // fixtures under tools/schema-gen/spike/out/. The byte-equivalence diff
+    // against tools/schema-gen/legacy-spike-fixture/ is AC2 of the story.
+    // See docs/decisions/2026-04-28-codegen-spike-findings.md for AC3 gaps.
+    const schemagen_spike_mod = b.createModule(.{
+        .root_source_file = b.path("tools/schema-gen/spike/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const schemagen_spike_exe = b.addExecutable(.{
+        .name = "schema-gen-spike",
+        .root_module = schemagen_spike_mod,
+    });
+    const schemagen_spike_run = b.addRunArtifact(schemagen_spike_exe);
+    const schemagen_spike_step = b.step(
+        "schemagen-spike",
+        "Run the Story 1.1 JSON-Schema-consumer spike (writes tools/schema-gen/spike/out/)",
+    );
+    schemagen_spike_step.dependOn(&schemagen_spike_run.step);
+
+    // Story 1.1 AC1 round-trip tests over the spike consumer.
+    const schemagen_spike_tests = b.addTest(.{
+        .root_module = schemagen_spike_mod,
+    });
+    const run_schemagen_spike_tests = b.addRunArtifact(schemagen_spike_tests);
+    const schemagen_spike_test_step = b.step(
+        "schemagen-spike-test",
+        "Run the Story 1.1 spike's AC1 round-trip tests",
+    );
+    schemagen_spike_test_step.dependOn(&run_schemagen_spike_tests.step);
 
     // export-envelope-fixtures — write fixtures/envelope_golden/<type>.cbor for
     // Vitest round-trip parity tests (Story 1.5 / AC2).
@@ -149,6 +263,49 @@ pub fn build(b: *std.Build) void {
     const envelope_fixture_run = b.addRunArtifact(envelope_fixture_exe);
     const envelope_fixture_step = b.step("export-envelope-fixtures", "Write fixtures/envelope_golden/*.cbor for Vitest round-trip tests");
     envelope_fixture_step.dependOn(&envelope_fixture_run.step);
+
+    // export-golden-fixtures — write fixtures/goldens/manifest.json: the 20
+    // named golden vectors from src/golden.zig as toolchain-neutral data
+    // (logical value as JSON + full canonical bytes_hex + blake3), so a
+    // future Rust (bc-envelope) implementation can compare without running
+    // Zig at all (Dreamball-y4t.8).
+    const golden_fixture_mod = b.createModule(.{
+        .root_source_file = b.path("tools/export-golden-fixtures/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    golden_fixture_mod.addImport("dreamball", mod);
+    // The palace_field fixture is built directly with zbor/dcbor primitives
+    // (same as the src/golden.zig test), same as export-palace-fixtures below.
+    golden_fixture_mod.addImport("zbor", zbor_mod);
+    const golden_fixture_exe = b.addExecutable(.{
+        .name = "export-golden-fixtures",
+        .root_module = golden_fixture_mod,
+    });
+    const golden_fixture_run = b.addRunArtifact(golden_fixture_exe);
+    const golden_fixture_step = b.step("export-golden-fixtures", "Write fixtures/goldens/manifest.json (toolchain-neutral golden vectors for the Rust port)");
+    golden_fixture_step.dependOn(&golden_fixture_run.step);
+
+    // export-palace-fixtures — regenerate the 6 negative-test palace fixtures
+    // under tests/fixtures/ used by scripts/cli-smoke.sh (palace verify AC5–AC10
+    // + rename-mythos AC4). Mints a real valid ball.* palace via the dreamball
+    // encoders, then applies one targeted mutation per fixture so each trips
+    // exactly one verify invariant. See tools/export-palace-fixtures/main.zig.
+    const palace_fixture_mod = b.createModule(.{
+        .root_source_file = b.path("tools/export-palace-fixtures/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    palace_fixture_mod.addImport("dreamball", mod);
+    // The signed-action encoder reaches zbor directly (same as the CLI mint path).
+    palace_fixture_mod.addImport("zbor", zbor_mod);
+    const palace_fixture_exe = b.addExecutable(.{
+        .name = "export-palace-fixtures",
+        .root_module = palace_fixture_mod,
+    });
+    const palace_fixture_run = b.addRunArtifact(palace_fixture_exe);
+    const palace_fixture_step = b.step("export-palace-fixtures", "Regenerate tests/fixtures/palace-* negative-test fixtures (ball.* envelopes)");
+    palace_fixture_step.dependOn(&palace_fixture_run.step);
 
     // export-mldsa-fixture — deterministic KAT vector for WASM verify tests.
     // Uses a seeded PRNG (tools/export-mldsa-fixture/deterministic_rand.c)
@@ -199,9 +356,9 @@ pub fn build(b: *std.Build) void {
     const fixture_step = b.step("export-mldsa-fixture", "Write fixtures/ml_dsa_87_golden.json (deterministic KAT vector)");
     fixture_step.dependOn(&fixture_run.step);
 
-    // jelly-wasm — WASM build of the parser for browser consumption.
+    // dreamball-wasm — WASM build of the parser for browser consumption.
     // Separate module because freestanding-wasm drops std.Io / std.crypto.random,
-    // so we skip linking signer.zig / io.zig. See tools/jelly-wasm/main.zig.
+    // so we skip linking signer.zig / io.zig. See tools/dreamball-wasm/main.zig.
     const wasm_target = b.resolveTargetQuery(.{
         .cpu_arch = .wasm32,
         .os_tag = .freestanding,
@@ -268,16 +425,289 @@ pub fn build(b: *std.Build) void {
     }
 
     const wasm_exe = b.addExecutable(.{
-        .name = "jelly",
+        .name = "dreamball",
         .root_module = wasm_mod,
     });
     wasm_exe.entry = .disabled;
     wasm_exe.rdynamic = true;
-    // Install the produced jelly.wasm into src/lib/wasm/ so the Svelte lib
+    // Install the produced dreamball.wasm into src/lib/wasm/ so the Svelte lib
     // can import it via Vite's asset pipeline.
     const wasm_install = b.addInstallArtifact(wasm_exe, .{
         .dest_dir = .{ .override = .{ .custom = "../src/lib/wasm" } },
     });
-    const wasm_step = b.step("wasm", "Build jelly.wasm for the Svelte lib");
+    const wasm_step = b.step("wasm", "Build dreamball.wasm for the Svelte lib");
     wasm_step.dependOn(&wasm_install.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.1 spike: minimal Zig wasm host for Cluster E.
+    // See docs/decisions/2026-04-28-wasm-runtime-selection.md.
+    //
+    // The spike runs natively on the host machine (darwin/linux); it
+    // builds the hand-authored hello.wasm + hello-bad.wasm bytes
+    // in-process and exercises the in-tree Zig wasm runtime. No
+    // wasm32 target is involved on the host side.
+    // ----------------------------------------------------------------
+    const wasm_spike_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/spike/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const wasm_spike_exe = b.addExecutable(.{
+        .name = "wasm-spike-host",
+        .root_module = wasm_spike_mod,
+    });
+    b.installArtifact(wasm_spike_exe);
+    const wasm_spike_run = b.addRunArtifact(wasm_spike_exe);
+    const wasm_spike_step = b.step(
+        "wasm-spike-host",
+        "Run Story 5.1 wasm host spike: load hello.wasm, broker WASI, reject hello-bad.wasm",
+    );
+    wasm_spike_step.dependOn(&wasm_spike_run.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.2 production wasm host. Promotes the Story 5.1 spike to
+    // a host that exposes the 5 sprint-002-locked `dreamball.*`
+    // imports (D-033). See
+    // `docs/sprints/002-archiform-foundation/stories/5.2-dreamball-imports-implementation.md`.
+    //
+    // `zig build wasm-host` runs the production driver which:
+    //   - exercises the AC1 + AC4 happy-path (guest calls
+    //     dreamball.emit_action_envelope; host signs with Ed25519);
+    //   - emits the NFR11 / AC7 structured-log JSON event on stderr;
+    //   - measures AC6 / NFR3 latency (100 iterations, p95 ≤ 50 ms).
+    //
+    // `zig build wasm-host-test` runs the per-import unit tests.
+    // ----------------------------------------------------------------
+    const sign_action_mod = b.createModule(.{
+        .root_source_file = b.path("src/sign_action.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const wasm_host_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_exe = b.addExecutable(.{
+        .name = "wasm-host",
+        .root_module = wasm_host_mod,
+    });
+    b.installArtifact(wasm_host_exe);
+    const wasm_host_run = b.addRunArtifact(wasm_host_exe);
+    const wasm_host_step = b.step(
+        "wasm-host",
+        "Run Story 5.2 production wasm host: 5 dreamball.* imports + AC4 + AC6 perf",
+    );
+    wasm_host_step.dependOn(&wasm_host_run.step);
+
+    // Per-import tests live in `src/wasm-host/imports_test.zig`. We
+    // wire them as a dedicated test step so `zig build test` and
+    // `zig build wasm-host-test` both run them; AC2 requires fresh
+    // output for each gate.
+    const wasm_host_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/imports_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_test_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_tests = b.addTest(.{
+        .root_module = wasm_host_test_mod,
+    });
+    const run_wasm_host_tests = b.addRunArtifact(wasm_host_tests);
+    const wasm_host_test_step = b.step(
+        "wasm-host-test",
+        "Run Story 5.2 per-import tests (5 dreamball.* imports + AC8 grep audit assertion)",
+    );
+    wasm_host_test_step.dependOn(&run_wasm_host_tests.step);
+
+    // Aggregate tests step: zig build test runs sign_action's KAT and
+    // the wasm-host per-import suite alongside the existing module tests.
+    const sign_action_tests = b.addTest(.{
+        .root_module = sign_action_mod,
+    });
+    const run_sign_action_tests = b.addRunArtifact(sign_action_tests);
+    test_step.dependOn(&run_sign_action_tests.step);
+    test_step.dependOn(&run_wasm_host_tests.step);
+
+    // AC8 grep audit step. Fails if any name beyond the 5 locked
+    // imports surfaces in `src/wasm-host/`. The regex matches D-033's
+    // scope-lock; the grep's exit code is the gate (zero hits = exit 1
+    // for `grep -E`, which we invert into success).
+    const wasm_host_audit = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        // grep returns 1 when there are no matches — that's the success
+        // case for AC8. We swap with `! grep` so the build step
+        // succeeds iff no rogue dreamball.* names exist.
+        "! grep -E -rn '(^|[^a-zA-Z0-9_])dreamball\\.(?!fp\\b|encode_cbor\\b|read_node\\b|emit_action_envelope\\b|now_ms\\b)[a-zA-Z_][a-zA-Z0-9_]*' src/wasm-host/ --include='*.zig'",
+    });
+    const wasm_host_audit_step = b.step(
+        "wasm-host-audit",
+        "Story 5.2 AC8: grep audit — surface locked to exactly 5 dreamball.* imports",
+    );
+    wasm_host_audit_step.dependOn(&wasm_host_audit.step);
+    test_step.dependOn(&wasm_host_audit.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.3: Wasm Host Failure Paths
+    //   - failure_paths.zig: verifyBlake3, verifyImports, checkMemoryLimit
+    //   - failure_paths_test.zig: Zig-level unit tests for AC1/AC2/AC3/AC4/AC5
+    //   - failure_test_main.zig: standalone binary whose JSON output is
+    //     consumed by the AC8 TypeScript fixture tests
+    // ----------------------------------------------------------------
+
+    // Story 5.3 failure-path Zig unit tests.
+    const wasm_host_failure_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/failure_paths_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_failure_test_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_failure_tests = b.addTest(.{
+        .root_module = wasm_host_failure_test_mod,
+    });
+    const run_wasm_host_failure_tests = b.addRunArtifact(wasm_host_failure_tests);
+    const wasm_host_failure_test_step = b.step(
+        "wasm-host-failure-test-zig",
+        "Story 5.3: Zig-level failure-path unit tests (AC1/AC2/AC3/AC4/AC5)",
+    );
+    wasm_host_failure_test_step.dependOn(&run_wasm_host_failure_tests.step);
+    test_step.dependOn(&run_wasm_host_failure_tests.step);
+
+    // Story 5.3 AC6: grep audit — failure helpers live in src/wasm-host/.
+    const failure_helpers_audit = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        // Confirm verifyBlake3, verifyImports, checkMemoryLimit all exist in
+        // src/wasm-host/ (not per-platform files). Per D-032 / AC6.
+        "grep -RE 'verifyBlake3|verifyImports|checkMemoryLimit' src/wasm-host/ --include='*.zig' > /dev/null",
+    });
+    const failure_helpers_audit_step = b.step(
+        "wasm-host-failure-audit",
+        "Story 5.3 AC6: grep audit — failure helpers in shared src/wasm-host/",
+    );
+    failure_helpers_audit_step.dependOn(&failure_helpers_audit.step);
+    test_step.dependOn(&failure_helpers_audit.step);
+
+    // Story 5.3 AC8: standalone binary for TypeScript fixture tests.
+    // The binary exercises all three failure scenarios and emits JSON.
+    const wasm_host_failure_main_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/failure_test_main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    wasm_host_failure_main_mod.addImport("sign_action", sign_action_mod);
+    const wasm_host_failure_exe = b.addExecutable(.{
+        .name = "wasm-host-failure-test",
+        .root_module = wasm_host_failure_main_mod,
+    });
+    b.installArtifact(wasm_host_failure_exe);
+    const wasm_host_failure_run = b.addRunArtifact(wasm_host_failure_exe);
+    const wasm_host_failure_step = b.step(
+        "wasm-host-failure-test",
+        "Story 5.3 AC8: run failure-path test binary (fp-mismatch + import-violation + oom)",
+    );
+    wasm_host_failure_step.dependOn(&wasm_host_failure_run.step);
+
+    // ----------------------------------------------------------------
+    // Story 5.4 — production `mint.wasm` action module.
+    //
+    // Compiles `actions/mint/main.zig` to `actions/mint/mint.wasm`
+    // (wasm32-freestanding, ReleaseSmall). The blake3 of the produced
+    // module is recorded in `schemas/memory-palace-0.1.0.json`
+    // `x-actions.mint.implementation.wasm` and pinned via
+    // `bun run schemas:pin`. Per D-024 spike-before-promote: this is
+    // the FIRST production wasm action; its end-to-end execution against
+    // the wasm host (`zig build mint-wasm-host`) is the integration
+    // acceptance for Cluster E.
+    //
+    // Import surface (AC7): only `dreamball.*`. No `env.*`, no
+    // `wasi_snapshot_preview1.*`. The import-violation check in
+    // `src/wasm-host/failure_paths.zig` enforces this at host-load time.
+    //
+    // Story 5.5 ships an analogous mint-malicious.wasm (AC8); see
+    // `tests/wasm/mint-malicious/`.
+    // ----------------------------------------------------------------
+    const mint_wasm_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .freestanding,
+    });
+    const mint_wasm_mod = b.createModule(.{
+        .root_source_file = b.path("actions/mint/main.zig"),
+        .target = mint_wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    const mint_wasm_exe = b.addExecutable(.{
+        .name = "mint",
+        .root_module = mint_wasm_mod,
+    });
+    mint_wasm_exe.entry = .disabled;
+    mint_wasm_exe.rdynamic = true;
+    // Install the produced mint.wasm next to its source so the schema's
+    // `implementation.wasm` fp pin and CLI loader can find it at a fixed
+    // path under repo root.
+    const mint_wasm_install = b.addInstallArtifact(mint_wasm_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../actions/mint" } },
+    });
+    const mint_wasm_step = b.step(
+        "mint-wasm",
+        "Story 5.4 — build actions/mint/mint.wasm (production wasm action module)",
+    );
+    mint_wasm_step.dependOn(&mint_wasm_install.step);
+
+    // Companion: mint-malicious.wasm — AC8 negative fixture proving
+    // SEC2 (the guest cannot forge signatures). The malicious guest
+    // attempts to compose its own signature bytes; the host-produced
+    // envelope (after the host signs) STILL verifies against the
+    // host's pubkey, but if we feed the guest-composed bytes into
+    // `verifyEd25519`, it does not verify. The Zig fixture test in
+    // `src/wasm-host/failure_paths_test.zig` (or a sibling) exercises
+    // this. We build it here so the wasm artefact is present.
+    const mint_mal_mod = b.createModule(.{
+        .root_source_file = b.path("tests/wasm/mint-malicious/main.zig"),
+        .target = mint_wasm_target,
+        .optimize = .ReleaseSmall,
+    });
+    const mint_mal_exe = b.addExecutable(.{
+        .name = "mint-malicious",
+        .root_module = mint_mal_mod,
+    });
+    mint_mal_exe.entry = .disabled;
+    mint_mal_exe.rdynamic = true;
+    const mint_mal_install = b.addInstallArtifact(mint_mal_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../tests/wasm/mint-malicious" } },
+    });
+    const mint_mal_step = b.step(
+        "mint-malicious-wasm",
+        "Story 5.4 AC8 — build tests/wasm/mint-malicious/mint-malicious.wasm",
+    );
+    mint_mal_step.dependOn(&mint_mal_install.step);
+
+    // mint-wasm-host driver (AC2 + AC3 + AC6) — load actions/mint/mint.wasm
+    // via the production wasm host, run end-to-end, emit the structured
+    // verify-before-instantiate event {phase: "verify", status: "match",
+    // module_fp} BEFORE instantiation, and print `{ "palaceFp": "..." }`
+    // JSON to stdout on success. This is what `dreamball palace mint --use-wasm`
+    // (and the AC6 smoke gate) shells out to.
+    const mint_host_mod = b.createModule(.{
+        .root_source_file = b.path("src/wasm-host/mint_host_main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    mint_host_mod.addImport("sign_action", sign_action_mod);
+    const mint_host_exe = b.addExecutable(.{
+        .name = "mint-wasm-host",
+        .root_module = mint_host_mod,
+    });
+    b.installArtifact(mint_host_exe);
+    const mint_host_run = b.addRunArtifact(mint_host_exe);
+    // mint-wasm-host depends on the wasm artefact existing.
+    mint_host_run.step.dependOn(&mint_wasm_install.step);
+    const mint_host_step = b.step(
+        "mint-wasm-host",
+        "Story 5.4 AC2/AC3/AC6 — run actions/mint/mint.wasm through the wasm host end-to-end",
+    );
+    mint_host_step.dependOn(&mint_host_run.step);
 }

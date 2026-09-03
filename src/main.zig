@@ -1,4 +1,4 @@
-//! `jelly` CLI entry.
+//! `dreamball` CLI entry.
 
 const std = @import("std");
 const dreamball = @import("dreamball");

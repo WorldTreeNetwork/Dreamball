@@ -4,9 +4,9 @@
  * Run under Vitest `server` project (colocated with lens, no browser needed
  * for the headless assertions). Covers:
  *
- *   AC1 — palace envelope decoded via jelly.wasm; shape validated by Valibot;
+ *   AC1 — palace envelope decoded via dreamball.wasm; shape validated by Valibot;
  *          no @ladybugdb/core or kuzu-wasm imports in lens file.
- *   AC2 — rooms placed at layout.position from jelly.layout (position math verified).
+ *   AC2 — rooms placed at layout.position from ball.layout (position math verified).
  *   AC3 — deterministic-grid fallback: Fibonacci spiral gives byte-stable positions
  *          across two independent computations; single console.info emitted.
  *   AC4 — navigate event payload shape { kind: "room", fp: <room-fp> }.
@@ -79,11 +79,11 @@ describe('AC1 — cross-runtime invariant: lens file imports nothing forbidden',
     }
   });
 
-  it('PalaceLens.svelte imports safeParseJelly from wasm/loader (TC6)', () => {
+  it('PalaceLens.svelte imports safeParseBall from wasm/loader (TC6)', () => {
     const src = readFileSync(LENS_SRC, 'utf-8');
     // Must use the wasm loader, not hand-written CBOR decode.
     expect(src).toMatch(/from ['"].*wasm\/loader\.js['"]/);
-    expect(src).toMatch(/\bsafeParseJelly\b/);
+    expect(src).toMatch(/\bsafeParseBall\b/);
   });
 
   it('PalaceLens.svelte uses Valibot schema from generated/schemas (AC1)', () => {
@@ -104,9 +104,9 @@ describe('AC1 — cross-runtime invariant: lens file imports nothing forbidden',
 // ─── AC1 — Valibot schema validation of field-shaped data ────────────────────
 
 describe('AC1 — DreamBallFieldSchema validates field-shaped data correctly', () => {
-  it('accepts a minimal jelly.dreamball.field envelope', () => {
+  it('accepts a minimal ball.dreamball.field envelope', () => {
     const minimal = {
-      type: 'jelly.dreamball.field',
+      type: 'ball.dreamball.field',
       'format-version': 2 as const,
       stage: 'dreamball' as const,
       identity: 'b58:ABCDEFGHabcdefgh123',
@@ -119,7 +119,7 @@ describe('AC1 — DreamBallFieldSchema validates field-shaped data correctly', (
 
   it('rejects a non-field type (e.g. avatar)', () => {
     const avatar = {
-      type: 'jelly.dreamball.avatar',
+      type: 'ball.dreamball.avatar',
       'format-version': 2 as const,
       stage: 'dreamball' as const,
       identity: 'b58:ABCDEFGHabcdefgh123',
@@ -132,7 +132,7 @@ describe('AC1 — DreamBallFieldSchema validates field-shaped data correctly', (
 
   it('accepts field with omnispherical-grid attribute', () => {
     const withGrid = {
-      type: 'jelly.dreamball.field',
+      type: 'ball.dreamball.field',
       'format-version': 2 as const,
       stage: 'dreamball' as const,
       identity: 'b58:ABCDEFGHabcdefgh123',
@@ -151,7 +151,7 @@ describe('AC1 — DreamBallFieldSchema validates field-shaped data correctly', (
 
 // ─── AC2 — room placement from layout.position ───────────────────────────────
 
-describe('AC2 — room placement from jelly.layout.position (cartesian local-to-field)', () => {
+describe('AC2 — room placement from ball.layout.position (cartesian local-to-field)', () => {
   it('layout position [1,2,3] maps to Three.js position exactly', () => {
     // The lens reads position as [x, y, z] and passes directly to T.Group position.
     // No coordinate transform needed for cartesian local-to-parent (ADR §2).
@@ -163,7 +163,7 @@ describe('AC2 — room placement from jelly.layout.position (cartesian local-to-
   });
 
   it('layoutByChildFp lookup correctly resolves position for known fp', () => {
-    // Simulate what PalaceLens does: populate map from jelly.layout placements.
+    // Simulate what PalaceLens does: populate map from ball.layout placements.
     const placements = [
       { 'child-fp': 'b58:room-001', position: [2, 0, 0] as [number, number, number], facing: [0, 0, 0, 1] as [number, number, number, number] },
       { 'child-fp': 'b58:room-002', position: [0, 2, 0] as [number, number, number], facing: [0, 0, 0, 1] as [number, number, number, number] },
@@ -238,7 +238,7 @@ describe('AC3 — deterministic Fibonacci-shell grid fallback', () => {
     // PalaceLens emits one console.info when any room lacks layout.
     // Here we verify the console.info call pattern matches what the lens does.
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    console.info('[PalaceLens] palace "test-fp": one or more rooms have no jelly.layout — using deterministic Fibonacci-shell grid fallback (AC3).');
+    console.info('[PalaceLens] palace "test-fp": one or more rooms have no ball.layout — using deterministic Fibonacci-shell grid fallback (AC3).');
     expect(infoSpy).toHaveBeenCalledOnce();
     expect(infoSpy.mock.calls[0][0]).toContain('[PalaceLens]');
     expect(infoSpy.mock.calls[0][0]).toContain('Fibonacci-shell grid fallback');

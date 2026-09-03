@@ -1,4 +1,4 @@
-//! `jelly show <file> [--format=text|json]` — pretty-print a DreamBall or
+//! `dreamball show <file> [--format=text|json]` — pretty-print a DreamBall or
 //! identity envelope.
 
 const std = @import("std");
@@ -11,7 +11,7 @@ const args_mod = @import("args.zig");
 const helpers = @import("helpers.zig");
 const identity_envelope = dreamball.identity_envelope;
 const base58 = dreamball.base58;
-const palace_show = @import("palace_show.zig");
+const palace_show = @import("internal/show.zig");
 
 const SPECS = [_]args_mod.Spec{
     .{ .long = "format" },         // 0
@@ -115,8 +115,8 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly show <file.jelly> [--format=text|json]
-            \\       jelly show --as-palace <palace> [--json] [--archiforms]
+            \\dreamball show <file.ball> [--format=text|json]
+            \\       dreamball show --as-palace <palace> [--json] [--archiforms]
             \\
         );
         return 0;
@@ -163,7 +163,12 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 }
 
 fn showDreamBall(gpa: Allocator, path: []const u8, bytes: []const u8, format: []const u8) !u8 {
-    const db = try dreamball.envelope.decodeDreamBallSubject(bytes);
+    // Arena owns every allocation that decodeDreamBall makes for string and
+    // slice fields inside the returned struct — we free them all in one shot
+    // on function exit.
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const db = try dreamball.envelope.decodeDreamBall(arena.allocator(), bytes);
 
     if (std.mem.eql(u8, format, "json")) {
         const json = try dreamball.json.writeDreamBall(gpa, db);

@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
- * jelly MCP server — stdio transport, JSON-RPC 2.0.
+ * dreamball MCP server — stdio transport, JSON-RPC 2.0.
  *
- * Exposes the Zig `jelly` CLI as a set of MCP tools so AI agents +
+ * Exposes the Zig `dreamball` CLI as a set of MCP tools so AI agents +
  * scripting workflows can compose DreamBalls interactively. Every tool
  * maps to a subprocess invocation of the CLI. Output is returned as
  * structured JSON.
@@ -10,7 +10,7 @@
  * Usage — add to ~/.claude/.mcp.json or project-local:
  * {
  *   "mcpServers": {
- *     "jelly": {
+ *     "dreamball": {
  *       "command": "bun",
  *       "args": ["run", "/path/to/Dreamball/tools/mcp-server/server.ts"]
  *     }
@@ -23,8 +23,8 @@
  *   - seal_relic        — wrap a DreamBall in a sealed Relic
  *   - unlock_relic      — open a sealed Relic (MOCKED)
  *   - join_guild        — add a Guild membership
- *   - list_dreamballs   — scan a directory for .jelly files
- *   - show_dreamball    — pretty-print a .jelly file
+ *   - list_dreamballs   — scan a directory for .ball files
+ *   - show_dreamball    — pretty-print a .ball file
  *   - verify_dreamball  — Ed25519 signature check
  *   - describe_protocol — return the v2 type taxonomy for LLMs
  *
@@ -38,23 +38,23 @@ import { resolve } from 'path';
 import { existsSync, readdirSync, statSync } from 'fs';
 
 // ---------------------------------------------------------------------------
-// CLI location — defaults to repo-relative zig-out/bin/jelly. Override with
-// JELLY_CLI env var when invoking from an install location.
+// CLI location — defaults to repo-relative zig-out/bin/dreamball. Override with
+// DREAMBALL_CLI env var when invoking from an install location.
 // ---------------------------------------------------------------------------
 
 const REPO_ROOT = resolve(import.meta.dir, '..', '..');
-const DEFAULT_JELLY = resolve(REPO_ROOT, 'zig-out', 'bin', 'jelly');
-const JELLY = process.env.JELLY_CLI ?? DEFAULT_JELLY;
+const DEFAULT_DREAMBALL = resolve(REPO_ROOT, 'zig-out', 'bin', 'dreamball');
+const CLI = process.env.DREAMBALL_CLI ?? DEFAULT_DREAMBALL;
 
-function runJelly(args: string[]): { stdout: string; stderr: string; code: number } {
-	if (!existsSync(JELLY)) {
+function runDreamball(args: string[]): { stdout: string; stderr: string; code: number } {
+	if (!existsSync(CLI)) {
 		return {
 			stdout: '',
-			stderr: `jelly CLI not found at ${JELLY}; run \`zig build\` first or set JELLY_CLI`,
+			stderr: `dreamball CLI not found at ${CLI}; run \`zig build\` first or set DREAMBALL_CLI`,
 			code: 127
 		};
 	}
-	const res = spawnSync(JELLY, args, { encoding: 'utf-8' });
+	const res = spawnSync(CLI, args, { encoding: 'utf-8' });
 	return { stdout: res.stdout ?? '', stderr: res.stderr ?? '', code: res.status ?? -1 };
 }
 
@@ -102,17 +102,17 @@ const tools: ToolSpec[] = [
 			const cliArgs = ['mint', '--out', strArg(a, 'out'), '--type', strArg(a, 'type')];
 			const n = optStr(a, 'name');
 			if (n) cliArgs.push('--name', n);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
 		name: 'show_dreamball',
 		description:
-			'Pretty-print a .jelly file. Format can be "text" (default) or "json" for the canonical JSON export.',
+			'Pretty-print a .ball file. Format can be "text" (default) or "json" for the canonical JSON export.',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				path: { type: 'string', description: 'Path to the .jelly file' },
+				path: { type: 'string', description: 'Path to the .ball file' },
 				format: { type: 'string', description: 'text or json' }
 			},
 			required: ['path']
@@ -121,21 +121,21 @@ const tools: ToolSpec[] = [
 			const cliArgs = ['show', strArg(a, 'path')];
 			const f = optStr(a, 'format');
 			if (f) cliArgs.push('--format=' + f);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
 		name: 'verify_dreamball',
 		description:
-			'Verify the Ed25519 signature on a .jelly file. Exits 0 on success, non-zero on failure.',
+			'Verify the Ed25519 signature on a .ball file. Exits 0 on success, non-zero on failure.',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				path: { type: 'string', description: 'Path to the .jelly file' }
+				path: { type: 'string', description: 'Path to the .ball file' }
 			},
 			required: ['path']
 		},
-		handler: async (a) => runJelly(['verify', strArg(a, 'path')])
+		handler: async (a) => runDreamball(['verify', strArg(a, 'path')])
 	},
 	{
 		name: 'join_guild',
@@ -162,7 +162,7 @@ const tools: ToolSpec[] = [
 			];
 			const out = optStr(a, 'out');
 			if (out) cliArgs.push('--out', out);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
@@ -172,7 +172,7 @@ const tools: ToolSpec[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				tool: { type: 'string', description: 'Path to the Tool .jelly file' },
+				tool: { type: 'string', description: 'Path to the Tool .ball file' },
 				to: { type: 'string', description: 'Target Agent fingerprint (base58)' },
 				viaGuild: { type: 'string', description: 'Guild fingerprint (base58)' },
 				senderKey: { type: 'string', description: 'Sender\'s Ed25519 secret key path' },
@@ -181,7 +181,7 @@ const tools: ToolSpec[] = [
 			required: ['tool', 'to', 'viaGuild', 'senderKey', 'out']
 		},
 		handler: async (a) =>
-			runJelly([
+			runDreamball([
 				'transmit',
 				strArg(a, 'tool'),
 				'--to',
@@ -201,7 +201,7 @@ const tools: ToolSpec[] = [
 		inputSchema: {
 			type: 'object',
 			properties: {
-				inner: { type: 'string', description: 'Path to the inner .jelly file' },
+				inner: { type: 'string', description: 'Path to the inner .ball file' },
 				forGuild: { type: 'string', description: 'Guild fingerprint (base58) authorised to unlock' },
 				out: { type: 'string', description: 'Output path for the sealed relic' },
 				hint: { type: 'string', description: 'Reveal hint (optional)' }
@@ -219,7 +219,7 @@ const tools: ToolSpec[] = [
 			];
 			const hint = optStr(a, 'hint');
 			if (hint) cliArgs.push('--hint', hint);
-			return runJelly(cliArgs);
+			return runDreamball(cliArgs);
 		}
 	},
 	{
@@ -235,11 +235,11 @@ const tools: ToolSpec[] = [
 			required: ['relic', 'out']
 		},
 		handler: async (a) =>
-			runJelly(['unlock', strArg(a, 'relic'), '--out', strArg(a, 'out')])
+			runDreamball(['unlock', strArg(a, 'relic'), '--out', strArg(a, 'out')])
 	},
 	{
 		name: 'list_dreamballs',
-		description: 'Scan a directory for .jelly files and return a summary per file.',
+		description: 'Scan a directory for .ball files and return a summary per file.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -253,10 +253,10 @@ const tools: ToolSpec[] = [
 				return { error: `not a directory: ${dir}` };
 			}
 			const entries = readdirSync(dir)
-				.filter((f) => f.endsWith('.jelly'))
+				.filter((f) => f.endsWith('.ball'))
 				.map((f) => {
 					const full = resolve(dir, f);
-					const show = runJelly(['show', full]);
+					const show = runDreamball(['show', full]);
 					return { path: full, text: show.stdout.trim() };
 				});
 			return { count: entries.length, entries };
@@ -270,12 +270,12 @@ const tools: ToolSpec[] = [
 		handler: async () => ({
 			'format-version': 2,
 			types: [
-				{ tag: 'avatar', wire: 'jelly.dreamball.avatar', summary: 'look-heavy, worn, visible to observer' },
-				{ tag: 'agent', wire: 'jelly.dreamball.agent', summary: 'act-heavy — model, memory, knowledge, emotion, skills' },
-				{ tag: 'tool', wire: 'jelly.dreamball.tool', summary: 'single skill, transferable via transmission' },
-				{ tag: 'relic', wire: 'jelly.dreamball.relic', summary: 'sealed payload, reveals on unlock' },
-				{ tag: 'field', wire: 'jelly.dreamball.field', summary: 'omnispherical ambient layer' },
-				{ tag: 'guild', wire: 'jelly.dreamball.guild', summary: 'group with a recrypt-style keyspace' }
+				{ tag: 'avatar', wire: 'ball.dreamball.avatar', summary: 'look-heavy, worn, visible to observer' },
+				{ tag: 'agent', wire: 'ball.dreamball.agent', summary: 'act-heavy — model, memory, knowledge, emotion, skills' },
+				{ tag: 'tool', wire: 'ball.dreamball.tool', summary: 'single skill, transferable via transmission' },
+				{ tag: 'relic', wire: 'ball.dreamball.relic', summary: 'sealed payload, reveals on unlock' },
+				{ tag: 'field', wire: 'ball.dreamball.field', summary: 'omnispherical ambient layer' },
+				{ tag: 'guild', wire: 'ball.dreamball.guild', summary: 'group with a recrypt-style keyspace' }
 			],
 			shared_core_fields: ['type', 'format-version', 'stage', 'identity', 'genesis-hash', 'revision'],
 			agent_slots: [
@@ -337,7 +337,7 @@ async function handle(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
 		return respond(req.id, {
 			protocolVersion: '2024-11-05',
 			capabilities: { tools: { listChanged: false } },
-			serverInfo: { name: 'jelly', version: '0.2.0' }
+			serverInfo: { name: 'dreamball', version: '0.2.0' }
 		});
 	}
 

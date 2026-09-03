@@ -1,4 +1,4 @@
-//! `jelly join-guild <dreamball.jelly> --guild=<guild.jelly> --key=<keyfile>`
+//! `dreamball join-guild <dreamball.ball> --guild=<guild.ball> --key=<keyfile>`
 //! Appends a `guild` attribute (the Guild's fingerprint) to the DreamBall,
 //! bumps revision, and re-signs with the provided Ed25519 secret.
 
@@ -23,7 +23,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(3) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly join-guild <dreamball.jelly> --guild <guild.jelly> --key <keyfile> [--out <path>]
+            \\dreamball join-guild <dreamball.ball> --guild <guild.ball> --key <keyfile> [--out <path>]
             \\
             \\Adds a Guild membership attribute to the DreamBall and re-signs.
             \\

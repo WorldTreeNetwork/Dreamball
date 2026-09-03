@@ -1,5 +1,5 @@
 <!--
-  Tool type tour — shows a jelly.dreamball.tool in every applicable lens.
+  Tool type tour — shows a ball.dreamball.tool in every applicable lens.
   Meaningful lenses: thumbnail (skill name + type chip), flat (slot dump showing
   skill.name, skill.trigger, applicable-to), phone (mobile listing).
   Skipped: avatar/splat (no look on tool), knowledge-graph (no triples),

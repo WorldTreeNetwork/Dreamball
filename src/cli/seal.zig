@@ -1,4 +1,4 @@
-//! `jelly seal <in> --out <out> [--compress]` — wrap a DreamBall in a
+//! `dreamball seal <in> --out <out> [--compress]` — wrap a DreamBall in a
 //! DragonBall file header. zstd compression is opt-in when --compress is
 //! passed; otherwise the envelope bytes are stored verbatim.
 
@@ -22,7 +22,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(2) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly seal <in.jelly> --out <out.dragon.jelly> [--compress]
+            \\dreamball seal <in.ball> --out <out.dragon.ball> [--compress]
             \\
         );
         return 0;

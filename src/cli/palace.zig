@@ -1,6 +1,6 @@
 //! Palace verb group dispatch (D-013).
 //!
-//! Routes `jelly palace <subverb>` to per-subverb handlers that live in
+//! Routes `dreamball palace <subverb>` to per-subverb handlers that live in
 //! separate files. Each subverb handler exports `run(gpa, args) !u8` with
 //! the same signature as top-level commands.
 
@@ -8,13 +8,25 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const io = @import("../io.zig");
-const palace_mint = @import("palace_mint.zig");
-const palace_add_room = @import("palace_add_room.zig");
-const palace_inscribe = @import("palace_inscribe.zig");
-const palace_move = @import("palace_move.zig");
-const palace_open = @import("palace_open.zig");
-const palace_rename_mythos = @import("palace_rename_mythos.zig");
-const palace_show = @import("palace_show.zig");
+// Story 3.2 — `mint` is dispatched through the generated CLI projection
+// at src/cli/generated/palace_mint.zig (D-019/D-022/D-024).
+// Story 3.3 — `inscribe` and `add-room` are also projected via generated
+// dispatchers at src/cli/generated/palace_inscribe.zig and
+// src/cli/generated/palace_add_room.zig.
+// Story 3.4 — `rename-mythos` and `move` are projected via generated
+// dispatchers at src/cli/generated/palace_rename_mythos.zig and
+// src/cli/generated/palace_move.zig.
+// The legacy hand-written verbs remain in place for parity verification;
+// each generated dispatcher delegates to its legacy `run` after flag
+// parsing + help + confirmation. Story 3.5 removes the legacy files
+// once all five verbs project cleanly.
+const palace_mint = @import("generated/palace_mint.zig");
+const palace_add_room = @import("generated/palace_add_room.zig");
+const palace_inscribe = @import("generated/palace_inscribe.zig");
+const palace_move = @import("generated/palace_move.zig");
+const palace_open = @import("internal/open.zig");
+const palace_rename_mythos = @import("generated/palace_rename_mythos.zig");
+const palace_show = @import("internal/show.zig");
 
 pub const SubCommand = struct {
     name: []const u8,
@@ -34,7 +46,7 @@ pub const subcommands: []const SubCommand = &.{
 
 pub fn printPalaceUsage() !void {
     try io.writeAllStdout(
-        \\Usage: jelly palace <subverb> [args...]
+        \\Usage: dreamball palace <subverb> [args...]
         \\
         \\Subverbs:
         \\  mint            mint a new palace DreamBall with required mythos
@@ -48,7 +60,7 @@ pub fn printPalaceUsage() !void {
         \\Growth (unimplemented):
         \\  layout, share, rewind, observe
         \\
-        \\Run `jelly palace <subverb> --help` for per-subverb flags.
+        \\Run `dreamball palace <subverb> --help` for per-subverb flags.
         \\
     );
 }

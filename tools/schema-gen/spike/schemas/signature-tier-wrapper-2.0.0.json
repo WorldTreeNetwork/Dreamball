@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dreamball:root.signature-tier-wrapper@2.0.0",
+  "title": "SignatureTierWrapper",
+  "description": "The tiered-signature wire shape (src/protocol.zig Signature struct + Stage tier wrapping). Spike target #3: closed-enum algorithm picklist + opaque bytes value, wrapped by the Stage lifecycle tier (seed | dreamball | dragonball). The 'tier wrapper' is the Stage enum that tags which lifecycle tier signed; the inner Signature pair is the alg + value the dCBOR `signed` attribute carries.",
+  "type": "object",
+  "x-zig-type": "Signature",
+  "x-wire-attribute": "signed",
+  "x-format-version": [1, 2],
+  "x-cbor-attribute-encoding": "v2-attribute-pair-signed-with-2-array-alg-value",
+  "required": ["alg", "value"],
+  "additionalProperties": false,
+  "properties": {
+    "alg": {
+      "$comment": "Closed enum: ed25519 | ml-dsa-87. Picklist at the Valibot layer.",
+      "type": "string",
+      "enum": ["ed25519", "ml-dsa-87"],
+      "x-cbor": "text-string",
+      "x-zig": "[]const u8",
+      "x-cbor-section": "attribute-pair-position-0"
+    },
+    "value": {
+      "$comment": "Opaque signature bytes — Ed25519 = 64 B, ML-DSA-87 = 4627 B.",
+      "type": "string",
+      "x-cbor": "byte-string-variable",
+      "x-zig": "[]const u8",
+      "x-cbor-section": "attribute-pair-position-1",
+      "x-ts-type": "Base58"
+    }
+  },
+  "$defs": {
+    "Stage": {
+      "$comment": "The tier wrapper. seed = pre-signing; dreamball = signed; dragonball = sealed. Lives at the Envelope.stage layer (see envelope schema), referenced here so consumers can co-validate tier-and-signature presence.",
+      "type": "string",
+      "enum": ["seed", "dreamball", "dragonball"],
+      "x-cbor": "text-string",
+      "x-zig": "Stage"
+    }
+  }
+}

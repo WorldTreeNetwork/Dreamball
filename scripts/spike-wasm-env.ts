@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * A0 spike — prove that jelly.wasm can consume host randomness via an
+ * A0 spike — prove that dreamball.wasm can consume host randomness via an
  * env.getRandomBytes import. Success criterion: two consecutive calls to
  * spikeRandom32 return 32 random bytes each, non-zero, and not equal to
  * each other.
@@ -12,7 +12,7 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const wasmPath = resolve(import.meta.dir, '..', 'src', 'lib', 'wasm', 'jelly.wasm');
+const wasmPath = resolve(import.meta.dir, '..', 'src', 'lib', 'wasm', 'dreamball.wasm');
 const wasmBytes = readFileSync(wasmPath);
 const mod = await WebAssembly.compile(wasmBytes);
 

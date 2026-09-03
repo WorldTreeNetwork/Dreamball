@@ -1,0 +1,1434 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dreamball:root@2.0.0",
+  "title": "DreamBall Root Protocol Schema",
+  "description": "Authoritative shape source for every root wire-format type in the DreamBall protocol. Hand-authored from src/protocol.zig + src/protocol_v2.zig per FR2. Per D-018 + D-029 (sprint-002 architecture decisions): this file is canonical for field shapes; the CBOR encoding algorithm remains canonical in Zig (src/*.zig) with golden test vectors. Recrypt naming inheritance (TC9): every type name matches its recrypt-aligned name verbatim (see ../../recrypt/docs/wire-protocol.md). x-extension keys (x-zig, x-zig-type, x-cbor, x-cbor-section, x-cbor-attribute-encoding, x-format-version, x-wire-type, x-wire-attribute, x-optional, x-ts-type) carry generator hints outside the JSON-Schema core; validators ignore them, generators consume them. Spike findings: docs/decisions/2026-04-28-codegen-spike-findings.md.",
+  "type": "object",
+  "$defs": {
+    "Bytes32": {
+      "$comment": "fp:bytes32 — 32-byte blake3 fingerprint or Ed25519 pubkey. Hex at JSON layer, byte-string-32 at CBOR layer.",
+      "type": "string",
+      "x-cbor": "byte-string-32",
+      "x-zig": "[32]u8",
+      "x-ts-type": "Bytes32"
+    },
+    "Fingerprint": {
+      "$comment": "Blake3 fingerprint — distinct from Bytes32 only in TS naming for clarity.",
+      "type": "string",
+      "x-cbor": "byte-string-32",
+      "x-zig": "Fingerprint",
+      "x-ts-type": "Fingerprint"
+    },
+    "Rfc3339": {
+      "$comment": "RFC 3339 UTC string at JSON layer; tag-1 epoch-time at CBOR layer. Per spike Gap 3.",
+      "type": "string",
+      "x-cbor": "tag-1-epoch-time",
+      "x-zig": "i64",
+      "x-ts-type": "Rfc3339"
+    },
+    "Stage": {
+      "$comment": "Closed-enum lifecycle tier wrapping the signature bag. seed = pre-signing; dreamball = signed; dragonball = sealed.",
+      "type": "string",
+      "enum": ["seed", "dreamball", "dragonball"],
+      "x-cbor": "text-string",
+      "x-zig": "Stage"
+    },
+    "DreamBallType": {
+      "$comment": "The six DreamBall categories. Wire form is the short tag; envelope.type literal is `ball.dreamball.<tag>`.",
+      "type": "string",
+      "enum": ["avatar", "agent", "tool", "relic", "field", "guild"],
+      "x-cbor": "text-string",
+      "x-zig": "DreamBallType"
+    },
+    "MemoryConnectionKind": {
+      "type": "string",
+      "enum": ["semantic", "emotional", "temporal", "other"],
+      "x-cbor": "text-string",
+      "x-zig": "MemoryConnectionKind"
+    },
+    "InteractionKind": {
+      "type": "string",
+      "enum": ["speak", "listen", "act", "receive"],
+      "x-cbor": "text-string",
+      "x-zig": "InteractionKind"
+    },
+    "ActionKind": {
+      "$comment": "Convenience palette for palace authors (D-038). NOT the v4 wire type — Action.kind is an open string from v4 onward. This entry is kept as a documentation aid for palace-profile consumers.",
+      "type": "string",
+      "enum": [
+        "palace-minted",
+        "room-added",
+        "avatar-inscribed",
+        "aqueduct-created",
+        "move",
+        "true-naming",
+        "inscription-updated",
+        "inscription-orphaned",
+        "inscription-pending-embedding"
+      ],
+      "x-cbor": "text-string",
+      "x-zig": "ActionKind"
+    },
+    "AqueductPhase": {
+      "type": "string",
+      "enum": ["in", "out", "standing", "resonant"],
+      "x-cbor": "text-string",
+      "x-zig": "AqueductPhase"
+    },
+    "SignatureAlg": {
+      "$comment": "Closed enum picklist for the signed-attribute algorithm. Per spike target #3.",
+      "type": "string",
+      "enum": ["ed25519", "ml-dsa-87"],
+      "x-cbor": "text-string",
+      "x-zig": "[]const u8"
+    },
+    "SignatureTierWrapper": {
+      "$comment": "Lifted from tools/schema-gen/spike/schemas/signature-tier-wrapper-2.0.0.json. The Signature pair (alg + value) the dCBOR `signed` attribute carries; the Stage tier wraps the bag at envelope-level. Per spike Gap 4: the value position is a positional 2-array at CBOR.",
+      "type": "object",
+      "x-zig-type": "Signature",
+      "x-wire-attribute": "signed",
+      "x-format-version": [1, 2],
+      "x-cbor-attribute-encoding": "v2-attribute-pair-signed-with-2-array-alg-value",
+      "required": ["alg", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "$ref": "#/$defs/SignatureAlg",
+          "x-cbor-section": "attribute-pair-position-0"
+        },
+        "value": {
+          "$comment": "Opaque signature bytes — Ed25519 = 64 B, ML-DSA-87 = 4627 B.",
+          "type": "string",
+          "x-cbor": "byte-string-variable",
+          "x-zig": "[]const u8",
+          "x-cbor-section": "attribute-pair-position-1",
+          "x-ts-type": "Base58"
+        }
+      }
+    },
+    "Asset": {
+      "$comment": "Per src/protocol.zig Asset.",
+      "type": "object",
+      "x-zig-type": "Asset",
+      "required": ["media-type", "hash"],
+      "additionalProperties": false,
+      "properties": {
+        "media-type": {
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "hash": {
+          "$ref": "#/$defs/Bytes32"
+        },
+        "url": {
+          "$comment": "JSON key is singular `url`, an array — it projects the repeated CBOR `url` attribute (one assertion per location), so it matches the wire key and the JSON import/export. The in-memory Zig struct field is `urls`.",
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-cbor": "array-of-text-string",
+          "x-zig": "[]const []const u8"
+        },
+        "embedded": {
+          "type": ["string", "null"],
+          "x-cbor": "byte-string-variable",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "size": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "?u64",
+          "x-optional": true
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Look": {
+      "$comment": "Per src/protocol.zig Look.",
+      "type": "object",
+      "x-zig-type": "Look",
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Asset" },
+          "x-zig": "[]const Asset"
+        },
+        "preview": {
+          "oneOf": [{ "$ref": "#/$defs/Asset" }, { "type": "null" }],
+          "x-zig": "?Asset",
+          "x-optional": true
+        },
+        "background": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Feel": {
+      "$comment": "Per src/protocol.zig Feel.",
+      "type": "object",
+      "x-zig-type": "Feel",
+      "additionalProperties": false,
+      "properties": {
+        "personality": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "voice": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "values": {
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-zig": "[]const []const u8"
+        },
+        "tempo": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Skill": {
+      "$comment": "Per src/protocol.zig Skill — a named capability inside Act.",
+      "type": "object",
+      "x-zig-type": "Skill",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "trigger": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "body": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "asset": {
+          "oneOf": [{ "$ref": "#/$defs/Asset" }, { "type": "null" }],
+          "x-zig": "?Asset",
+          "x-optional": true
+        },
+        "requires": {
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-zig": "[]const []const u8"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Act": {
+      "$comment": "Per src/protocol.zig Act.",
+      "type": "object",
+      "x-zig-type": "Act",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "system-prompt": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "skills": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Skill" },
+          "x-zig": "[]const Skill"
+        },
+        "scripts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Asset" },
+          "x-zig": "[]const Asset"
+        },
+        "tools": {
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-zig": "[]const []const u8"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Vec3": {
+      "type": "object",
+      "x-zig-type": "Vec3",
+      "required": ["x", "y", "z"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" },
+        "y": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" },
+        "z": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" }
+      }
+    },
+    "CameraRing": {
+      "type": "object",
+      "x-zig-type": "CameraRing",
+      "required": ["radius", "tilt", "fov"],
+      "additionalProperties": false,
+      "properties": {
+        "radius": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" },
+        "tilt": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" },
+        "fov": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" }
+      }
+    },
+    "OmnisphericalGrid": {
+      "$comment": "Per src/protocol_v2.zig OmnisphericalGrid (PROTOCOL.md §12.2). resolution is forward-only — see VISION.md §4.4.5.",
+      "type": "object",
+      "x-zig-type": "OmnisphericalGrid",
+      "x-wire-type": "ball.omnispherical-grid",
+      "additionalProperties": false,
+      "properties": {
+        "pole-north": { "$ref": "#/$defs/Vec3" },
+        "pole-south": { "$ref": "#/$defs/Vec3" },
+        "camera-rings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CameraRing" },
+          "x-zig": "[]const CameraRing"
+        },
+        "layer-depth": {
+          "type": "integer",
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "u32"
+        },
+        "resolution": {
+          "type": "integer",
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "u32"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "MemoryNodeLookupEntry": {
+      "$comment": "Inline lookups: name → sort-key value.",
+      "type": "object",
+      "x-zig-type": "MemoryNode.LookupEntry",
+      "required": ["name", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "value": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" }
+      }
+    },
+    "MemoryNode": {
+      "type": "object",
+      "x-zig-type": "MemoryNode",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "u64"
+        },
+        "content": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "lookups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MemoryNodeLookupEntry" },
+          "x-zig": "[]const MemoryNode.LookupEntry"
+        },
+        "created": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "last-recalled": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+    "MemoryConnection": {
+      "type": "object",
+      "x-zig-type": "MemoryConnection",
+      "required": ["from", "to", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "u64"
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "u64"
+        },
+        "kind": { "$ref": "#/$defs/MemoryConnectionKind" },
+        "strength": {
+          "type": "number",
+          "x-cbor": "smallest-float",
+          "x-zig": "f64"
+        },
+        "label": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Memory": {
+      "$comment": "Per src/protocol_v2.zig Memory (PROTOCOL.md §12.3).",
+      "type": "object",
+      "x-zig-type": "Memory",
+      "x-wire-type": "ball.memory",
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MemoryNode" },
+          "x-zig": "[]const MemoryNode"
+        },
+        "connections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MemoryConnection" },
+          "x-zig": "[]const MemoryConnection"
+        },
+        "last-updated": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+    "Triple": {
+      "$comment": "Per src/protocol_v2.zig Triple. The `to` field carries either a text value or a fingerprint reference.",
+      "type": "object",
+      "x-zig-type": "Triple",
+      "required": ["from", "label", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "label": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "to": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" }
+      }
+    },
+    "KnowledgeGraph": {
+      "$comment": "Per src/protocol_v2.zig KnowledgeGraph (PROTOCOL.md §12.4).",
+      "type": "object",
+      "x-zig-type": "KnowledgeGraph",
+      "x-wire-type": "ball.knowledge-graph",
+      "additionalProperties": false,
+      "properties": {
+        "triples": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Triple" },
+          "x-zig": "[]const Triple"
+        },
+        "source": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "EmotionalAxis": {
+      "type": "object",
+      "x-zig-type": "EmotionalAxis",
+      "required": ["name", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "value": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" },
+        "min": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" },
+        "max": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" }
+      }
+    },
+    "EmotionalRegister": {
+      "$comment": "Per src/protocol_v2.zig EmotionalRegister (PROTOCOL.md §12.5).",
+      "type": "object",
+      "x-zig-type": "EmotionalRegister",
+      "x-wire-type": "ball.emotional-register",
+      "additionalProperties": false,
+      "properties": {
+        "axes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EmotionalAxis" },
+          "x-zig": "[]const EmotionalAxis"
+        },
+        "observed-at": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+    "Interaction": {
+      "type": "object",
+      "x-zig-type": "Interaction",
+      "required": ["turn", "actor", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "turn": {
+          "type": "integer",
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "u32"
+        },
+        "actor": { "$ref": "#/$defs/Fingerprint" },
+        "kind": { "$ref": "#/$defs/InteractionKind" },
+        "content": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "timestamp": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "outcome": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "InteractionSet": {
+      "$comment": "Per src/protocol_v2.zig InteractionSet (PROTOCOL.md §12.6). set-id is content-addressable: 16 random bytes at creation time.",
+      "type": "object",
+      "x-zig-type": "InteractionSet",
+      "x-wire-type": "ball.interaction-set",
+      "required": ["set-id"],
+      "additionalProperties": false,
+      "properties": {
+        "set-id": {
+          "type": "string",
+          "x-cbor": "byte-string-16",
+          "x-zig": "[16]u8"
+        },
+        "interactions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Interaction" },
+          "x-zig": "[]const Interaction"
+        },
+        "created": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+    "GuildPolicy": {
+      "$comment": "Per src/protocol_v2.zig GuildPolicy (PROTOCOL.md §12.7). Slot bucket lists; default split is sensible.",
+      "type": "object",
+      "x-zig-type": "GuildPolicy",
+      "x-wire-type": "ball.guild-policy",
+      "additionalProperties": false,
+      "properties": {
+        "public": {
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-zig": "[]const []const u8"
+        },
+        "guild-only": {
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-zig": "[]const []const u8"
+        },
+        "admin-only": {
+          "type": "array",
+          "items": { "type": "string", "x-cbor": "text-string" },
+          "x-zig": "[]const []const u8"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "SecretRef": {
+      "$comment": "Per src/protocol_v2.zig SecretRef (PROTOCOL.md §12.8). locator is opaque (e.g. recrypt://…).",
+      "type": "object",
+      "x-zig-type": "SecretRef",
+      "x-wire-type": "ball.secret-ref",
+      "required": ["name", "locator"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "locator": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "issued-by": {
+          "oneOf": [{ "$ref": "#/$defs/Fingerprint" }, { "type": "null" }],
+          "x-zig": "?Fingerprint",
+          "x-optional": true
+        },
+        "description": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Transmission": {
+      "$comment": "Per src/protocol_v2.zig Transmission (PROTOCOL.md §12.9). When sender-identity is present the envelope bumps to format-version 3.",
+      "type": "object",
+      "x-zig-type": "Transmission",
+      "x-wire-type": "ball.transmission",
+      "x-format-version": [2, 3],
+      "required": ["tool-fp", "target-fp", "via-guild"],
+      "additionalProperties": false,
+      "properties": {
+        "tool-fp": { "$ref": "#/$defs/Fingerprint" },
+        "target-fp": { "$ref": "#/$defs/Fingerprint" },
+        "via-guild": { "$ref": "#/$defs/Fingerprint" },
+        "sender-identity": {
+          "oneOf": [{ "$ref": "#/$defs/Bytes32" }, { "type": "null" }],
+          "x-zig": "?[32]u8",
+          "x-optional": true
+        },
+        "sender-identity-pq": {
+          "type": ["string", "null"],
+          "x-cbor": "byte-string-2592",
+          "x-zig": "?[ML_DSA_87_PUBLIC_KEY_LEN]u8",
+          "x-optional": true
+        },
+        "sender-fp": {
+          "oneOf": [{ "$ref": "#/$defs/Fingerprint" }, { "type": "null" }],
+          "x-zig": "?Fingerprint",
+          "x-optional": true
+        },
+        "transmitted-at": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "tool-envelope": {
+          "type": "string",
+          "x-cbor": "byte-string-variable",
+          "x-zig": "[]const u8"
+        },
+        "signatures": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SignatureTierWrapper" },
+          "x-cbor": "attribute-pairs-keyed-signed",
+          "x-zig": "[]const Signature"
+        }
+      }
+    },
+    "GuildMembership": {
+      "type": "object",
+      "x-zig-type": "GuildMembership",
+      "required": ["member"],
+      "additionalProperties": false,
+      "properties": {
+        "member": { "$ref": "#/$defs/Fingerprint" },
+        "is-admin": {
+          "type": "boolean",
+          "x-cbor": "bool",
+          "x-zig": "bool"
+        }
+      }
+    },
+    "Guild": {
+      "$comment": "Per src/protocol_v2.zig Guild (PROTOCOL.md §12.1).",
+      "type": "object",
+      "x-zig-type": "Guild",
+      "x-wire-type": "ball.dreamball.guild",
+      "required": ["guild-name", "keyspace-root-hash"],
+      "additionalProperties": false,
+      "properties": {
+        "guild-name": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "keyspace-root-hash": { "$ref": "#/$defs/Bytes32" },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GuildMembership" },
+          "x-zig": "[]const GuildMembership"
+        },
+        "policy": {
+          "oneOf": [{ "$ref": "#/$defs/GuildPolicy" }, { "type": "null" }],
+          "x-zig": "?GuildPolicy",
+          "x-optional": true
+        }
+      }
+    },
+    "Relic": {
+      "$comment": "The 'sealed body' framing inlined on ball.dreamball.relic envelopes. Lifted from tools/schema-gen/spike/schemas/sealed-body-2.0.0.json.",
+      "type": "object",
+      "x-zig-type": "Relic",
+      "x-wire-type": "ball.dreamball.relic",
+      "x-format-version": 2,
+      "x-cbor-attribute-encoding": "v2-tag-200-envelope-with-tag-201-leaf-and-attribute-pairs",
+      "required": ["sealed-payload-hash", "unlock-guild"],
+      "additionalProperties": false,
+      "properties": {
+        "sealed-payload-hash": {
+          "$comment": "fp:bytes32 — blake3 of the sealed inner envelope bytes.",
+          "type": "string",
+          "x-cbor": "byte-string-32",
+          "x-zig": "[32]u8",
+          "x-cbor-section": "attribute",
+          "x-ts-type": "Bytes32"
+        },
+        "unlock-guild": {
+          "$comment": "fp:bytes32 — Guild fingerprint authorised to unlock this relic.",
+          "type": "string",
+          "x-cbor": "byte-string-32",
+          "x-zig": "Fingerprint",
+          "x-cbor-section": "attribute",
+          "x-ts-type": "Fingerprint"
+        },
+        "reveal-hint": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "sealed-until": {
+          "$comment": "Optional time-gate; RFC 3339 at JSON, tag-1 epoch-time at CBOR.",
+          "type": ["string", "null"],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Rfc3339"
+        }
+      }
+    },
+    "FieldKind": {
+      "$comment": "Per src/protocol_v2.zig FieldKind (PROTOCOL.md §13.1). Open-enum: known values are palace | room | ambient; unknown values MUST be preserved verbatim. Attribute-level addition — does NOT bump format-version.",
+      "type": "object",
+      "x-zig-type": "FieldKind",
+      "x-wire-attribute": "field-kind",
+      "required": ["value"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$comment": "Open-enum string. Examples: palace, room, ambient.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        }
+      }
+    },
+    "Quaternion": {
+      "$comment": "Per src/protocol_v2.zig Quaternion (PROTOCOL.md §13.2).",
+      "type": "object",
+      "x-zig-type": "Quaternion",
+      "required": ["qx", "qy", "qz", "qw"],
+      "additionalProperties": false,
+      "properties": {
+        "qx": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" },
+        "qy": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" },
+        "qz": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" },
+        "qw": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" }
+      }
+    },
+    "Placement": {
+      "$comment": "Per src/protocol_v2.zig Placement. position is a 3-tuple of f32; facing is a Quaternion.",
+      "type": "object",
+      "x-zig-type": "Placement",
+      "required": ["child-fp", "position", "facing"],
+      "additionalProperties": false,
+      "properties": {
+        "child-fp": { "$ref": "#/$defs/Bytes32" },
+        "position": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number", "x-cbor": "smallest-float" },
+          "x-cbor": "array-of-smallest-float",
+          "x-zig": "[3]f32"
+        },
+        "facing": { "$ref": "#/$defs/Quaternion" }
+      }
+    },
+    "Layout": {
+      "$comment": "Per src/protocol_v2.zig Layout (PROTOCOL.md §13.2).",
+      "type": "object",
+      "x-zig-type": "Layout",
+      "x-wire-type": "ball.layout",
+      "x-format-version": 2,
+      "additionalProperties": false,
+      "properties": {
+        "placements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Placement" },
+          "x-zig": "[]const Placement"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "ActionRef": {
+      "$comment": "Per src/protocol_v2.zig ActionRef — 32-byte Blake3 of a canonical ball.action envelope.",
+      "type": "string",
+      "x-cbor": "byte-string-32",
+      "x-zig": "[32]u8",
+      "x-ts-type": "Bytes32"
+    },
+    "Timeline": {
+      "$comment": "Per src/protocol_v2.zig Timeline (PROTOCOL.md §13.3).",
+      "type": "object",
+      "x-zig-type": "Timeline",
+      "x-wire-type": "ball.timeline",
+      "x-format-version": 3,
+      "required": ["palace-fp", "head-hashes"],
+      "additionalProperties": false,
+      "properties": {
+        "palace-fp": { "$ref": "#/$defs/Bytes32" },
+        "head-hashes": {
+          "$comment": "Set of Blake3 hashes of current leaf actions; cardinality >= 1.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Bytes32" },
+          "x-zig": "[][32]u8"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Action": {
+      "$comment": "Per src/protocol_v2.zig Action (PROTOCOL.md §13.3). parent-hashes are ACKS; deps is disjoint logical dependencies; nacks are invalidated prior actions.",
+      "type": "object",
+      "x-zig-type": "Action",
+      "x-wire-type": "ball.action",
+      "x-format-version": 4,
+      "required": ["kind", "hlc", "parent-hashes", "actor"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$comment": "Open kind string (D-037/D-038). Replaces the closed action-kind enum of v3. Palace authors use ActionKind.toWireString(); other consumers supply dot-namespaced verbs.",
+          "type": "string"
+        },
+        "hlc": {
+          "$comment": "Hybrid Logical Clock [l, c] (D-039). l = ms wall-clock, c = intra-l counter. Bare 2-element uint array in CBOR (no tag).",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "body": {
+          "$comment": "Opaque consumer CBOR payload (CBOR-in-CBOR, D-043). Absent when the action carries no payload.",
+          "type": ["string", "null"],
+          "x-optional": true
+        },
+        "parent-hashes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Bytes32" },
+          "x-zig": "[][32]u8"
+        },
+        "actor": { "$ref": "#/$defs/Bytes32" },
+        "target-fp": {
+          "oneOf": [{ "$ref": "#/$defs/Bytes32" }, { "type": "null" }],
+          "x-zig": "?[32]u8",
+          "x-optional": true
+        },
+        "timestamp": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "deps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ActionRef" },
+          "x-zig": "[]const ActionRef"
+        },
+        "nacks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ActionRef" },
+          "x-zig": "[]const ActionRef"
+        }
+      }
+    },
+    "Aqueduct": {
+      "$comment": "Per src/protocol_v2.zig Aqueduct (PROTOCOL.md §13.4). conductance is a snapshot accumulator — not load-bearing, MAY be absent (TC16). kind is open-enum.",
+      "type": "object",
+      "x-zig-type": "Aqueduct",
+      "x-wire-type": "ball.aqueduct",
+      "x-format-version": 2,
+      "required": ["from", "to", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "$ref": "#/$defs/Bytes32" },
+        "to": { "$ref": "#/$defs/Bytes32" },
+        "kind": {
+          "$comment": "Open-enum kind; common values: gaze, visit, transmit. Unknown values preserved verbatim.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "capacity": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" },
+        "strength": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" },
+        "resistance": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" },
+        "capacitance": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f32" },
+        "conductance": {
+          "type": ["number", "null"],
+          "x-cbor": "smallest-float",
+          "x-zig": "?f32",
+          "x-optional": true
+        },
+        "phase": {
+          "oneOf": [{ "$ref": "#/$defs/AqueductPhase" }, { "type": "null" }],
+          "x-zig": "?AqueductPhase",
+          "x-optional": true
+        },
+        "last-traversed": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+    "ElementTag": {
+      "$comment": "Per src/protocol_v2.zig ElementTag (PROTOCOL.md §13.5). element + phase are open-enum.",
+      "type": "object",
+      "x-zig-type": "ElementTag",
+      "x-wire-type": "ball.element-tag",
+      "x-format-version": 2,
+      "required": ["element"],
+      "additionalProperties": false,
+      "properties": {
+        "element": {
+          "$comment": "Open-enum; e.g. wood, fire, earth, metal, water.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "phase": {
+          "$comment": "Optional qualifier; e.g. nourishing, destruction, yin, yang.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "TrustAxis": {
+      "type": "object",
+      "x-zig-type": "TrustAxis",
+      "required": ["name", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "x-cbor": "text-string", "x-zig": "[]const u8" },
+        "value": { "type": "number", "x-cbor": "smallest-float", "x-zig": "f64" },
+        "range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "x-cbor": "smallest-float" },
+          "x-zig": "[2]f64"
+        }
+      }
+    },
+    "TrustObservation": {
+      "$comment": "Per src/protocol_v2.zig TrustObservation (PROTOCOL.md §13.6).",
+      "type": "object",
+      "x-zig-type": "TrustObservation",
+      "x-wire-type": "ball.trust-observation",
+      "x-format-version": 2,
+      "required": ["observer", "about"],
+      "additionalProperties": false,
+      "properties": {
+        "observer": { "$ref": "#/$defs/Bytes32" },
+        "about": { "$ref": "#/$defs/Bytes32" },
+        "axes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TrustAxis" },
+          "x-zig": "[]const TrustAxis"
+        },
+        "observed-at": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        },
+        "context": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "signatures": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SignatureTierWrapper" },
+          "x-cbor": "attribute-pairs-keyed-signed",
+          "x-zig": "[]const Signature"
+        }
+      }
+    },
+    "Inscription": {
+      "$comment": "Per src/protocol_v2.zig Inscription (PROTOCOL.md §13.7). surface is open-enum; placement = 'auto' | 'curator'.",
+      "type": "object",
+      "x-zig-type": "Inscription",
+      "x-wire-type": "ball.inscription",
+      "x-format-version": 2,
+      "required": ["surface"],
+      "additionalProperties": false,
+      "properties": {
+        "surface": {
+          "$comment": "Open-enum; e.g. scroll, tablet, book-spread, etched-wall, floating-glyph.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "placement": {
+          "$comment": "auto = renderer chooses; curator = parent room's ball.layout.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Mythos": {
+      "$comment": "Per src/protocol_v2.zig Mythos (PROTOCOL.md §13.8). predecessor MUST be absent iff is-genesis is true. POETIC and CANONICAL fields differ — see PROTOCOL.md.",
+      "type": "object",
+      "x-zig-type": "Mythos",
+      "x-wire-type": "ball.mythos",
+      "x-format-version": 2,
+      "required": ["is-genesis"],
+      "additionalProperties": false,
+      "properties": {
+        "is-genesis": { "type": "boolean", "x-cbor": "bool", "x-zig": "bool" },
+        "predecessor": {
+          "oneOf": [{ "$ref": "#/$defs/Bytes32" }, { "type": "null" }],
+          "x-zig": "?[32]u8",
+          "x-optional": true
+        },
+        "about": {
+          "oneOf": [{ "$ref": "#/$defs/Bytes32" }, { "type": "null" }],
+          "x-zig": "?[32]u8",
+          "x-optional": true
+        },
+        "form": {
+          "$comment": "Open-enum; e.g. blurb, invocation, image, utterance, glyph, true-name.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "body": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "true-name": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "discovered-in": {
+          "oneOf": [{ "$ref": "#/$defs/ActionRef" }, { "type": "null" }],
+          "x-zig": "?ActionRef",
+          "x-optional": true
+        },
+        "synthesizes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Bytes32" },
+          "x-zig": "[][32]u8"
+        },
+        "inspired-by": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Bytes32" },
+          "x-zig": "[][32]u8"
+        },
+        "author": {
+          "oneOf": [{ "$ref": "#/$defs/Bytes32" }, { "type": "null" }],
+          "x-zig": "?[32]u8",
+          "x-optional": true
+        },
+        "authored-at": {
+          "oneOf": [{ "$ref": "#/$defs/Rfc3339" }, { "type": "null" }],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-optional": true
+        }
+      }
+    },
+    "Archiform": {
+      "$comment": "Per src/protocol_v2.zig Archiform (PROTOCOL.md §13.9). form, tradition, parent-form are open-enum.",
+      "type": "object",
+      "x-zig-type": "Archiform",
+      "x-wire-type": "ball.archiform",
+      "x-format-version": 2,
+      "required": ["form"],
+      "additionalProperties": false,
+      "properties": {
+        "form": {
+          "$comment": "Open-enum; e.g. library, forge, throne-room.",
+          "type": "string",
+          "x-cbor": "text-string",
+          "x-zig": "[]const u8"
+        },
+        "tradition": {
+          "$comment": "Optional lineage; e.g. hermetic, shinto, vedic, computational, none.",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "parent-form": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-optional": true
+        }
+      }
+    },
+    "Object3d": {
+      "$comment": "Per src/protocol_v2.zig Object3d (PROTOCOL.md §13.10). Minimal 3D-transform record; second maintainer-authored type (sprint-003 D1). All fields in the core leaf map; no attributes. Zig is canonical — no x-cbor/x-zig generator hints on properties.",
+      "type": "object",
+      "x-zig-type": "Object3d",
+      "x-wire-type": "ball.object3d",
+      "x-format-version": 2,
+      "required": ["mesh", "position", "rotation", "scale"],
+      "additionalProperties": false,
+      "properties": {
+        "mesh": {
+          "$comment": "Open-enum mesh/asset identifier; e.g. glb:tree-01, primitive:cube.",
+          "type": "string"
+        },
+        "position": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        },
+        "rotation": { "$ref": "#/$defs/Quaternion" },
+        "scale": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        }
+      }
+    },
+    "DreamBall": {
+      "$comment": "The DreamBall wire envelope (src/protocol.zig DreamBall). Lifted from tools/schema-gen/spike/schemas/envelope-2.0.0.json + extended with the post-spike per-variant attribute surfaces (look, feel, act, memory, knowledge-graph, emotional-register, interaction-set, contains, derived-from, guilds, dreamball-type, identity-pq, field-kind). Discriminated-union over `type` × 7 variants — per spike Gap 1 the schema authors flat with closed enum; the per-variant `oneOf` narrowing is a Phase 3 generator concern.",
+      "type": "object",
+      "x-zig-type": "DreamBall",
+      "x-wire-type": "ball.dreamball",
+      "x-format-version": [1, 2, 3],
+      "x-cbor-attribute-encoding": "v2-tag-200-envelope-with-tag-201-leaf-and-attribute-pairs",
+      "required": ["type", "format-version", "stage", "identity", "genesis-hash", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$comment": "Discriminator. Closed enum of 7 variants.",
+          "type": "string",
+          "enum": [
+            "ball.dreamball",
+            "ball.dreamball.avatar",
+            "ball.dreamball.agent",
+            "ball.dreamball.tool",
+            "ball.dreamball.relic",
+            "ball.dreamball.field",
+            "ball.dreamball.guild"
+          ],
+          "x-cbor": "text-string",
+          "x-zig": "DreamBallType",
+          "x-cbor-section": "core"
+        },
+        "format-version": {
+          "type": "integer",
+          "enum": [1, 2, 3],
+          "x-cbor": "smallest-uint",
+          "x-zig": "u32",
+          "x-cbor-section": "core"
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "x-cbor-section": "core"
+        },
+        "identity": {
+          "$comment": "fp:bytes32 — the Ed25519 pubkey.",
+          "type": "string",
+          "x-cbor": "byte-string-32",
+          "x-zig": "[32]u8",
+          "x-cbor-section": "core",
+          "x-ts-type": "Fingerprint"
+        },
+        "identity-pq": {
+          "$comment": "ML-DSA-87 public key (2592 bytes). Optional; presence forces format-version=3.",
+          "type": ["string", "null"],
+          "x-cbor": "byte-string-2592",
+          "x-zig": "?[ML_DSA_87_PUBLIC_KEY_LEN]u8",
+          "x-cbor-section": "core",
+          "x-optional": true
+        },
+        "genesis-hash": {
+          "$comment": "fp:bytes32 — blake3 of canonical seed payload.",
+          "type": "string",
+          "x-cbor": "byte-string-32",
+          "x-zig": "[32]u8",
+          "x-cbor-section": "core",
+          "x-ts-type": "Bytes32"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "x-cbor": "smallest-uint",
+          "x-zig": "u32",
+          "x-cbor-section": "core"
+        },
+        "dreamball-type": {
+          "oneOf": [{ "$ref": "#/$defs/DreamBallType" }, { "type": "null" }],
+          "x-zig": "?DreamBallType",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "name": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "created": {
+          "$comment": "RFC 3339 UTC string at the JSON layer; tag-1 epoch-time at the CBOR layer.",
+          "type": ["string", "null"],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Rfc3339"
+        },
+        "updated": {
+          "type": ["string", "null"],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Rfc3339"
+        },
+        "note": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "look": {
+          "oneOf": [{ "$ref": "#/$defs/Look" }, { "type": "null" }],
+          "x-zig": "?Look",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "feel": {
+          "oneOf": [{ "$ref": "#/$defs/Feel" }, { "type": "null" }],
+          "x-zig": "?Feel",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "act": {
+          "oneOf": [{ "$ref": "#/$defs/Act" }, { "type": "null" }],
+          "x-zig": "?Act",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "memory": {
+          "$comment": "§12.3 first-class Memory slot — a ball.memory nested envelope carried as an attribute on the DreamBall. Zig field `memory: ?Memory`.",
+          "oneOf": [{ "$ref": "#/$defs/Memory" }, { "type": "null" }],
+          "x-zig": "?Memory",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "knowledge-graph": {
+          "$comment": "§12.4 first-class KnowledgeGraph slot — a ball.knowledge-graph nested envelope. Zig field `knowledge_graph: ?KnowledgeGraph`.",
+          "oneOf": [{ "$ref": "#/$defs/KnowledgeGraph" }, { "type": "null" }],
+          "x-zig": "?KnowledgeGraph",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "emotional-register": {
+          "$comment": "§12.5 first-class EmotionalRegister slot — a ball.emotional-register nested envelope. Zig field `emotional_register: ?EmotionalRegister`.",
+          "oneOf": [{ "$ref": "#/$defs/EmotionalRegister" }, { "type": "null" }],
+          "x-zig": "?EmotionalRegister",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "interaction-sets": {
+          "$comment": "§12.6 REPEATABLE slot — the JSON array projects the repeated CBOR `interaction-set` assertion (one ball.interaction-set envelope per element). The in-memory Zig field is `interaction_sets: []const InteractionSet`.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/InteractionSet" },
+          "x-zig": "[]const InteractionSet",
+          "x-cbor": "array-of-interaction-set",
+          "x-cbor-section": "attribute"
+        },
+        "guilds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Fingerprint" },
+          "x-zig": "[]const Fingerprint",
+          "x-cbor-section": "attribute"
+        },
+        "contains": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Fingerprint" },
+          "x-zig": "[]const Fingerprint",
+          "x-cbor-section": "attribute"
+        },
+        "derived-from": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Fingerprint" },
+          "x-zig": "[]const Fingerprint",
+          "x-cbor-section": "attribute"
+        },
+        "signatures": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SignatureTierWrapper" },
+          "x-cbor": "attribute-pairs-keyed-signed",
+          "x-zig": "[]const Signature",
+          "x-cbor-section": "attribute"
+        },
+        "field-kind": {
+          "$comment": "§13.1 attribute on ball.dreamball.field envelopes. Open-enum; values palace | room | ambient | ...",
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "archiform-fp": {
+          "$comment": "FR5 / D-017 — archiform_fp on the genesis envelope. Optional 32-byte blake3 of the archiform schema body. Immutable for the ball's lifetime per D-017. Sprint-002 additive back-compat (IC1): missing-on-decode binds implicitly to dreamball/memory-palace@0.1.0. Wire-name is kebab-case (`archiform-fp`); Zig field is snake_case (`archiform_fp`).",
+          "type": ["string", "null"],
+          "x-cbor": "byte-string-32",
+          "x-zig": "?[32]u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Bytes32"
+        },
+        "sealed-payload-hash": {
+          "$comment": "Relic-variant only. Carried inline on ball.dreamball.relic envelopes.",
+          "type": ["string", "null"],
+          "x-cbor": "byte-string-32",
+          "x-zig": "?[32]u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Bytes32"
+        },
+        "unlock-guild": {
+          "type": ["string", "null"],
+          "x-cbor": "byte-string-32",
+          "x-zig": "?[32]u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Fingerprint"
+        },
+        "reveal-hint": {
+          "type": ["string", "null"],
+          "x-cbor": "text-string",
+          "x-zig": "?[]const u8",
+          "x-cbor-section": "attribute",
+          "x-optional": true
+        },
+        "sealed-until": {
+          "type": ["string", "null"],
+          "x-cbor": "tag-1-epoch-time",
+          "x-zig": "?i64",
+          "x-cbor-section": "attribute",
+          "x-optional": true,
+          "x-ts-type": "Rfc3339"
+        }
+      }
+    }
+  }
+}

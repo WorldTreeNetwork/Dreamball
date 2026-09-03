@@ -1,0 +1,31 @@
+{
+  "$comment": "NOT A CORE GATE. Destined for the archiform repo (Dreamball-h7s). Contains ball.archiform and ball.object3d, partitioned out of fixtures/goldens/manifest.json by Dreamball-y4t.11, per the Dreamball-jie boundary analysis -- byte-for-byte identical to their prior manifest.json entries. object3d's live Zig encoder was already deleted (Dreamball-h7s.1: it only demoed the dissolved Zig-canonical authoring pipeline); its bytes here are pinned hex, not live-encoded. Nothing in the core build treats a diff in this file as a failure.",
+  "entries": [
+  {
+    "name": "archiform",
+    "type": "ball.archiform",
+    "format_version": 2,
+    "value": {
+      "form": "library",
+      "tradition": "hermetic",
+      "parent_form": "forge",
+      "note": null
+    },
+    "bytes_hex": "d8c884d8c9a264747970656e62616c6c2e6172636869666f726d6e666f726d61742d76657273696f6e028264666f726d676c6962726172798269747261646974696f6e686865726d65746963826b706172656e742d666f726d65666f726765",
+    "blake3": "bae68c293a382bd085378bcc2f3f3e3c33e215c703ccaf3131d7389ad590465d"
+  },
+  {
+    "name": "object3d",
+    "type": "ball.object3d",
+    "format_version": 2,
+    "value": {
+      "mesh": "glb:tree-01",
+      "position": [1, 2, 3],
+      "rotation": { "qx": 0, "qy": 0, "qz": 0, "qw": 1 },
+      "scale": [1, 1, 1]
+    },
+    "bytes_hex": "d8c881d8c9a6646d6573686b676c623a747265652d303164747970656d62616c6c2e6f626a6563743364657363616c6583f93c00f93c00f93c0068706f736974696f6e83f93c00f94000f9420068726f746174696f6e84f90000f90000f90000f93c006e666f726d61742d76657273696f6e02",
+    "blake3": "eec27f4c4e8cb4306e7ab74290fe37b8ad891bb2716f1e02d3bb703a9039feba"
+  }
+  ]
+}

@@ -3,7 +3,7 @@
  *
  * ⚠ TODO-CRYPTO: replace before prod. Nothing here is cryptographically
  * authentic; this exists to let the renderer run without a live
- * `jelly-server` daemon.
+ * `dreamball-server` daemon.
  */
 
 import type {
@@ -20,7 +20,7 @@ import type {
 	OmnisphericalGrid,
 	DreamBallType
 } from '../generated/types.js';
-import { ALWAYS_PUBLIC_SLOTS, type JellyBackend } from './JellyBackend.js';
+import { ALWAYS_PUBLIC_SLOTS, type DreamballBackend } from './DreamballBackend.js';
 
 function fakeFp(seed: number): Fingerprint {
 	const s = String.fromCharCode(65 + (seed % 26)) + seed.toString(36).padStart(5, '0');
@@ -109,7 +109,7 @@ function baseBall(seed: number, type: DreamBallType, name: string): DreamBall {
 	const identity = fakeFp(seed);
 	const genesis = fakeFp(seed + 1000);
 	return {
-		type: `jelly.dreamball.${type}`,
+		type: `ball.dreamball.${type}`,
 		'format-version': 2,
 		stage: 'dreamball',
 		identity,
@@ -139,7 +139,7 @@ export function mockBall(type: DreamBallType, overrides?: Partial<DreamBall>): D
 			break;
 		case 'tool':
 			ball.skill = { name: 'haiku-compose', trigger: 'user asks for a haiku' };
-			ball['applicable-to'] = ['jelly.dreamball.agent'];
+			ball['applicable-to'] = ['ball.dreamball.agent'];
 			break;
 		case 'relic':
 			ball['sealed-payload-hash'] = fakeFp(seed + 2000);
@@ -162,7 +162,7 @@ export function mockBall(type: DreamBallType, overrides?: Partial<DreamBall>): D
 	return { ...ball, ...overrides };
 }
 
-export class MockBackend implements JellyBackend {
+export class MockBackend implements DreamballBackend {
 	private readonly fixtures = new Map<string, DreamBall>();
 
 	constructor(seeded: DreamBall[] = []) {
@@ -181,7 +181,7 @@ export class MockBackend implements JellyBackend {
 	}
 
 	async unlockRelic(relic: DreamBall, _guildKey: Uint8Array): Promise<DreamBall> {
-		if (relic.type !== 'jelly.dreamball.relic') {
+		if (relic.type !== 'ball.dreamball.relic') {
 			throw new Error('not a relic');
 		}
 		// TODO-CRYPTO: real unlock would decrypt the attached sealed payload

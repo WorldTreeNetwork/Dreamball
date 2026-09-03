@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dreamball:root.envelope@2.0.0",
+  "title": "Envelope",
+  "description": "The DreamBall wire envelope (src/protocol.zig DreamBall struct). Spike target #1: discriminated-union over `type` literal x 7 variants, optional fields, signature list, identity bytes, format-version. The most expressively complex Zig root type per Assumption #1.",
+  "type": "object",
+  "x-zig-type": "DreamBall",
+  "x-wire-type": "ball.dreamball",
+  "x-format-version": [1, 2],
+  "x-cbor-attribute-encoding": "v2-tag-200-envelope-with-tag-201-leaf-and-attribute-pairs",
+  "required": ["type", "format-version", "stage", "identity", "genesis-hash", "revision"],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "$comment": "Discriminator. Closed enum of 7 variants. Per AC3 spike report: discriminated-union via JSON Schema string-literal enum is the chosen normalization.",
+      "type": "string",
+      "enum": [
+        "ball.dreamball",
+        "ball.dreamball.avatar",
+        "ball.dreamball.agent",
+        "ball.dreamball.tool",
+        "ball.dreamball.relic",
+        "ball.dreamball.field",
+        "ball.dreamball.guild"
+      ],
+      "x-cbor": "text-string",
+      "x-zig": "DreamBallType",
+      "x-cbor-section": "core"
+    },
+    "format-version": {
+      "type": "integer",
+      "enum": [1, 2],
+      "x-cbor": "smallest-uint",
+      "x-zig": "u32",
+      "x-cbor-section": "core"
+    },
+    "stage": {
+      "$ref": "#/$defs/Stage",
+      "x-cbor-section": "core"
+    },
+    "identity": {
+      "$comment": "fp:bytes32 — the Ed25519 pubkey",
+      "type": "string",
+      "x-cbor": "byte-string-32",
+      "x-zig": "[32]u8",
+      "x-cbor-section": "core",
+      "x-ts-type": "Fingerprint"
+    },
+    "genesis-hash": {
+      "$comment": "fp:bytes32 — blake3 of canonical seed payload",
+      "type": "string",
+      "x-cbor": "byte-string-32",
+      "x-zig": "[32]u8",
+      "x-cbor-section": "core",
+      "x-ts-type": "Bytes32"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "x-cbor": "smallest-uint",
+      "x-zig": "u32",
+      "x-cbor-section": "core"
+    },
+    "name": {
+      "type": ["string", "null"],
+      "x-cbor": "text-string",
+      "x-zig": "?[]const u8",
+      "x-cbor-section": "attribute",
+      "x-optional": true
+    },
+    "created": {
+      "$comment": "RFC 3339 UTC string at the JSON layer; tag-1 epoch-time at the CBOR layer.",
+      "type": ["string", "null"],
+      "x-cbor": "tag-1-epoch-time",
+      "x-zig": "?i64",
+      "x-cbor-section": "attribute",
+      "x-optional": true,
+      "x-ts-type": "Rfc3339"
+    },
+    "updated": {
+      "type": ["string", "null"],
+      "x-cbor": "tag-1-epoch-time",
+      "x-zig": "?i64",
+      "x-cbor-section": "attribute",
+      "x-optional": true,
+      "x-ts-type": "Rfc3339"
+    },
+    "note": {
+      "type": ["string", "null"],
+      "x-cbor": "text-string",
+      "x-zig": "?[]const u8",
+      "x-cbor-section": "attribute",
+      "x-optional": true
+    },
+    "signatures": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/SignatureTierWrapper" },
+      "x-cbor": "attribute-pairs-keyed-signed",
+      "x-zig": "[]const Signature",
+      "x-cbor-section": "attribute",
+      "x-optional": true
+    },
+    "sealed-payload-hash": {
+      "$comment": "Relic-variant only. Carried inline on ball.dreamball.relic envelopes.",
+      "type": ["string", "null"],
+      "x-cbor": "byte-string-32",
+      "x-zig": "?[32]u8",
+      "x-cbor-section": "attribute",
+      "x-optional": true,
+      "x-ts-type": "Bytes32"
+    },
+    "unlock-guild": {
+      "type": ["string", "null"],
+      "x-cbor": "byte-string-32",
+      "x-zig": "?[32]u8",
+      "x-cbor-section": "attribute",
+      "x-optional": true,
+      "x-ts-type": "Fingerprint"
+    },
+    "reveal-hint": {
+      "type": ["string", "null"],
+      "x-cbor": "text-string",
+      "x-zig": "?[]const u8",
+      "x-cbor-section": "attribute",
+      "x-optional": true
+    },
+    "sealed-until": {
+      "type": ["string", "null"],
+      "x-cbor": "tag-1-epoch-time",
+      "x-zig": "?i64",
+      "x-cbor-section": "attribute",
+      "x-optional": true,
+      "x-ts-type": "Rfc3339"
+    }
+  },
+  "$defs": {
+    "Stage": {
+      "$comment": "Closed enum lifecycle tier — see SignatureTierWrapper schema for the tier semantics that wrap the signature bag.",
+      "type": "string",
+      "enum": ["seed", "dreamball", "dragonball"],
+      "x-cbor": "text-string",
+      "x-zig": "Stage"
+    },
+    "SignatureTierWrapper": {
+      "$ref": "signature-tier-wrapper-2.0.0.json"
+    }
+  }
+}

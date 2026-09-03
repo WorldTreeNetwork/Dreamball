@@ -1,7 +1,7 @@
 //! Lossless JSON export for a DreamBall, matching PROTOCOL.md §7.
 //!
 //! Byte strings are rendered as `"b58:<base58>"` strings so consumers without
-//! CBOR tooling can still read `.jelly.json`. Import-from-JSON lives next
+//! CBOR tooling can still read `.ball.json`. Import-from-JSON lives next
 //! sprint; for now we only export.
 
 const std = @import("std");
@@ -53,7 +53,7 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     if (db.dreamball_type) |t| {
         try buf.writeAll(t.toWireString());
     } else {
-        try buf.writeAll("jelly.dreamball");
+        try buf.writeAll("ball.dreamball");
     }
     try buf.writeByte('"');
     try buf.writeByte(',');
@@ -119,6 +119,41 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
         try buf.writeByte(',');
         try writeKey(&buf, "act");
         try writeAct(allocator, &buf, a);
+    }
+
+    if (db.memory) |m| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "memory");
+        try writeMemory(&buf, m);
+    }
+
+    if (db.knowledge_graph) |kg| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "knowledge-graph");
+        try writeKnowledgeGraph(&buf, kg);
+    }
+
+    if (db.emotional_register) |er| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "emotional-register");
+        try writeEmotionalRegister(&buf, er);
+    }
+
+    if (db.interaction_sets.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(&buf, "interaction-set");
+        try buf.writeByte('[');
+        for (db.interaction_sets, 0..) |is, i| {
+            if (i > 0) try buf.writeByte(',');
+            try writeInteractionSet(allocator, &buf, is);
+        }
+        try buf.writeByte(']');
+    }
+
+    if (db.policy) |p| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "policy");
+        try writeGuildPolicy(&buf, p);
     }
 
     if (db.guilds.len > 0) {
@@ -210,7 +245,7 @@ fn writeEscapedString(buf: *Buf, s: []const u8) !void {
 fn writeAsset(allocator: Allocator, buf: *Buf, a: protocol.Asset) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.asset\"");
+    try buf.writeAll("\"ball.asset\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -220,11 +255,11 @@ fn writeAsset(allocator: Allocator, buf: *Buf, a: protocol.Asset) !void {
     try buf.writeByte(',');
     try writeKey(buf, "hash");
     try writeB58(allocator, buf, &a.hash);
-    if (a.urls.len > 0) {
+    if (a.url.len > 0) {
         try buf.writeByte(',');
         try writeKey(buf, "url");
         try buf.writeByte('[');
-        for (a.urls, 0..) |u, i| {
+        for (a.url, 0..) |u, i| {
             if (i > 0) try buf.writeByte(',');
             try writeEscapedString(buf, u);
         }
@@ -251,7 +286,7 @@ fn writeAsset(allocator: Allocator, buf: *Buf, a: protocol.Asset) !void {
 fn writeSkill(allocator: Allocator, buf: *Buf, s: protocol.Skill) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.skill\"");
+    try buf.writeAll("\"ball.skill\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -294,7 +329,7 @@ fn writeSkill(allocator: Allocator, buf: *Buf, s: protocol.Skill) !void {
 fn writeLook(allocator: Allocator, buf: *Buf, l: protocol.Look) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.look\"");
+    try buf.writeAll("\"ball.look\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -329,7 +364,7 @@ fn writeLook(allocator: Allocator, buf: *Buf, l: protocol.Look) !void {
 fn writeFeel(buf: *Buf, f: protocol.Feel) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.feel\"");
+    try buf.writeAll("\"ball.feel\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -369,7 +404,7 @@ fn writeFeel(buf: *Buf, f: protocol.Feel) !void {
 fn writeAct(allocator: Allocator, buf: *Buf, a: protocol.Act) !void {
     try buf.writeByte('{');
     try writeKey(buf, "type");
-    try buf.writeAll("\"jelly.act\"");
+    try buf.writeAll("\"ball.act\"");
     try buf.writeByte(',');
     try writeKey(buf, "format-version");
     try buf.print("{d}", .{protocol.FORMAT_VERSION});
@@ -421,8 +456,235 @@ fn writeAct(allocator: Allocator, buf: *Buf, a: protocol.Act) !void {
     try buf.writeByte('}');
 }
 
+// Renders the `memory` slot matching the generated TS `Memory` shape
+// (src/lib/generated/types.ts): { nodes, connections, 'last-updated'? }.
+// Timestamps render via writeRfc3339, the same form look/feel/act dates use.
+fn writeMemory(buf: *Buf, m: protocol.Memory) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "nodes");
+    try buf.writeByte('[');
+    for (m.nodes, 0..) |n, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeMemoryNode(buf, n);
+    }
+    try buf.writeByte(']');
+
+    try buf.writeByte(',');
+    try writeKey(buf, "connections");
+    try buf.writeByte('[');
+    for (m.connections, 0..) |c, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeMemoryConnection(buf, c);
+    }
+    try buf.writeByte(']');
+
+    if (m.last_updated) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "last-updated");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeMemoryNode(buf: *Buf, n: protocol.MemoryNode) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "id");
+    try buf.print("{d}", .{n.id});
+    if (n.content) |c| {
+        try buf.writeByte(',');
+        try writeKey(buf, "content");
+        try writeEscapedString(buf, c);
+    }
+    if (n.lookups.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(buf, "lookups");
+        try buf.writeByte('{');
+        for (n.lookups, 0..) |lk, i| {
+            if (i > 0) try buf.writeByte(',');
+            try writeEscapedString(buf, lk.name);
+            try buf.writeByte(':');
+            try buf.print("{d}", .{lk.value});
+        }
+        try buf.writeByte('}');
+    }
+    if (n.created) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "created");
+        try writeRfc3339(buf, t);
+    }
+    if (n.last_recalled) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "last-recalled");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeMemoryConnection(buf: *Buf, c: protocol.MemoryConnection) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "from");
+    try buf.print("{d}", .{c.from});
+    try buf.writeByte(',');
+    try writeKey(buf, "to");
+    try buf.print("{d}", .{c.to});
+    try buf.writeByte(',');
+    try writeKey(buf, "kind");
+    try buf.writeByte('"');
+    try buf.writeAll(c.kind.toWireString());
+    try buf.writeByte('"');
+    try buf.writeByte(',');
+    try writeKey(buf, "strength");
+    try buf.print("{d}", .{c.strength});
+    if (c.label) |lbl| {
+        try buf.writeByte(',');
+        try writeKey(buf, "label");
+        try writeEscapedString(buf, lbl);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders the `knowledge-graph` slot matching the generated TS `KnowledgeGraph`
+// shape (src/lib/generated/types.ts): { triples: [{from,label,to}], source? }.
+fn writeKnowledgeGraph(buf: *Buf, kg: protocol.KnowledgeGraph) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "triples");
+    try buf.writeByte('[');
+    for (kg.triples, 0..) |t, i| {
+        if (i > 0) try buf.writeByte(',');
+        try buf.writeByte('{');
+        try writeKey(buf, "from");
+        try writeEscapedString(buf, t.from);
+        try buf.writeByte(',');
+        try writeKey(buf, "label");
+        try writeEscapedString(buf, t.label);
+        try buf.writeByte(',');
+        try writeKey(buf, "to");
+        try writeEscapedString(buf, t.to);
+        try buf.writeByte('}');
+    }
+    try buf.writeByte(']');
+    if (kg.source) |s| {
+        try buf.writeByte(',');
+        try writeKey(buf, "source");
+        try writeEscapedString(buf, s);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders the `emotional-register` slot matching the generated TS
+// `EmotionalRegister` shape: { axes: [{name,value,min,max}], 'observed-at'? }.
+fn writeEmotionalRegister(buf: *Buf, er: protocol.EmotionalRegister) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "axes");
+    try buf.writeByte('[');
+    for (er.axes, 0..) |ax, i| {
+        if (i > 0) try buf.writeByte(',');
+        try buf.writeByte('{');
+        try writeKey(buf, "name");
+        try writeEscapedString(buf, ax.name);
+        try buf.writeByte(',');
+        try writeKey(buf, "value");
+        try buf.print("{d}", .{ax.value});
+        try buf.writeByte(',');
+        try writeKey(buf, "min");
+        try buf.print("{d}", .{ax.min});
+        try buf.writeByte(',');
+        try writeKey(buf, "max");
+        try buf.print("{d}", .{ax.max});
+        try buf.writeByte('}');
+    }
+    try buf.writeByte(']');
+    if (er.observed_at) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "observed-at");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders one `interaction-set` element matching the generated TS
+// `InteractionSet` shape: { 'set-id', interactions: [...], created? }.
+fn writeInteractionSet(allocator: Allocator, buf: *Buf, is: protocol.InteractionSet) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "set-id");
+    try writeB58(allocator, buf, &is.set_id);
+    try buf.writeByte(',');
+    try writeKey(buf, "interactions");
+    try buf.writeByte('[');
+    for (is.interactions, 0..) |it, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeInteraction(allocator, buf, it);
+    }
+    try buf.writeByte(']');
+    if (is.created) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "created");
+        try writeRfc3339(buf, t);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeInteraction(allocator: Allocator, buf: *Buf, it: protocol.Interaction) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "turn");
+    try buf.print("{d}", .{it.turn});
+    try buf.writeByte(',');
+    try writeKey(buf, "actor");
+    try writeB58(allocator, buf, &it.actor.bytes);
+    try buf.writeByte(',');
+    try writeKey(buf, "kind");
+    try buf.writeByte('"');
+    try buf.writeAll(it.kindString());
+    try buf.writeByte('"');
+    if (it.content) |c| {
+        try buf.writeByte(',');
+        try writeKey(buf, "content");
+        try writeEscapedString(buf, c);
+    }
+    if (it.timestamp) |t| {
+        try buf.writeByte(',');
+        try writeKey(buf, "timestamp");
+        try writeRfc3339(buf, t);
+    }
+    if (it.outcome) |o| {
+        try buf.writeByte(',');
+        try writeKey(buf, "outcome");
+        try writeEscapedString(buf, o);
+    }
+    try buf.writeByte('}');
+}
+
+// Renders the `policy` slot matching the generated TS `GuildPolicy` shape:
+// { public: [], 'guild-only': [], 'admin-only': [], note? }.
+fn writeGuildPolicy(buf: *Buf, p: protocol.GuildPolicy) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "public");
+    try writeStringArray(buf, p.public);
+    try buf.writeByte(',');
+    try writeKey(buf, "guild-only");
+    try writeStringArray(buf, p.guild_only);
+    try buf.writeByte(',');
+    try writeKey(buf, "admin-only");
+    try writeStringArray(buf, p.admin_only);
+    if (p.note) |n| {
+        try buf.writeByte(',');
+        try writeKey(buf, "note");
+        try writeEscapedString(buf, n);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeStringArray(buf: *Buf, items: []const []const u8) !void {
+    try buf.writeByte('[');
+    for (items, 0..) |s, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeEscapedString(buf, s);
+    }
+    try buf.writeByte(']');
+}
+
 // ============================================================================
-// Import path — read a canonical .jelly.json back into a DreamBall struct.
+// Import path — read a canonical .ball.json back into a DreamBall struct.
 //
 // Lifetimes: `readDreamBall` uses the provided allocator (typically an arena)
 // for every string/slice inside the returned DreamBall, so the caller can
@@ -452,13 +714,29 @@ pub fn readDreamBall(arena: Allocator, json_text: []const u8) ImportError!protoc
     return dreamBallFromValue(arena, parsed);
 }
 
+/// Parse a standalone `ball.look` JSON object (the look slot only) into a
+/// Look. Used by `grow --set-look` to attach a scene to an existing,
+/// already-identified DreamBall and re-sign. Reuses the same `lookFromValue`
+/// decoder as the full-ball import path, so the asset/url shape stays
+/// identical to `import-json`.
+pub fn readLook(arena: Allocator, json_text: []const u8) ImportError!protocol.Look {
+    const parsed = std.json.parseFromSliceLeaky(
+        std.json.Value,
+        arena,
+        json_text,
+        .{},
+    ) catch return ImportError.InvalidJson;
+
+    return lookFromValue(arena, parsed);
+}
+
 fn dreamBallFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.DreamBall {
     const obj = switch (v) {
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
 
-    try expectStringEq(obj, "type", "jelly.dreamball");
+    try expectStringEq(obj, "type", "ball.dreamball");
 
     const identity = try decodeB58Field(arena, obj, "identity");
     if (identity.len != 32) return ImportError.InvalidJson;
@@ -585,7 +863,7 @@ fn assetFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Asse
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.asset");
+    try expectStringEq(obj, "type", "ball.asset");
     const mt_v = obj.get("media-type") orelse return ImportError.MissingField;
     const hash_bytes = try decodeB58Field(arena, obj, "hash");
     if (hash_bytes.len != 32) return ImportError.InvalidJson;
@@ -603,7 +881,7 @@ fn assetFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Asse
         };
         const urls = try arena.alloc([]const u8, arr.items.len);
         for (arr.items, 0..) |item, i| urls[i] = try dupeString(arena, try getString(item));
-        asset.urls = urls;
+        asset.url = urls;
     }
     if (obj.get("embedded")) |e| asset.embedded = try decodeB58Value(arena, e);
     if (obj.get("size")) |s| asset.size = switch (s) {
@@ -619,7 +897,7 @@ fn skillFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Skil
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.skill");
+    try expectStringEq(obj, "type", "ball.skill");
     const name_v = obj.get("name") orelse return ImportError.MissingField;
     var skill = protocol.Skill{ .name = try dupeString(arena, try getString(name_v)) };
     if (obj.get("trigger")) |t| skill.trigger = try dupeString(arena, try getString(t));
@@ -643,7 +921,7 @@ fn lookFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Look 
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.look");
+    try expectStringEq(obj, "type", "ball.look");
     var look = protocol.Look{};
     if (obj.get("asset")) |a| {
         const arr = switch (a) {
@@ -665,7 +943,7 @@ fn feelFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Feel 
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.feel");
+    try expectStringEq(obj, "type", "ball.feel");
     var feel = protocol.Feel{};
     if (obj.get("personality")) |p| feel.personality = try dupeString(arena, try getString(p));
     if (obj.get("voice")) |x| feel.voice = try dupeString(arena, try getString(x));
@@ -688,7 +966,7 @@ fn actFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Act {
         .object => |o| o,
         else => return ImportError.InvalidJson,
     };
-    try expectStringEq(obj, "type", "jelly.act");
+    try expectStringEq(obj, "type", "ball.act");
     var act = protocol.Act{};
     if (obj.get("model")) |m| act.model = try dupeString(arena, try getString(m));
     if (obj.get("system-prompt")) |sp| act.system_prompt = try dupeString(arena, try getString(sp));
@@ -786,7 +1064,7 @@ test "JSON export minimal seed" {
     };
     const json = try writeDreamBall(allocator, db);
     defer allocator.free(json);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"jelly.dreamball\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"ball.dreamball\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"stage\":\"seed\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"format-version\":1") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"identity\":\"b58:") != null);
@@ -799,7 +1077,7 @@ test "JSON export with nested look/feel/act" {
     const assets = [_]protocol.Asset{.{
         .media_type = "model/gltf-binary",
         .hash = [_]u8{0xAA} ** 32,
-        .urls = &urls,
+        .url = &urls,
     }};
     const look = protocol.Look{ .assets = &assets, .background = "color:#123" };
     const values = [_][]const u8{ "curiosity", "clarity" };
@@ -826,7 +1104,7 @@ test "JSON export with nested look/feel/act" {
     const json = try writeDreamBall(allocator, db);
     defer allocator.free(json);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"look\":{") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"jelly.look\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"type\":\"ball.look\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"background\":\"color:#123\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"feel\":{") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"personality\":\"playful\"") != null);

@@ -1,10 +1,8 @@
-//! `jelly export-json <in> --out <out>` — write canonical JSON rendering.
+//! `dreamball export-json <in> --out <out>` — write canonical JSON rendering.
 //!
-//! To preserve signatures in the JSON output, this command uses
-//! `stripSignatures` to lift the signed-attribute entries back out of the
-//! CBOR envelope and re-attaches them to the decoded DreamBall before JSON
-//! emission. Other attributes (look/feel/act/name/created/...) are still
-//! lost until the full node decoder lands.
+//! Uses the full `decodeDreamBall` so every mutable attribute (name,
+//! look/feel/act, guilds, contains, derived-from, signatures, …) survives
+//! into the JSON output, not just the tag-201 subject's core fields.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -24,7 +22,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     defer parsed.deinit();
 
     if (parsed.flag(1) or parsed.positional.items.len == 0) {
-        try io.writeAllStdout("jelly export-json <in.jelly> --out <out.jelly.json>\n");
+        try io.writeAllStdout("dreamball export-json <in.ball> --out <out.ball.json>\n");
         return 0;
     }
 
@@ -36,17 +34,12 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     const bytes = try helpers.readFile(gpa, in_path);
     defer gpa.free(bytes);
-    var db = try dreamball.envelope.decodeDreamBallSubject(bytes);
 
-    var stripped = try dreamball.envelope.stripSignatures(gpa, bytes);
-    defer stripped.deinit();
-
-    const sigs = try gpa.alloc(dreamball.protocol.Signature, stripped.signatures.len);
-    defer gpa.free(sigs);
-    for (stripped.signatures, 0..) |captured, i| {
-        sigs[i] = .{ .alg = captured.alg, .value = captured.value };
-    }
-    db.signatures = sigs;
+    // The full decoder allocates strings and nested slices into the arena;
+    // writeDreamBall consumes them before we return.
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const db = try dreamball.envelope.decodeDreamBall(arena.allocator(), bytes);
 
     const jtext = try dreamball.json.writeDreamBall(gpa, db);
     defer gpa.free(jtext);

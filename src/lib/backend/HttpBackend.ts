@@ -1,8 +1,8 @@
 /**
- * HttpBackend — typed HTTP client for the locally-running `jelly-server`.
+ * HttpBackend — typed HTTP client for the locally-running `dreamball-server`.
  *
  * Uses Eden's `treaty` for type-safe calls. The server app type is imported
- * via a conditional path: when the jelly-server package is available in the
+ * via a conditional path: when the dreamball-server package is available in the
  * same workspace the full type flows through; otherwise it falls back to
  * `unknown` and the fetch calls remain functional but untyped.
  *
@@ -13,16 +13,16 @@
  */
 
 import type { DreamBall, Fingerprint } from '../generated/types.js';
-import { ALWAYS_PUBLIC_SLOTS, type JellyBackend } from './JellyBackend.js';
+import { ALWAYS_PUBLIC_SLOTS, type DreamballBackend } from './DreamballBackend.js';
 
 export interface HttpBackendOptions {
-	/** Base URL for the jelly-server daemon. Defaults to http://127.0.0.1:9808. */
+	/** Base URL for the dreamball-server daemon. Defaults to http://127.0.0.1:9808. */
 	baseUrl?: string;
 	/** Current viewer identity (optional — used for slot permission resolution). */
 	viewer?: Fingerprint | null;
 }
 
-export class HttpBackend implements JellyBackend {
+export class HttpBackend implements DreamballBackend {
 	private readonly baseUrl: string;
 	private readonly viewer: Fingerprint | null;
 
@@ -33,7 +33,7 @@ export class HttpBackend implements JellyBackend {
 
 	private async getJSON<T>(path: string): Promise<T> {
 		const res = await fetch(new URL(path, this.baseUrl));
-		if (!res.ok) throw new Error(`jelly-server ${path}: ${res.status} ${res.statusText}`);
+		if (!res.ok) throw new Error(`dreamball-server ${path}: ${res.status} ${res.statusText}`);
 		return (await res.json()) as T;
 	}
 
@@ -43,7 +43,7 @@ export class HttpBackend implements JellyBackend {
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(body)
 		});
-		if (!res.ok) throw new Error(`jelly-server ${path}: ${res.status} ${res.statusText}`);
+		if (!res.ok) throw new Error(`dreamball-server ${path}: ${res.status} ${res.statusText}`);
 		return (await res.json()) as T;
 	}
 

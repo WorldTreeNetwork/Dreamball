@@ -18,6 +18,8 @@ export { default as OmnisphericalLens } from './lenses/OmnisphericalLens.svelte'
 export { default as FlatLens } from './lenses/FlatLens.svelte';
 export { default as PhoneLens } from './lenses/PhoneLens.svelte';
 export { default as SplatLens } from './lenses/SplatLens.svelte';
+export { default as ShellLens } from './lenses/ShellLens.svelte';
+export { SHELL_MESH_URL } from './lenses/shell-mesh.js';
 
 export {
 	SPLAT_MEDIA_TYPES,
@@ -27,11 +29,11 @@ export {
 } from './splat/media-types.js';
 
 export {
-	parseJelly,
-	parseJellyToJson,
-	parseJellyUnvalidated,
-	safeParseJelly,
-	verifyJelly,
+	parseBall,
+	parseBallToJson,
+	parseBallUnvalidated,
+	safeParseBall,
+	verifyBall,
 	VERIFY_OK,
 	VERIFY_NO_ED25519,
 	VERIFY_FAILED,
@@ -59,18 +61,32 @@ export {
 	EmotionalRegisterSchema,
 	GuildPolicySchema,
 	OmnisphericalGridSchema,
-	parseDreamBall,
-	safeParseDreamBall,
 	type DreamBallValidated,
 	type ParseResult
 } from './generated/schemas.js';
 
+// Publish-boundary parse helpers live outside `generated/` per NFR8 +
+// Story 1.3 AC7 grep audit (no Valibot.parse / safeParse call sites
+// inside `src/lib/generated/`).
+export { parseDreamBall, safeParseDreamBall } from './parse.js';
+
 export { ALL_LENSES, type LensName } from './lenses/lens-types.js';
+
+export {
+	transmittableLocator,
+	locatorFromSearchParams,
+	isTransmittableError,
+	TransmittableNotFoundError,
+	TransmittableVerifyError,
+	TransmittableParseError,
+	type TransmittableLocator,
+	type TransmittableError
+} from './transmittable.js';
 
 export { MockBackend, mockBall } from './backend/MockBackend.js';
 export { HttpBackend } from './backend/HttpBackend.js';
-export type { JellyBackend } from './backend/JellyBackend.js';
-export { ALWAYS_PUBLIC_SLOTS } from './backend/JellyBackend.js';
+export type { DreamballBackend } from './backend/DreamballBackend.js';
+export { ALWAYS_PUBLIC_SLOTS } from './backend/DreamballBackend.js';
 
 export * from './generated/types.js';
 export {

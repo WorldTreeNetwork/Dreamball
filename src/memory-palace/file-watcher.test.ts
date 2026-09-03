@@ -25,6 +25,15 @@ import {
   onFileDelete,
 } from './file-watcher.js';
 
+// Mock the WASM loader so file-watcher.test.ts does not attempt Vite ?url
+// imports in the Vitest server environment. oracleSignAction (Story 6.2)
+// calls signActionEnvelope; this mock returns a deterministic 64-byte sig.
+vi.mock('../lib/wasm/loader.js', () => ({
+  signActionEnvelope: vi.fn(async (_keypair: Uint8Array, _payload: Uint8Array) => {
+    return new Uint8Array(64).fill(0xcd);
+  }),
+}));
+
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
 function makeFp(seed: string): string {
@@ -139,7 +148,7 @@ function makeMockStore(opts: {
 
 /**
  * Set up a temp directory with a real .oracle.key file (mode 0600)
- * so oracleActionStub can read it.
+ * so oracleSignAction can read it.
  */
 function makeTempPalace(parent?: string): { palaceDir: string; palacePath: string; keyPath: string } {
   // SEC10 path-containment: file-watcher rejects source files whose resolved
@@ -158,16 +167,9 @@ function makeTempPalace(parent?: string): { palaceDir: string; palacePath: strin
   return { palaceDir, palacePath, keyPath };
 }
 
-// Oracle signer gate — file-watcher tests drive onFileChange/onFileDelete,
-// which route through oracleActionStub. That stub refuses to run unless
-// JELLY_ORACLE_ALLOW_UNSIGNED=1 is set. We opt in for the lifetime of this
-// test file and clean up afterwards (docs/known-gaps.md §8).
-beforeAll(() => {
-  process.env.JELLY_ORACLE_ALLOW_UNSIGNED = '1';
-});
-afterAll(() => {
-  delete process.env.JELLY_ORACLE_ALLOW_UNSIGNED;
-});
+// Story 6.2: oracleActionStub replaced by oracleSignAction (real Ed25519 signing).
+// The WASM loader is mocked above so signActionEnvelope returns a stub 64-byte sig.
+// DREAMBALL_ORACLE_ALLOW_UNSIGNED is no longer needed (gate removed in Story 6.2).
 
 // ── AC1: happy path — file edit produces inscription-updated ─────────────────
 
@@ -176,11 +178,11 @@ describe('AC1 — file edit produces inscription-updated action + re-embedded ve
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'fw-ac1-'));
-    process.env.JELLY_EMBED_MOCK = 'hash';
+    process.env.DREAMBALL_EMBED_MOCK = 'hash';
   });
 
   afterEach(async () => {
-    delete process.env.JELLY_EMBED_MOCK;
+    delete process.env.DREAMBALL_EMBED_MOCK;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -265,11 +267,11 @@ describe('AC2 — no-op when source bytes unchanged', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'fw-ac2-'));
-    process.env.JELLY_EMBED_MOCK = 'hash';
+    process.env.DREAMBALL_EMBED_MOCK = 'hash';
   });
 
   afterEach(async () => {
-    delete process.env.JELLY_EMBED_MOCK;
+    delete process.env.DREAMBALL_EMBED_MOCK;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -406,7 +408,7 @@ describe('AC4 — embedding service unreachable (503)', () => {
 
   afterEach(async () => {
     globalThis.fetch = origFetch;
-    delete process.env.JELLY_EMBED_MOCK;
+    delete process.env.DREAMBALL_EMBED_MOCK;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -454,7 +456,7 @@ describe('AC4 — embedding service unreachable (503)', () => {
 
     // Second call — switch to mock mode so it succeeds
     globalThis.fetch = origFetch;
-    process.env.JELLY_EMBED_MOCK = 'hash';
+    process.env.DREAMBALL_EMBED_MOCK = 'hash';
 
     // Write new content so hash differs
     writeFileSync(sourcePath, 'second edit different bytes');
@@ -472,11 +474,11 @@ describe('AC5 — tx throw after reembed, before recordAction', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'fw-ac5-'));
-    process.env.JELLY_EMBED_MOCK = 'hash';
+    process.env.DREAMBALL_EMBED_MOCK = 'hash';
   });
 
   afterEach(async () => {
-    delete process.env.JELLY_EMBED_MOCK;
+    delete process.env.DREAMBALL_EMBED_MOCK;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -522,11 +524,11 @@ describe('AC7 — per-palace mutex: two palaces run independently', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'fw-ac7-'));
-    process.env.JELLY_EMBED_MOCK = 'hash';
+    process.env.DREAMBALL_EMBED_MOCK = 'hash';
   });
 
   afterEach(async () => {
-    delete process.env.JELLY_EMBED_MOCK;
+    delete process.env.DREAMBALL_EMBED_MOCK;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -570,11 +572,11 @@ describe('AC8 — burst of 10 edits within one palace: all serialise, no drops',
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'fw-ac8-'));
-    process.env.JELLY_EMBED_MOCK = 'hash';
+    process.env.DREAMBALL_EMBED_MOCK = 'hash';
   });
 
   afterEach(async () => {
-    delete process.env.JELLY_EMBED_MOCK;
+    delete process.env.DREAMBALL_EMBED_MOCK;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -648,11 +650,11 @@ describe('AC10 — SEC11: no observable instant where embedding exists without a
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'fw-ac10-'));
-    process.env.JELLY_EMBED_MOCK = 'hash';
+    process.env.DREAMBALL_EMBED_MOCK = 'hash';
   });
 
   afterEach(async () => {
-    delete process.env.JELLY_EMBED_MOCK;
+    delete process.env.DREAMBALL_EMBED_MOCK;
     await rm(tmpDir, { recursive: true, force: true });
   });
 

@@ -1,6 +1,6 @@
 /**
- * The seven lenses defined in the v2 PRD (FR33) + one sentinel for "unknown".
- * Each maps to a component under `src/lib/lenses/*Lens.svelte`.
+ * Lenses dispatched by DreamBallViewer. v2 PRD (FR33) plus splat, palace,
+ * room, inscription, and shell (canonical container mesh).
  */
 export const ALL_LENSES = [
 	'thumbnail',
@@ -13,7 +13,8 @@ export const ALL_LENSES = [
 	'splat',
 	'palace',
 	'room',
-	'inscription'
+	'inscription',
+	'shell'
 ] as const;
 
 export type LensName = (typeof ALL_LENSES)[number];

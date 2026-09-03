@@ -1,6 +1,6 @@
-//! `jelly transmit <tool.jelly> --to=<target-fp-b58> --via-guild=<guild-fp-b58> --sender-key=<keyfile> --out=<transmission.jelly>`
+//! `dreamball transmit <tool.ball> --to=<target-fp-b58> --via-guild=<guild-fp-b58> --sender-key=<keyfile> --out=<transmission.ball>`
 //!
-//! Produces a signed `jelly.transmission` receipt recording the transfer of
+//! Produces a signed `ball.transmission` receipt recording the transfer of
 //! a Tool DreamBall to a target Agent via a shared Guild. Crypto is mocked
 //! per A2 (Ed25519 signing is real; no proxy-recryption).
 
@@ -26,7 +26,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
 
     if (parsed.flag(4) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
-            \\jelly transmit <tool.jelly> --to <target-fp-b58> --via-guild <guild-fp-b58> --sender-key <keyfile> --out <receipt.jelly>
+            \\dreamball transmit <tool.ball> --to <target-fp-b58> --via-guild <guild-fp-b58> --sender-key <keyfile> --out <receipt.ball>
             \\
         );
         return 0;

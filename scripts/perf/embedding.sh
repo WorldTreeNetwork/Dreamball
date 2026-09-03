@@ -17,7 +17,7 @@
 #   bash scripts/perf/embedding.sh
 #   SKIP_PERF=1 bash scripts/perf/embedding.sh   # skip (CI fast path)
 #
-# Requires: bun, jelly-server not needed (JELLY_EMBED_MOCK=1 activates mock).
+# Requires: bun, dreamball-server not needed (DREAMBALL_EMBED_MOCK=1 activates mock).
 
 set -euo pipefail
 
@@ -35,7 +35,7 @@ echo "Budget: p50 <200ms (hard), p95 <400ms (soft)"
 echo ""
 
 # Run the dedicated perf runner script via bun
-PERF_OUT=$(JELLY_EMBED_MOCK=1 bun run --silent "${REPO_ROOT}/scripts/perf/run-knn-perf.ts" 2>&1)
+PERF_OUT=$(DREAMBALL_EMBED_MOCK=1 bun run --silent "${REPO_ROOT}/scripts/perf/run-knn-perf.ts" 2>&1)
 EXIT_CODE=$?
 
 echo "$PERF_OUT"

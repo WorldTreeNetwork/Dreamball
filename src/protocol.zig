@@ -28,22 +28,22 @@ pub const DreamBallType = enum {
 
     pub fn toWireString(self: DreamBallType) []const u8 {
         return switch (self) {
-            .avatar => "jelly.dreamball.avatar",
-            .agent => "jelly.dreamball.agent",
-            .tool => "jelly.dreamball.tool",
-            .relic => "jelly.dreamball.relic",
-            .field => "jelly.dreamball.field",
-            .guild => "jelly.dreamball.guild",
+            .avatar => "ball.dreamball.avatar",
+            .agent => "ball.dreamball.agent",
+            .tool => "ball.dreamball.tool",
+            .relic => "ball.dreamball.relic",
+            .field => "ball.dreamball.field",
+            .guild => "ball.dreamball.guild",
         };
     }
 
     pub fn fromWireString(s: []const u8) ?DreamBallType {
-        if (std.mem.eql(u8, s, "jelly.dreamball.avatar")) return .avatar;
-        if (std.mem.eql(u8, s, "jelly.dreamball.agent")) return .agent;
-        if (std.mem.eql(u8, s, "jelly.dreamball.tool")) return .tool;
-        if (std.mem.eql(u8, s, "jelly.dreamball.relic")) return .relic;
-        if (std.mem.eql(u8, s, "jelly.dreamball.field")) return .field;
-        if (std.mem.eql(u8, s, "jelly.dreamball.guild")) return .guild;
+        if (std.mem.eql(u8, s, "ball.dreamball.avatar")) return .avatar;
+        if (std.mem.eql(u8, s, "ball.dreamball.agent")) return .agent;
+        if (std.mem.eql(u8, s, "ball.dreamball.tool")) return .tool;
+        if (std.mem.eql(u8, s, "ball.dreamball.relic")) return .relic;
+        if (std.mem.eql(u8, s, "ball.dreamball.field")) return .field;
+        if (std.mem.eql(u8, s, "ball.dreamball.guild")) return .guild;
         return null;
     }
 
@@ -103,15 +103,15 @@ pub const Stage = enum {
 pub const Asset = struct {
     media_type: []const u8,
     hash: [32]u8,
-    urls: []const []const u8 = &.{},
+    url: []const []const u8 = &.{},
     embedded: ?[]const u8 = null,
     size: ?u64 = null,
     note: ?[]const u8 = null,
 
     pub fn deinit(self: *Asset, allocator: Allocator) void {
         allocator.free(self.media_type);
-        for (self.urls) |u| allocator.free(u);
-        allocator.free(self.urls);
+        for (self.url) |u| allocator.free(u);
+        allocator.free(self.url);
         if (self.embedded) |e| allocator.free(e);
         if (self.note) |n| allocator.free(n);
         self.* = undefined;
@@ -151,6 +151,135 @@ pub const Act = struct {
     note: ?[]const u8 = null,
 };
 
+// ─── ball.memory slot ────────────────────────────────────────────────────────
+//
+// The `memory` slot is a first-class DreamBall slot, beside look/feel/act.
+// It used to live in protocol_v2.zig under the v1/v2 split; per
+// docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md (Zig is
+// canonical) it was promoted here to its sibling slots. See docs/PROTOCOL.md
+// §12.3. protocol_v2.zig re-exports these for back-compat.
+
+pub const MemoryConnectionKind = enum {
+    semantic,
+    emotional,
+    temporal,
+    other,
+
+    pub fn toWireString(self: MemoryConnectionKind) []const u8 {
+        return switch (self) {
+            .semantic => "semantic",
+            .emotional => "emotional",
+            .temporal => "temporal",
+            .other => "other",
+        };
+    }
+};
+
+pub const MemoryNode = struct {
+    id: u64,
+    /// Inline content (text) OR an asset fingerprint reference — one must be set.
+    content: ?[]const u8 = null,
+    /// Lookups: name → sort-key value. Supports named indices like an
+    /// "emotional" lookup that sorts memory by emotional salience.
+    lookups: []const LookupEntry = &.{},
+    created: ?i64 = null,
+    last_recalled: ?i64 = null,
+
+    pub const LookupEntry = struct {
+        name: []const u8,
+        value: f64,
+    };
+};
+
+pub const MemoryConnection = struct {
+    from: u64,
+    to: u64,
+    kind: MemoryConnectionKind,
+    strength: f64 = 1.0,
+    label: ?[]const u8 = null,
+};
+
+pub const Memory = struct {
+    nodes: []const MemoryNode = &.{},
+    connections: []const MemoryConnection = &.{},
+    last_updated: ?i64 = null,
+};
+
+// ─── ball.knowledge-graph slot (§12.4) ──────────────────────────────────────
+//
+// First-class DreamBall slot, promoted here from protocol_v2.zig beside its
+// siblings per docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md
+// (Zig is canonical). protocol_v2.zig re-exports these for back-compat.
+
+pub const Triple = struct {
+    from: []const u8,
+    label: []const u8,
+    /// Either a text value or a fingerprint reference to another DreamBall.
+    to: []const u8,
+};
+
+pub const KnowledgeGraph = struct {
+    triples: []const Triple = &.{},
+    source: ?[]const u8 = null,
+};
+
+// ─── ball.emotional-register slot (§12.5) ────────────────────────────────────
+
+pub const EmotionalAxis = struct {
+    name: []const u8,
+    value: f64,
+    min: f64 = 0.0,
+    max: f64 = 1.0,
+};
+
+pub const EmotionalRegister = struct {
+    axes: []const EmotionalAxis = &.{},
+    observed_at: ?i64 = null,
+};
+
+// ─── ball.interaction-set slot (§12.6) ───────────────────────────────────────
+
+pub const InteractionKind = enum { speak, listen, act, receive };
+
+pub const Interaction = struct {
+    turn: u32,
+    actor: Fingerprint,
+    kind: InteractionKind,
+    content: ?[]const u8 = null,
+    timestamp: ?i64 = null,
+    outcome: ?[]const u8 = null,
+
+    pub fn kindString(self: Interaction) []const u8 {
+        return switch (self.kind) {
+            .speak => "speak",
+            .listen => "listen",
+            .act => "act",
+            .receive => "receive",
+        };
+    }
+};
+
+pub const InteractionSet = struct {
+    /// Content-addressable id for the set (16 random bytes at creation time).
+    set_id: [16]u8,
+    interactions: []const Interaction = &.{},
+    created: ?i64 = null,
+};
+
+// ─── ball.guild-policy slot (§12.7) ──────────────────────────────────────────
+
+pub const GuildPolicy = struct {
+    public: []const []const u8 = &.{ "look", "thumbnail" },
+    guild_only: []const []const u8 = &.{
+        "memory",
+        "knowledge-graph",
+        "emotional-register",
+        "interaction-set",
+    },
+    admin_only: []const []const u8 = &.{"secret"},
+    note: ?[]const u8 = null,
+};
+
 pub const Signature = struct {
     /// "ed25519" or "ml-dsa-87"
     alg: []const u8,
@@ -182,6 +311,16 @@ pub const DreamBall = struct {
     look: ?Look = null,
     feel: ?Feel = null,
     act: ?Act = null,
+    memory: ?Memory = null,
+    knowledge_graph: ?KnowledgeGraph = null,
+    emotional_register: ?EmotionalRegister = null,
+    /// REPEATABLE on the wire (TS `'interaction-set'?: InteractionSet[]`) — a
+    /// DreamBall may carry multiple interaction-set envelopes. Held as a slice;
+    /// encode emits one `interaction-set` assertion per element, decode appends.
+    interaction_sets: []const InteractionSet = &.{},
+    /// §12.7 per-slot read/write policy, attached as a first-class `guild-policy`
+    /// assertion. Distinct from the policy embedded inside a Guild envelope.
+    policy: ?GuildPolicy = null,
     /// Fingerprints of Guilds claiming this DreamBall (per-slot policy
     /// resolution walks through these — see docs/PROTOCOL.md §12.7).
     guilds: []const Fingerprint = &.{},
@@ -190,9 +329,15 @@ pub const DreamBall = struct {
     /// Fingerprints of DreamBalls this one is derived from.
     derived_from: []const Fingerprint = &.{},
     signatures: []const Signature = &.{},
-    /// §13.1 optional field-kind attribute on jelly.dreamball.field envelopes.
+    /// §13.1 optional field-kind attribute on ball.dreamball.field envelopes.
     /// Values: "palace" | "room" | "ambient" | <open-enum>.  Null = not a field.
     field_kind: ?[]const u8 = null,
+    /// FR5 / D-017 — optional archiform_fp on the genesis envelope.
+    /// 32-byte blake3 of the archiform schema body. Immutable for the
+    /// ball's lifetime. Sprint-002 additive back-compat (IC1): missing
+    /// on decode → caller substitutes the implicit Memory Palace fp.
+    /// Wire-name `archiform-fp`; emitted as a CBOR byte-string-32 attribute.
+    archiform_fp: ?[32]u8 = null,
 
     pub fn fingerprint(self: DreamBall) Fingerprint {
         return Fingerprint.fromEd25519(self.identity);

@@ -1,5 +1,5 @@
 /**
- * palace-move.ts — Bridge script invoked by `jelly palace move` (Zig → Bun).
+ * palace-move.ts — Bridge script invoked by `dreamball palace move` (Zig → Bun).
  *
  * Argv: <staging_path> <bundle_path>
  *
@@ -29,10 +29,10 @@ import { mirrorAction, type MirrorAction } from '../../memory-palace/action-mirr
 import { mirrorInscriptionMove } from '../../memory-palace/oracle.js';
 import { sanitizeFp } from '../../memory-palace/cypher-utils.js';
 
-// ── Debug log (gated on JELLY_BRIDGE_DEBUG=1) ─────────────────────────────────
+// ── Debug log (gated on DREAMBALL_BRIDGE_DEBUG=1) ─────────────────────────────────
 
 function debugLog(name: string, line: string): void {
-  if (process.env.JELLY_BRIDGE_DEBUG !== '1') return;
+  if (process.env.DREAMBALL_BRIDGE_DEBUG !== '1') return;
   const uid = String(process.getuid?.() ?? 'nouid');
   const dir = join(tmpdir(), `dreamball-${uid}`);
   try {

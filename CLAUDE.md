@@ -11,7 +11,7 @@
 ## Read first
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the runtime map.
-  How the Zig core, WASM binary, CLI, jelly-server, Svelte lib, and
+  How the Zig core, WASM binary, CLI, dreamball-server, Svelte lib, and
   recrypt-server fit together. Start here for the mental model.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — authoritative wire format.
 - [`docs/VISION.md`](docs/VISION.md) — the *why* behind the code. Living
@@ -27,44 +27,72 @@
 
 ## The cross-runtime invariant
 
-**The wire format factors into two parts, each with one canonical
-location:**
+**Rust is the single canonical source for the whole wire format**, which
+factors into two parts, both Rust-canonical:
 
-1. **CBOR encoding algorithm — `src/*.zig`.** Canonical map ordering,
-   integer width rules, bytes-vs-text discipline, golden test vectors.
-   Every runtime must reproduce these bytes for the same logical value.
-2. **Field shapes — JSON Schema, vendored from aspects.sh.** Root types
-   (`schemas/root-X.Y.Z.json`) and archiform extensions
-   (`schemas/<archiform>-X.Y.Z.json`) are the canonical source. Zig
-   types, TS types, Valibot schemas, CBOR codecs, and
-   `src/memory-palace/schema.cypher` are all *derived* from them.
+1. **dCBOR encoding algorithm — the Blockchain Commons crates.** `dcbor`
+   0.25.2 owns canonical map ordering, integer width rules, and the
+   bytes-vs-text discipline; `bc-envelope` 0.43.0 owns envelope framing.
+   We *consume* them; we do not reimplement them. Every runtime must
+   reproduce the same bytes for the same logical value, and the
+   language-neutral golden vectors are what prove it.
+2. **Field shapes — the Rust types**, with `serde` + `schemars` derives.
+   These are the most expressive representation (defaults, methods,
+   exact types), so everything else is *generated downward* from them:
+   TS types, Valibot schemas, the CBOR codec (`cbor.ts`), **JSON
+   Schema** (`schemas/*.json` — a generated *artifact*, published to
+   aspects.sh if/when federation exists), and the Cypher DDL.
+
+This supersedes the 2026-06-25 Zig-canonical ADR, which itself reverted
+D-018 (JSON-Schema-canonical). Yes — that is three changes of canonical
+medium. See
+[`docs/decisions/2026-08-06-rust-canonical.md`](docs/decisions/2026-08-06-rust-canonical.md)
+for the honest version: the first two moved the *label* and never
+shipped a generator, while `serde` + `schemars` already exist and the
+substrate itself is moving to Rust (epic `Dreamball-y4t`). The
+most-expressive-medium principle is unchanged; it now points at Rust.
+
+**Zig remains the build system**, scoped to two jobs it is genuinely
+good at: the task orchestrator (`zig build test|smoke|wasm` keep
+working, shelling out to `cargo` and `bun` — one stable command surface
+over three toolchains) and cross-compilation/linking via
+`cargo-zigbuild`. Zig no longer compiles protocol artifacts. This keeps
+[`2026-05-24-hermetic-musl-default-linux.md`](docs/decisions/2026-05-24-hermetic-musl-default-linux.md)
+true verbatim — Linux binaries are still static musl with no system
+libc/crt dependency.
 
 Concretely:
 
-- No TypeScript code encodes or decodes CBOR by hand — it goes through
-  the WASM module.
-- No hand-maintained schemas exist anywhere. `types.ts`, `schemas.ts`
-  (Valibot), `cbor.ts`, and `schema.cypher` are all generated.
-  Regenerate via `bun run codegen`.
-- The browser and server load the same `jelly.wasm` binary.
+- No TypeScript code encodes or decodes CBOR *by hand* — it goes
+  through the WASM module or the **generated** `cbor.ts` (generated, so
+  it can't drift from the canonical Rust).
+- **To add or change a wire type, edit the Rust types**, then
+  regenerate. JSON Schema is an output, never hand-authored; do **not**
+  add `x-cbor` / `x-zig` extension keys (that was the retired
+  JSON-Schema-canonical authoring path).
+- The browser and server load the same `dreamball.wasm` binary.
   Host-supplied randomness via one `env.getRandomBytes` import is the
-  entire runtime seam; see [`docs/VISION.md §14`](docs/VISION.md) and
-  ADR-1 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-- Archiform-specific node and edge types (`Inscription`, `Room`,
-  `Aqueduct`) come from the vendored archiform schema, not hand-written
-  Zig.
+  entire runtime seam; see [`docs/VISION.md §8`](docs/VISION.md) and
+  ADR-1 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). ADR-1 was
+  never about Zig — it was about one compiled artifact with one host
+  seam, and that survives the language change.
 
-If you find yourself writing a second implementation of something the
-codegen pipeline already produces — stop. Regenerate from the JSON
-Schema source instead.
+If you find yourself writing a second hand-maintained implementation of
+a wire type — stop. The Rust types are canonical; the rest is generated
+from them. (The Zig crypto substrate was a standing violation of exactly
+this rule, one layer down. That is what epic `Dreamball-y4t` is paying
+off.)
 
-**Migration status (2026-04-25):** the codegen-direction inversion is
-sprint-002 work; see
-[`docs/decisions/2026-04-25-json-schema-canonical.md`](docs/decisions/2026-04-25-json-schema-canonical.md)
-and siblings. Until those stories land, `tools/schema-gen/main.zig`
-remains the de-facto source for root and Memory Palace types. The
-*direction* the codebase is moving is JSON-Schema-canonical — read the
-decision notes before adding new fields.
+**Transitional status (2026-08-06):** the port is in flight. Until epic
+`Dreamball-y4t` lands, `src/protocol*.zig` and the hardcoded-string
+generators in `tools/schema-gen/` are still what the build actually
+runs, and the vendored `schemas/*.json` are still kept consistent by a
+pin + byte-equivalence gate. So *while porting*: change the Zig types
+and update the generated TS/Valibot/`cbor.ts` + JSON-Schema fixtures by
+hand, as before — but don't invest in that path, and don't build new
+Zig-side codegen. The Zig comptime `@typeInfo` generator
+(`Dreamball-m97.2`) is **dissolved, not deferred** — do not build it.
+Read the ADR before adding fields.
 
 ## Operating principle — document the why, not only the what
 
@@ -95,11 +123,19 @@ extremely expensive to reconstruct later from Git blame.
 Zig 0.16.0 + Bun. See `README.md` for the full command list.
 
 **Zig side:**
-- `zig build` — compile library + `jelly` CLI
+- `zig build` — compile library + `dreamball` CLI
 - `zig build test` — unit tests (≥ 51 passing)
 - `zig build smoke` — CLI end-to-end integration test
-- `zig build wasm` — produce `src/lib/wasm/jelly.wasm` (≤ 200 KB raw, ≤ 64 KB gzipped; ships ML-DSA-87 verify)
+- `zig build wasm` — produce `src/lib/wasm/dreamball.wasm` (≤ 300 KB raw, ≤ 150 KB gzipped; ships ML-DSA-87 verify). **Gzipped (the over-the-wire cost) is the binding budget.** History: raw relaxed 200→224 KB on 2026-06-25 (nested-envelope decoders); **2026-06-28 dev-velocity bump to 300 KB raw / 150 KB gzip** (generous headroom) because `verifyAction` (sprint-003 B2) is the first WASM caller of `decodeAction` and links the full decode path. This bump is **temporary** — restoring a tight gzip budget is tracked in `Dreamball-8bk` (150 KB is a ceiling for fast iteration, not a target; the binary is ~66 KB gzip today). See [`docs/decisions/2026-06-28-wasm-size-budget-dev-velocity-bump.md`](docs/decisions/2026-06-28-wasm-size-budget-dev-velocity-bump.md) and [`docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md`](docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
 - `zig build schemagen` — regenerate `src/lib/generated/*.ts`
+
+On Linux, all of the above default to `-Dtarget=x86_64-linux-musl`
+(Zig's bundled musl libc), producing statically-linked binaries with
+no system libc/crt dependency. macOS keeps the native default. Pass
+`-Dtarget=native` to opt into glibc-dynamic linkage. See
+[`docs/decisions/2026-05-24-hermetic-musl-default-linux.md`](docs/decisions/2026-05-24-hermetic-musl-default-linux.md)
+for the rationale (sidesteps the Zig-0.16-LLD-vs-GCC-16-`.sframe`
+toolchain skew permanently).
 
 **Bun side:**
 - `bun install` — install JS/TS deps
@@ -107,13 +143,13 @@ Zig 0.16.0 + Bun. See `README.md` for the full command list.
 - `bun run test:unit -- --run` — Vitest
 - `bun run storybook` / `bun run build-storybook` / `bun run test-storybook`
 - `bun run build` — library + showcase build
-- `bun run dev:server` — jelly-server (Elysia) on :9808
-- `bun run demo` — jelly-server + Vite dev server in parallel
+- `bun run dev:server` — dreamball-server (Elysia) on :9808
+- `bun run demo` — dreamball-server + Vite dev server in parallel
 - `bun run codegen` — alias for `zig build schemagen`
 
 **Integration gates:**
 - `scripts/cli-smoke.sh` — Zig CLI end-to-end
-- `scripts/server-smoke.sh` — HTTP jelly-server end-to-end
+- `scripts/server-smoke.sh` — HTTP dreamball-server end-to-end
 - `tests/e2e-cryptography.sh` — crypto pipeline (mock or real via `RECRYPT_SERVER_URL`)
 
 Every commit must keep every gate green. CI (`.github/workflows/ci.yml`)
@@ -181,3 +217,50 @@ Generates a Svelte Playground link with the provided code.
 After completing the code, ask the user if they want a playground link. Only call this tool after user confirmation and NEVER if code was written to files in their project.
 
 Always use bun for everything - for package management, short scripts, etc, except where we use zig.
+
+
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
+## Beads Issue Tracker
+
+This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+
+### Quick Reference
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>         # Complete work
+```
+
+### Rules
+
+- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- Run `bd prime` for detailed command reference and session close protocol
+- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+## Session Completion
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds
+<!-- END BEADS INTEGRATION -->

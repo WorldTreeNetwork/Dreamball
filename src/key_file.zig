@@ -1,12 +1,12 @@
 //! Secret-key file format for the CLI.
 //!
 //! On-disk shape: raw `recrypt.identity` dCBOR bytes (leading tag 200 =
-//! `0xd8 0xc8`). Written by every `jelly mint` invocation. See
+//! `0xd8 0xc8`). Written by every `dreamball mint` invocation. See
 //! `src/identity_envelope.zig` for the codec and
 //! `docs/decisions/2026-04-21-identity-envelope.md` for the rationale.
 //!
 //! There is no legacy format support. Dreamball is pre-release; any older
-//! `.key` files from development are regenerated with a fresh `jelly mint`.
+//! `.key` files from development are regenerated with a fresh `dreamball mint`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

@@ -15,7 +15,7 @@ work to a later **cryptography/security pass**. Until that pass:
 - **Ed25519-only signing is acceptable.** The dual-sig (Ed25519 +
   ML-DSA-87) requirement that motivated NFR12 is relaxed in
   implementation. ML-DSA-87 verify continues to land where it already
-  has (jelly.wasm), but minting/signing call sites may use Ed25519
+  has (dreamball.wasm), but minting/signing call sites may use Ed25519
   alone without raising a blocker.
 - **Plaintext keys held with `0600` perms are acceptable.** D-011's
   custody choice stands; recrypt-wallet integration is not gating any
@@ -37,7 +37,7 @@ and `store.recordTraversal` introduced by S4.4 / S5.5.
 
 **When the security pass runs**, the work becomes: parameterise
 `signActionEnvelope(keypair, payload)` over arbitrary keypairs in
-`jelly.wasm`, swap Ed25519-only signing for dual-sig at all flagged
+`dreamball.wasm`, swap Ed25519-only signing for dual-sig at all flagged
 call sites, integrate recrypt-wallet for key custody, and challenge
 the oracle-fp spoofing surface. None of this gates further feature
 work.
@@ -50,7 +50,7 @@ work.
 
 **State — CLOSED 2026-04-22 by S1.1 completion. Remaining item below is polish only.**
 
-`verifyJelly` in `jelly.wasm` verifies Ed25519 locally and ML-DSA-87
+`verifyBall` in `dreamball.wasm` verifies Ed25519 locally and ML-DSA-87
 signatures against the envelope's `identity-pq` core field. The default
 `zig build wasm` ships with PQ-verify enabled (`-Dpq-wasm=true` is the
 default). A standalone `verifyMlDsa(sig, msg, pk)` export is fully tested
@@ -69,19 +69,14 @@ wasm-ld's dead-code elimination dropped the sign and keypair code
 paths cleanly, leaving only the verify-reachable subset plus shared
 NTT/poly helpers:
 
-| Build                        | Raw    | Gzipped |
-|------------------------------|--------|---------|
-| Default (Ed25519 only)       | 142.5 KB | 40.3 KB |
-| `-Dpq-wasm=true` (PQ verify) | 171.3 KB | 50.1 KB |
-| **Delta**                    | **+28.7 KB raw** | **+9.9 KB gzipped** |
-
-~10 KB over the wire is well inside the 150 KB budget. The prior
-"~250–400 KB" estimate was pessimistic by an order of magnitude;
-it assumed no DCE and the full OQS_KEM + OQS_SIG dispatch surface.
+Enabling PQ verify adds a small, budgeted increment over the Ed25519-only
+baseline (the current budget lives in `build.zig`). The prior estimate that
+motivated delegating ML-DSA over HTTP was pessimistic by an order of
+magnitude; it assumed no DCE and the full OQS_KEM + OQS_SIG dispatch surface.
 
 **End-to-end confirmed.** Mint → hybrid-sign a tool DreamBall via
-the native CLI, load `jelly.wasm` in Bun, push bytes through
-`verifyJelly`, return code = 2 (Ed25519 + ML-DSA both OK). See
+the native CLI, load `dreamball.wasm` in Bun, push bytes through
+`verifyBall`, return code = 2 (Ed25519 + ML-DSA both OK). See
 `/tmp/pq-wasm-verify-smoke.ts` during the spike — not committed to
 the repo, reconstruct from this note if needed.
 
@@ -111,21 +106,21 @@ overhead of vendoring a C zstd and add a `--with-zstd` build flag.
 
 ### 3. Chained proxy-recryption (Guild A → Guild B → recipient)
 
-**State.** `jelly.transmission` receipts today reference one Guild.
+**State.** `ball.transmission` receipts today reference one Guild.
 Cross-Guild chained delegation is not implemented.
 
 **Why deferred.** FR52/Vision-tier from the original v2 PRD. Requires
 design work on multi-hop recryption semantics in `recrypt` itself.
 
 **Path forward.** Spike in `recrypt`'s issue tracker; when the Rust
-side has multi-hop support, wire it into `jelly-server`'s transmission
+side has multi-hop support, wire it into `dreamball-server`'s transmission
 flow.
 
 ### 4. Partial WASM write-ops: `sealRelic`, `unlockRelic`, `transmitSkill`
 
-**State.** `jelly.wasm` exports `mintDreamBall`, `growDreamBall`,
+**State.** `dreamball.wasm` exports `mintDreamBall`, `growDreamBall`,
 `joinGuildWasm`. The remaining CLI commands (`seal-relic`, `unlock`,
-`transmit`) are called via subprocess from `jelly-server` rather than
+`transmit`) are called via subprocess from `dreamball-server` rather than
 WASM exports.
 
 **Why deferred.** These operations involve DragonBall file wrapping +
@@ -175,8 +170,8 @@ links it at build time:
 Reversed architectural decision: the recrypt-server
 `POST /sign/ml-dsa` and `POST /verify/ml-dsa` endpoints exist and
 are tested on the recrypt side (`recrypt-server/src/routes/signing.rs`),
-but Dreamball never needs them. Dreamball's jelly-server subprocesses
-the native `jelly` binary, which has its own direct liboqs link. No
+but Dreamball never needs them. Dreamball's dreamball-server subprocesses
+the native `dreamball` binary, which has its own direct liboqs link. No
 network round-trip, no auth surface for a sign-with-secret endpoint,
 simpler deployment.
 
@@ -191,18 +186,18 @@ simpler deployment.
   200) carrying both Ed25519 and ML-DSA-87 keypairs. See
   `docs/decisions/2026-04-21-identity-envelope.md` for the adoption
   rationale. No legacy-format support — Dreamball is pre-release,
-  so any older `.key` files regenerate with a fresh `jelly mint`.
-- `jelly mint` generates a hybrid keypair, embeds `identity-pq`
+  so any older `.key` files regenerate with a fresh `dreamball mint`.
+- `dreamball mint` generates a hybrid keypair, embeds `identity-pq`
   in the core, and emits both signatures.
-- `jelly grow`, `jelly join-guild`, `jelly transmit` re-sign with
+- `dreamball grow`, `dreamball join-guild`, `dreamball transmit` re-sign with
   whichever algorithms the key file provides. Transmission
   nodes do not yet carry `identity-pq` (no core field; tracked
   separately — the sender's pubkey bundle flows out-of-band,
   matching recrypt's public-key-bundle pattern).
-- `jelly seal-relic` stays Ed25519-only on the relic wrapper. Per
+- `dreamball seal-relic` stays Ed25519-only on the relic wrapper. Per
   policy, ephemeral wrappers in lower-stakes contexts trust the
   inner DreamBall's own hybrid signature.
-- `jelly verify` checks each `'signed'` attribute against the
+- `dreamball verify` checks each `'signed'` attribute against the
   appropriate key. Policy: "all attached signatures must verify,"
   no minimum count. Ed25519-only nodes remain valid.
 
@@ -219,7 +214,7 @@ policy.
 **What's still pending on the PQ side:**
 
 - Browser-side ML-DSA-87 verification — **spike landed 2026-04-21**
-  behind `-Dpq-wasm=true`. +28.7 KB raw / +9.9 KB gzipped over the
+  behind `-Dpq-wasm=true`. A small, budgeted increment over the
   Ed25519-only baseline. Default build stays PQ-free until a
   browser consumer actually needs it. See §1 above for the full
   measurement and follow-ups.
@@ -228,7 +223,7 @@ policy.
   `sender-identity-pq` on Transmission, `identity-pq` on Relic)
   so the PQ sig verifies standalone without a pubkey-bundle
   lookup. Envelopes bump to `format-version: 3` when the slot is
-  populated. See PROTOCOL.md §12.1.4 and §12.9.
+  populated. See `products/dreamball-v2/protocol.md` §12.1.4 and §12.9.
 
 Guild keyspace proxy-recryption (the harder half of Phase D) remains
 future work — `recrypt-server` already has keyspace endpoints
@@ -253,12 +248,12 @@ future work — `recrypt-server` already has keyspace endpoints
 
 **Required Dreamball wire-up (all scaffolded — flip on when recrypt ready).**
 
-- `jelly-server/src/mldsa-client.ts` — HTTP client hitting the two
+- `dreamball-server/src/mldsa-client.ts` — HTTP client hitting the two
   recrypt endpoints. Stub exists; wire real calls when `RECRYPT_SERVER_URL`
   is set at server boot.
-- `jelly-server` mint route — two-hop signing: WASM Ed25519, then HTTP
+- `dreamball-server` mint route — two-hop signing: WASM Ed25519, then HTTP
   ML-DSA. Stub exists; flip to real when the endpoint is available.
-- `jelly` CLI — gain `--ml-dsa-server <url>` flag. Not yet implemented
+- `dreamball` CLI — gain `--ml-dsa-server <url>` flag. Not yet implemented
   on the CLI; trivial once the HTTP contract is frozen.
 - `seal-relic --for-guild` — call `POST /recrypt` with the Guild's
   keyspace ID instead of storing plaintext. Stub exists with a
@@ -275,13 +270,13 @@ should become live once the recrypt endpoints exist.
 **Path forward.**
 1. Add `POST /sign/ml-dsa` to recrypt-server (1-2 hrs, Rust changes in
    sibling repo).
-2. Wire `jelly-server` two-hop signing (1 hr).
+2. Wire `dreamball-server` two-hop signing (1 hr).
 3. Add `--ml-dsa-server` flag to the Zig CLI (1 hr).
 4. Confirm `tests/e2e-cryptography.sh` passes in real mode.
 5. Keyspace-scoped seal/unlock is a separate mini-sprint after that.
 
 Tracked as **Phase D** of
-`.omc/plans/2026-04-19-jelly-server-storybook-mldsa-recrypt.md`.
+`.omc/plans/2026-04-19-dreamball-server-storybook-mldsa-recrypt.md`.
 
 ---
 
@@ -289,17 +284,17 @@ Tracked as **Phase D** of
 
 These gaps existed before v2.1 and have now closed:
 
-- ✅ **Real Ed25519 signatures in the browser.** `jelly.wasm` imports
+- ✅ **Real Ed25519 signatures in the browser.** `dreamball.wasm` imports
   `getRandomBytes` from the host; Ed25519 signing + verification run
   natively in WASM. Browser + server use the same binary.
 - ✅ **Real ML-DSA-87 signatures on minted envelopes.**
-  `jelly-server`'s mint route orchestrates the two-hop
+  `dreamball-server`'s mint route orchestrates the two-hop
   WASM-Ed25519 + HTTP-ML-DSA flow via `recrypt-server`.
 - ✅ **Guild keyspaces are real recrypt keyspaces.** `mint --type
   guild` creates a real keyspace in `recrypt-server`. `seal-relic` and
   `unlock` use real proxy-recryption.
 - ✅ **`HttpBackend` talks to a real server.** The `EdenBackend`
-  replacement hits `jelly-server` via typed `treaty<App>` calls.
+  replacement hits `dreamball-server` via typed `treaty<App>` calls.
 - ✅ **Identity envelope adopted.** Per-DreamBall key files now use the
   `recrypt.identity` Gordian Envelope (CBOR tag 200) instead of the
   hand-rolled `DJELLY\n` hybrid layout. Byte-identical interop with
@@ -347,30 +342,28 @@ This mirrors the D-008 signed-action-before-effect pattern applied to read paths
 
 ### 8. Oracle action signing is stubbed (`oracleActionStub` gate)
 
-**State**: Open — the WASM-side ML-DSA+Ed25519 dual-signer is not yet
-parameterised over arbitrary keypairs, so `file-watcher.ts` cannot yet
-produce a real oracle-signed action envelope.
+**State**: CLOSED 2026-04-28 by Story 6.2.
 
-**Why deferred**: `jelly.wasm` exposes signing only for the identity that
-was loaded at WASM startup; adding a
-`jelly_sign_action_with_key(keyBytes, msg)` export requires threading the
-oracle keypair through the runtime seam (one more `env.*` import or a
-parameterised export). That work is tracked alongside §6 Phase-D cleanup.
+`oracle.ts` now exports `oracleSignAction` (the real implementation).
+`store.server.ts` and `store.browser.ts` `recordTraversal` both call
+`signActionEnvelope` when a `keypairBytes` param is provided, producing
+a real 64-byte Ed25519 signature committed as `cborBytesBlake3 =
+hashBytesBlake3Hex(sigBytes)` on the action node.
 
-**Limitation**: `oracle.ts` exports `oracleActionStub` (formerly
-`oracleSignAction`) which produces an **unsigned** `SignedAction` suitable
-only for the in-memory ActionLog audit trail. The stub refuses to run
-unless `JELLY_ORACLE_ALLOW_UNSIGNED=1` is exported in the environment, so
-production shells fail closed. Tests that cover the file-watcher flow
-must set the env var explicitly.
+The `DREAMBALL_ORACLE_ALLOW_UNSIGNED` env-var gate is removed. The
+`oracleActionStub` alias is gone.
 
-**Marker**: the error message itself references this gap; the `file-watcher.ts`
-import uses the new name so any accidental removal of the gate surfaces
-at compile time.
+**Residual**: Per the 2026-04-25 deferral above, only Ed25519 single
+signatures are produced (not hybrid Ed25519 + ML-DSA-87). Dual-sig and
+recrypt-wallet key-custody remain deferred to the future security pass
+(§6). Signature verification on the verify-walk path (§11) also remains
+deferred.
 
-**Path forward**: land the parameterised WASM signer export, replace the
-stub body with a round-trip through the WASM module, remove the env-var
-gate and delete the alias export.
+**Negative-test coverage**: `tests/crypto/forged-signature.test.ts`
+(Story 6.2 AC4) uses a real `mintDreamBall` keypair, calls
+`oracleSignAction`, bit-flips the signature, and asserts
+`crypto.subtle.verify` returns false — confirming the signature is a
+real Ed25519 commitment, not a hash sentinel.
 
 ---
 
@@ -378,7 +371,7 @@ gate and delete the alias export.
 
 **State — CLOSED 2026-04-24 by Sprint-1 code review HIGH-2.**
 
-`jelly.wasm` now exports `hashBlake3(input_ptr, input_len, out_ptr)` which
+`dreamball.wasm` now exports `hashBlake3(input_ptr, input_len, out_ptr)` which
 computes Blake3-256 using the same `std.crypto.hash.Blake3` the Zig CLI
 uses. The TS binding `blake3Hex(bytes)` in `src/lib/wasm/loader.ts` wraps
 the export. `cypher-utils.hashBytesBlake3Hex` (async) now falls through
@@ -387,8 +380,8 @@ fallback on any async path. The sync variant `hashBytesBlake3HexSync`
 retains a node:crypto fallback for early test bootstrap where WASM may not
 be initialized; production paths always take the Bun branch.
 
-WASM budget impact: 172 KB raw / 51 KB gzipped — well within the 200 KB /
-64 KB ceiling.
+WASM budget impact: comfortably within the budget at the time (the current
+budget lives in `build.zig`).
 
 ---
 
@@ -405,12 +398,12 @@ lifecycle seam where the watcher can be started today.
 
 **Limitation**: Source-file edits outside the palace bridge path don't
 produce `inscription-updated` / `inscription-orphaned` ActionLog rows.
-Tests exercise the watcher API directly; interactive use (CLI + jelly-server)
+Tests exercise the watcher API directly; interactive use (CLI + dreamball-server)
 does not.
 
 **Marker**: this entry + the unused-but-tested `openPalaceWatcher` export.
 
-**Path forward**: Epic 6 / post-MVP. Wire the watcher from `jelly-server`
+**Path forward**: Epic 6 / post-MVP. Wire the watcher from `dreamball-server`
 (which already owns an open TS palace handle) alongside the WASM signer work
 in §8; the CLI picks it up when `palace_open.zig` returns a TS-wrapped
 handle as part of the same seam.
@@ -419,13 +412,13 @@ handle as part of the same seam.
 
 ### 11. Palace action-envelope signature verification deferred in MVP
 
-**State**: Open — `jelly verify <palace>` enforces structural invariants
+**State**: Open — `dreamball verify <palace>` enforces structural invariants
 only. Invariants (a)–(f) in `src/cli/palace_verify.zig` cover room presence,
 sole-oracle-agent, parent-hash resolvability, mythos walk-to-genesis,
 head-hash leaf-ness, and oracle actor-fp equality. **No cryptographic
 signature is checked over action envelopes.**
 
-**Why deferred**: The `jelly.action` struct in `src/protocol_v2.zig`
+**Why deferred**: The `ball.action` struct in `src/protocol_v2.zig`
 carries a `signatures: []Signature` field, but the verify-walk does
 not yet dispatch to `signer.verify` / `dreamball.ml_dsa.verify` per
 action. Wiring that requires (i) canonical-bytes construction per
@@ -451,7 +444,7 @@ sprint story (`docs/sprints/001-memory-palace-mvp/stories/epic-4.md`
 **Path forward**: next sprint — extend `palace_verify.zig` with a new
 invariant (g) "action signatures verify against actor public key",
 call `signer.verify` over canonical action bytes for every
-`jelly.action` in the bundle. Depends on §8 (parameterised WASM
+`ball.action` in the bundle. Depends on §8 (parameterised WASM
 signer export) so browser-side verify parity lands in the same
 sprint.
 
@@ -464,47 +457,59 @@ sprint.
 **Why**: kuzu-wasm@0.11.3 browser QUERY_VECTOR_INDEX returned fps not matching
 @ladybugdb/core server ground truth. D-015 set-equality contract violated.
 
-**NFR11 relaxation**: K-NN queries in the browser must route to jelly-server
+**NFR11 relaxation**: K-NN queries in the browser must route to dreamball-server
 HTTP /kNN endpoint. Offline K-NN is degraded for MVP. Epic 6 must add the
 /kNN route.
 
 **Path forward**: S2.3 implements HTTP fallback kNN; S6.3 adds /kNN endpoint.
 TODO-KNN-FALLBACK markers must be preserved until both stories land.
 
+**Update 2026-05-31 — superseded by engine unification.** This relaxation
+exists only because the browser ran a *different engine* (`kuzu-wasm`) than the
+server (`@ladybugdb/core`). Note the internal contradiction: this entry records
+a HARD BLOCK, while `docs/decisions/2026-04-22-vector-parity-spike.md` records a
+*PASS* (set-equal top-10) for the same comparison — the question was never
+cleanly settled. It becomes **moot** under
+[`docs/decisions/2026-05-31-browser-graph-store-opfs.md`](decisions/2026-05-31-browser-graph-store-opfs.md):
+the browser store moves to `@ladybugdb/wasm-core` + OPFS (the IDBFS blocker in
+[LadybugDB/ladybug#399](https://github.com/LadybugDB/ladybug/issues/399) is moot
+— LadybugDB's wasm persistence is OPFS, not IDBFS). Same engine both sides ⇒
+K-NN parity is automatic and the HTTP fallback is no longer a correctness
+requirement. Land alongside the `graph-store` capability extraction.
+
 ---
 
 ### 12. Qwen3-Embedding-0.6B weights not bundled (S6.1 TODO-EMBEDDING)
 
-**State**: Open — S6.1 landed the `/embed` endpoint, mock seam, and ONNX adapter.
-Model weights are NOT in the repository.
+**State**: **CLOSED by removal, 2026-08-07** — the gap was "we ship an
+in-process ONNX model runtime but not its weights." The correct resolution
+turned out to be dropping the runtime, not shipping the weights.
 
-**Why deferred**: The ONNX model (`onnx-community/Qwen3-Embedding-0.6B-ONNX`) is
-~600 MB fp32 / ~150 MB uint8 quantised. Bundling it in the repo is impractical.
-The download/provision step is a deployment concern, not a code concern.
+`dreamball-server/src/embedding/` is gone: the in-process adapter
+(`qwen3.ts`) and the `@huggingface/transformers` dependency (~600 MB
+installed, via `onnxruntime-node` + `sharp`) were deleted from an otherwise
+generic protocol server. Hosting a model runtime is an application concern,
+and the `text-embed/1` capability seam
+(`dreamball-server/src/capabilities/text-embed/`) already existed to put it
+on the far side of an interface. Two providers remain: `mock` (CI) and
+`runpod` (remote GPU). `DREAMBALL_EMBED_MODEL_PATH` no longer does anything,
+and `scripts/download-embed-model.ts` will not be written.
 
-**Limitation**: `jelly-server` fails fast at boot with:
-  `embedding model not found at <path>`
-if `JELLY_EMBED_MODEL_PATH` is absent and `JELLY_EMBED_MOCK` is not set.
-All CI gates use `JELLY_EMBED_MOCK=1` (blake3-seeded deterministic mock).
+**Residual, stated honestly**: there is currently **no shipped local-weights
+provider**. The `text-embed/1` interface exists; an implementation of it that
+loads local ONNX weights does not. A consumer that wants local weights
+implements the interface in its own process. That is a real regression in
+out-of-the-box capability, taken deliberately.
 
-**Markers**: `TODO-EMBEDDING: bring-model-local-or-byo` appears in:
-  - `jelly-server/src/embedding/qwen3.ts` (model-load site, ×2)
-  - `jelly-server/src/routes/embed.ts` (route handler, ×1)
-  - `jelly-server/src/routes/embed.mock.ts` (mock module, ×1)
+**Markers**: `TODO-EMBEDDING: bring-model-local-or-byo` now appears in:
+  - `dreamball-server/src/capabilities/text-embed/runpod.ts` (BYO-GPU exit, ×1)
+  - `dreamball-server/src/routes/embed.ts` (route handler, ×1)
+  - `dreamball-server/src/routes/embed.mock.ts` (mock module, ×1)
   - `src/memory-palace/embedding-client.ts` (S4.4 client seam, ×2)
-Total ≥ 6 markers across the embedding surface.
 
-**Path forward**:
-1. Create `scripts/download-embed-model.ts` that runs:
-   `huggingface-cli download onnx-community/Qwen3-Embedding-0.6B-ONNX`
-   or uses the HF Hub API to fetch to `./models/Qwen3-Embedding-0.6B-ONNX/`.
-2. Add a CI job that provisions the model from a cache/artifact store when
-   `JELLY_EMBED_MOCK` is unset (optional; mock is sufficient for sprint-001).
-3. Consider the uint8-quantised variant (`electroglyph/Qwen3-Embedding-0.6B-onnx-uint8`)
-   to reduce memory footprint; MRL prefix property is preserved under quantisation.
-4. S6.2 and S6.3 inherit this gap — they also use `JELLY_EMBED_MOCK=1` in tests.
-
-See `docs/decisions/2026-04-24-qwen3-embedding-loader.md` for the full loader ADR.
+See `docs/decisions/2026-08-07-substrate-palace-boundary.md` for the removal
+rationale, and `docs/decisions/2026-04-24-qwen3-embedding-loader.md` for the
+original loader ADR it supersedes on this point.
 
 ---
 

@@ -4,7 +4,7 @@ import { MockBackend, mockBall } from './MockBackend.js';
 describe('MockBackend', () => {
 	it('mockBall(avatar) has look + feel populated', () => {
 		const b = mockBall('avatar');
-		expect(b.type).toBe('jelly.dreamball.avatar');
+		expect(b.type).toBe('ball.dreamball.avatar');
 		expect(b.look).toBeDefined();
 		expect(b.feel).toBeDefined();
 		expect(b.act).toBeUndefined();
@@ -12,7 +12,7 @@ describe('MockBackend', () => {
 
 	it('mockBall(agent) populates memory + KG + emotional register', () => {
 		const b = mockBall('agent');
-		expect(b.type).toBe('jelly.dreamball.agent');
+		expect(b.type).toBe('ball.dreamball.agent');
 		expect(b.memory).toBeDefined();
 		expect(b['knowledge-graph']).toBeDefined();
 		expect(b['emotional-register']).toBeDefined();
@@ -22,7 +22,7 @@ describe('MockBackend', () => {
 	it('mockBall(tool) has skill + applicable-to', () => {
 		const b = mockBall('tool');
 		expect(b.skill).toBeDefined();
-		expect(b['applicable-to']).toContain('jelly.dreamball.agent');
+		expect(b['applicable-to']).toContain('ball.dreamball.agent');
 	});
 
 	it('mockBall(relic) has sealed-payload-hash + unlock-guild', () => {
@@ -79,6 +79,6 @@ describe('MockBackend', () => {
 		const backend = new MockBackend();
 		const relic = mockBall('relic');
 		const inner = await backend.unlockRelic(relic, new Uint8Array(32));
-		expect(inner.type).toBe('jelly.dreamball.avatar');
+		expect(inner.type).toBe('ball.dreamball.avatar');
 	});
 });

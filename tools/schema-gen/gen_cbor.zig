@@ -1,0 +1,725 @@
+//! Story 1.3 — gen_cbor per-target generator.
+//!
+//! Emits two TypeScript files:
+//!   - src/lib/generated/cbor.ts         — CBOR wire-tag constants,
+//!                                          base58 helpers, and the
+//!                                          read-side decoder.
+//!   - src/lib/generated/cbor.test.ts    — vitest suite exercising
+//!                                          base58 + decode-side
+//!                                          canonical-integer rules.
+//!
+//! Per D-018: the CBOR ENCODE algorithm stays canonical in Zig and is
+//! exposed to the browser via the `encode_cbor` WASM primitive (Story
+//! 1.5 wires the call sites). The legacy generator's static body
+//! ships a TS-side READ-only decoder for incoming `.ball` bytes —
+//! that's what this generator continues to emit during the D-030
+//! Option A shadow phase. There is NO TS re-implementation of CBOR
+//! ENCODE here.
+//!
+//! Per NFR8 / Story 1.3 AC7: the decoder does NOT call Valibot
+//! (`Valibot.parse` / `safeParse`); validation runs at publish
+//! boundaries via `src/lib/parse.ts`.
+//!
+//! The body strings below are the canonical emission, byte-equivalent
+//! to the legacy static-text generator (deleted in Story 1.5).
+
+const std = @import("std");
+const main_mod = @import("main.zig");
+
+const OUT_PATH = "src/lib/generated/cbor.ts";
+const OUT_TEST_PATH = "src/lib/generated/cbor.test.ts";
+
+pub fn generate(ctx: *const main_mod.GeneratorCtx) !void {
+    try ctx.writeOutput(OUT_PATH, BODY, .ts);
+    try ctx.writeOutput(OUT_TEST_PATH, TEST_BODY, .ts);
+}
+
+const BODY =
+    \\// Minimal dCBOR decoder for the read-side Browser/Bun path.
+    \\// Matches the subset the canonical Zig encoder in src/envelope.zig
+    \\// emits: tags 200 (envelope) / 201 (leaf) / 1 (epoch time),
+    \\// canonical map-key ordering, smallest-int form, text/bytes/array/
+    \\// map/uint/f64. Floats only appear inside ball.omnispherical-grid /
+    \\// ball.memory / ball.emotional-register envelopes — see
+    \\// docs/PROTOCOL.md §12.2.
+    \\//
+    \\// Per D-018 the ENCODE side is the canonical Zig algorithm exposed
+    \\// to the browser via the `encode_cbor` WASM primitive (Story 1.5);
+    \\// this file ships the read-side decoder for incoming `.ball`
+    \\// bytes only.
+    \\//
+    \\// Per NFR8 / Story 1.3 AC7: this decoder does NOT call Valibot.
+    \\// Validation runs at publish boundaries via `src/lib/parse.ts`.
+    \\
+    \\export const TAG_EPOCH = 1;
+    \\export const TAG_ENVELOPE = 200;
+    \\export const TAG_LEAF = 201;
+    \\
+    \\export class CborReader {
+    \\  private cursor = 0;
+    \\  constructor(private readonly bytes: Uint8Array) {}
+    \\
+    \\  atEnd(): boolean {
+    \\    return this.cursor >= this.bytes.length;
+    \\  }
+    \\
+    \\  private takeByte(): number {
+    \\    if (this.cursor >= this.bytes.length) throw new Error('cbor: truncated');
+    \\    return this.bytes[this.cursor++];
+    \\  }
+    \\
+    \\  private readHead(): { major: number; arg: number | bigint; info: number } {
+    \\    const b = this.takeByte();
+    \\    const major = b >> 5;
+    \\    const info = b & 0x1f;
+    \\    if (info < 24) return { major, arg: info, info };
+    \\    if (info === 24) {
+    \\      const v = this.takeByte();
+    \\      if (major !== 7 && v < 24) throw new Error('cbor: non-canonical integer (info 24, value < 24)');
+    \\      return { major, arg: v, info };
+    \\    }
+    \\    if (info === 25) {
+    \\      const hi = this.takeByte();
+    \\      const lo = this.takeByte();
+    \\      const v = (hi << 8) | lo;
+    \\      if (major !== 7 && v < 256) throw new Error('cbor: non-canonical integer (info 25, value < 256)');
+    \\      return { major, arg: v, info };
+    \\    }
+    \\    if (info === 26) {
+    \\      let v = 0;
+    \\      for (let i = 0; i < 4; i++) v = (v << 8) | this.takeByte();
+    \\      v = v >>> 0;
+    \\      if (major !== 7 && v < 0x10000) throw new Error('cbor: non-canonical integer (info 26, value < 65536)');
+    \\      return { major, arg: v, info };
+    \\    }
+    \\    if (info === 27) {
+    \\      let v = 0n;
+    \\      for (let i = 0; i < 8; i++) v = (v << 8n) | BigInt(this.takeByte());
+    \\      if (major !== 7 && v < 0x100000000n) throw new Error('cbor: non-canonical integer (info 27, value < 2^32)');
+    \\      return { major, arg: v, info };
+    \\    }
+    \\    throw new Error(`cbor: unsupported info ${info}`);
+    \\  }
+    \\
+    \\  readAny(): unknown {
+    \\    const { major, arg, info } = this.readHead();
+    \\    switch (major) {
+    \\      case 0: return typeof arg === 'bigint' ? arg : arg;
+    \\      case 1: return typeof arg === 'bigint' ? -(arg + 1n) : -(arg + 1);
+    \\      case 2: return this.readByteString(Number(arg));
+    \\      case 3: return this.readTextString(Number(arg));
+    \\      case 4: {
+    \\        const len = Number(arg);
+    \\        const out: unknown[] = [];
+    \\        for (let i = 0; i < len; i++) out.push(this.readAny());
+    \\        return out;
+    \\      }
+    \\      case 5: {
+    \\        const len = Number(arg);
+    \\        const out: Record<string, unknown> = {};
+    \\        for (let i = 0; i < len; i++) {
+    \\          const k = this.readAny();
+    \\          const v = this.readAny();
+    \\          if (typeof k !== 'string') throw new Error('cbor: map key must be text');
+    \\          out[k] = v;
+    \\        }
+    \\        return out;
+    \\      }
+    \\      case 6: {
+    \\        const inner = this.readAny();
+    \\        return { __cborTag: Number(arg), value: inner };
+    \\      }
+    \\      case 7: {
+    \\        if (arg === 20) return false;
+    \\        if (arg === 21) return true;
+    \\        if (arg === 22) return null;
+    \\        if (arg === 23) return undefined;
+    \\        if (info === 25) {
+    \\          // float16 — decode IEEE 754 half-precision
+    \\          const bits = arg as number;
+    \\          const exp = (bits >> 10) & 0x1f;
+    \\          const frac = bits & 0x3ff;
+    \\          const sign = (bits >> 15) ? -1 : 1;
+    \\          if (exp === 0) return sign * Math.pow(2, -14) * (frac / 1024);
+    \\          if (exp === 31) return frac ? NaN : sign * Infinity;
+    \\          return sign * Math.pow(2, exp - 15) * (1 + frac / 1024);
+    \\        }
+    \\        if (info === 26) {
+    \\          // float32 — decode via DataView
+    \\          const buf = new ArrayBuffer(4);
+    \\          const view = new DataView(buf);
+    \\          view.setUint32(0, arg as number);
+    \\          return view.getFloat32(0);
+    \\        }
+    \\        if (typeof arg === 'bigint') {
+    \\          // float64 (info 27)
+    \\          const buf = new ArrayBuffer(8);
+    \\          const view = new DataView(buf);
+    \\          view.setBigUint64(0, arg);
+    \\          return view.getFloat64(0);
+    \\        }
+    \\        throw new Error(`cbor: unsupported simple ${arg}`);
+    \\      }
+    \\      default:
+    \\        throw new Error(`cbor: unsupported major ${major}`);
+    \\    }
+    \\  }
+    \\
+    \\  private readByteString(len: number): Uint8Array {
+    \\    if (this.cursor + len > this.bytes.length) throw new Error('cbor: truncated');
+    \\    const out = this.bytes.slice(this.cursor, this.cursor + len);
+    \\    this.cursor += len;
+    \\    return out;
+    \\  }
+    \\
+    \\  private readTextString(len: number): string {
+    \\    const slice = this.readByteString(len);
+    \\    return new TextDecoder().decode(slice);
+    \\  }
+    \\}
+    \\
+    \\/** Decode a .ball envelope's top-level structure into a
+    \\ *  human-readable JS object. Preserves CBOR tags via `__cborTag`
+    \\ *  wrappers so callers can introspect envelope/leaf boundaries.
+    \\ */
+    \\export function decodeEnvelope(bytes: Uint8Array): unknown {
+    \\  const reader = new CborReader(bytes);
+    \\  return reader.readAny();
+    \\}
+    \\
+    \\/** Convert bytes to the "b58:..." string used in the JSON export. */
+    \\export function toBase58Tagged(bytes: Uint8Array): `b58:${string}` {
+    \\  return `b58:${base58Encode(bytes)}`;
+    \\}
+    \\
+    \\/** Bitcoin base58 — sufficient for protocol-adjacent short strings. */
+    \\export function base58Encode(bytes: Uint8Array): string {
+    \\  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    \\  if (bytes.length === 0) return '';
+    \\  let leadingZeros = 0;
+    \\  while (leadingZeros < bytes.length && bytes[leadingZeros] === 0) leadingZeros++;
+    \\  let digits: number[] = [];
+    \\  for (const b of bytes) {
+    \\    let carry = b;
+    \\    for (let i = 0; i < digits.length; i++) {
+    \\      carry += digits[i] * 256;
+    \\      digits[i] = carry % 58;
+    \\      carry = Math.floor(carry / 58);
+    \\    }
+    \\    while (carry) {
+    \\      digits.push(carry % 58);
+    \\      carry = Math.floor(carry / 58);
+    \\    }
+    \\  }
+    \\  let out = '1'.repeat(leadingZeros);
+    \\  for (let i = digits.length - 1; i >= 0; i--) out += alphabet[digits[i]];
+    \\  return out;
+    \\}
+    \\
+    \\export function base58Decode(s: string): Uint8Array {
+    \\  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    \\  if (s.length === 0) return new Uint8Array();
+    \\  let leadingOnes = 0;
+    \\  while (leadingOnes < s.length && s[leadingOnes] === '1') leadingOnes++;
+    \\  const bytes: number[] = [];
+    \\  for (const ch of s) {
+    \\    let carry = alphabet.indexOf(ch);
+    \\    if (carry < 0) throw new Error(`base58: invalid char '${ch}'`);
+    \\    for (let i = 0; i < bytes.length; i++) {
+    \\      carry += bytes[i] * 58;
+    \\      bytes[i] = carry & 0xff;
+    \\      carry >>= 8;
+    \\    }
+    \\    while (carry) {
+    \\      bytes.push(carry & 0xff);
+    \\      carry >>= 8;
+    \\    }
+    \\  }
+    \\  const out = new Uint8Array(leadingOnes + bytes.length);
+    \\  for (let i = 0; i < bytes.length; i++) out[leadingOnes + i] = bytes[bytes.length - 1 - i];
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a Base58Tagged value ("b58:...") back to bytes. */
+    \\export function fromBase58Tagged(s: string): Uint8Array {
+    \\  if (!s.startsWith('b58:')) throw new Error(`expected b58: prefix, got '${s.slice(0, 8)}...'`);
+    \\  return base58Decode(s.slice(4));
+    \\}
+    \\
+    \\// ========================================================================
+    \\// §13 palace envelope typed decoders
+    \\// ========================================================================
+    \\
+    \\import type {
+    \\  Layout, Timeline, Action, Aqueduct,
+    \\  ElementTag, TrustObservation, Inscription, Mythos, Archiform, Object3d
+    \\} from './types.js';
+    \\
+    \\/** Walk the raw CBOR tree and extract the core map + attribute list. */
+    \\function extractEnvelopeParts(raw: unknown): {
+    \\  core: Record<string, unknown>;
+    \\  attrs: [string, unknown][];
+    \\} {
+    \\  const env = raw as { __cborTag: number; value: unknown };
+    \\  if (env.__cborTag !== 200) throw new Error('expected tag 200 envelope');
+    \\  const arr = env.value as unknown[];
+    \\  // First element is tag-201 leaf (core map), rest are [label, value] attribute pairs.
+    \\  const leafRaw = arr[0] as { __cborTag: number; value: unknown };
+    \\  if (leafRaw.__cborTag !== 201) throw new Error('expected tag 201 leaf');
+    \\  const core = leafRaw.value as Record<string, unknown>;
+    \\  const attrs: [string, unknown][] = [];
+    \\  for (let i = 1; i < arr.length; i++) {
+    \\    const pair = arr[i] as unknown[];
+    \\    attrs.push([pair[0] as string, pair[1]]);
+    \\  }
+    \\  return { core, attrs };
+    \\}
+    \\
+    \\function b58Bytes(raw: unknown): `b58:${string}` {
+    \\  return toBase58Tagged(raw as Uint8Array);
+    \\}
+    \\
+    \\/** Decode a ball.layout CBOR envelope. */
+    \\export function decodeLayout(bytes: Uint8Array): Layout {
+    \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  void core; // type/format-version checked implicitly
+    \\  const placements: Layout['placements'] = [];
+    \\  let note: string | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'placement') {
+    \\      const m = v as Record<string, unknown>;
+    \\      const pos = m['position'] as number[];
+    \\      const fac = m['facing'] as number[];
+    \\      placements.push({
+    \\        'child-fp': b58Bytes(m['child-fp']),
+    \\        position: [pos[0], pos[1], pos[2]],
+    \\        facing: [fac[0], fac[1], fac[2], fac[3]],
+    \\      });
+    \\    } else if (k === 'note') { note = v as string; }
+    \\  }
+    \\  return { type: 'ball.layout', 'format-version': 2, placements, note };
+    \\}
+    \\
+    \\/** Decode a ball.timeline CBOR envelope. */
+    \\export function decodeTimeline(bytes: Uint8Array): Timeline {
+    \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  const palaceFp = b58Bytes(core['palace-fp']);
+    \\  const headHashes: `b58:${string}`[] = [];
+    \\  let note: string | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'head-hashes') headHashes.push(b58Bytes(v));
+    \\    else if (k === 'note') note = v as string;
+    \\  }
+    \\  return { type: 'ball.timeline', 'format-version': 3, 'palace-fp': palaceFp, 'head-hashes': headHashes, note };
+    \\}
+    \\
+    \\/** Decode a ball.action CBOR envelope.
+    \\ *
+    \\ * Branches on the core map's `format-version` (D-037). Byte-equivalence
+    \\ * with `encodeActionV4` (src/envelope_v2.zig): in v4 the `kind`, `hlc`,
+    \\ * and `body` fields live in the CORE leaf map — NOT in the trailing
+    \\ * attribute pairs (only deps/nacks/signed/target-fp/timestamp are
+    \\ * attributes). `hlc` is a bare 2-element array of dCBOR uints `[l, c]`
+    \\ * with no tag; `l` (~1.7e12 ms epoch) read via readAny() may surface as
+    \\ * a bigint, so coerce both elements to number. `body` is a CBOR byte
+    \\ * string (CBOR-in-CBOR) → Base58-tagged on the way out. The v3 path
+    \\ * (closed `action-kind`, no hlc/body) is preserved for backward compat.
+    \\ */
+    \\export function decodeAction(bytes: Uint8Array): Action {
+    \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  // actor + parent-hashes are in the core map for both v3 and v4.
+    \\  const actor = b58Bytes(core['actor']);
+    \\  const parentHashRaw = core['parent-hashes'] as Uint8Array[];
+    \\  const parentHashes: `b58:${string}`[] = Array.isArray(parentHashRaw)
+    \\    ? parentHashRaw.map(b58Bytes)
+    \\    : [];
+    \\  const deps: `b58:${string}`[] = [];
+    \\  const nacks: `b58:${string}`[] = [];
+    \\  let targetFp: `b58:${string}` | undefined;
+    \\  let timestamp: number | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'target-fp') targetFp = b58Bytes(v);
+    \\    else if (k === 'timestamp') {
+    \\      const tagged = v as { __cborTag?: number; value?: unknown };
+    \\      timestamp = (tagged.__cborTag === 1 ? tagged.value : v) as number;
+    \\    }
+    \\    else if (k === 'deps') deps.push(b58Bytes(v));
+    \\    else if (k === 'nacks') nacks.push(b58Bytes(v));
+    \\  }
+    \\
+    \\  const formatVersion = Number(core['format-version']);
+    \\  if (formatVersion === 4) {
+    \\    // v4 — open `kind`, mandatory `hlc`, optional opaque `body` (all core map).
+    \\    const kind = core['kind'] as string;
+    \\    const hlcRaw = core['hlc'] as (number | bigint)[];
+    \\    const hlc: [number, number] = [Number(hlcRaw[0]), Number(hlcRaw[1])];
+    \\    const out: Action = {
+    \\      type: 'ball.action', 'format-version': 4,
+    \\      kind, actor, 'parent-hashes': parentHashes, hlc
+    \\    };
+    \\    if (core['body'] !== undefined) out.body = b58Bytes(core['body']);
+    \\    if (targetFp !== undefined) out['target-fp'] = targetFp;
+    \\    if (timestamp !== undefined) out.timestamp = timestamp;
+    \\    if (deps.length > 0) out.deps = deps;
+    \\    if (nacks.length > 0) out.nacks = nacks;
+    \\    return out;
+    \\  }
+    \\
+    \\  // v3 backward-compat — closed `action-kind` palette, no hlc/body. The v4
+    \\  // Action type no longer carries `action-kind`, so build the legacy shape
+    \\  // as a record and cast through unknown.
+    \\  const actionKind = core['action-kind'] as string;
+    \\  const out = {
+    \\    type: 'ball.action', 'format-version': 3,
+    \\    'action-kind': actionKind, actor, 'parent-hashes': parentHashes
+    \\  } as unknown as Action;
+    \\  if (targetFp !== undefined) out['target-fp'] = targetFp;
+    \\  if (timestamp !== undefined) out.timestamp = timestamp;
+    \\  if (deps.length > 0) out.deps = deps;
+    \\  if (nacks.length > 0) out.nacks = nacks;
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.aqueduct CBOR envelope. */
+    \\export function decodeAqueduct(bytes: Uint8Array): Aqueduct {
+    \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  // from, to, kind are in the core map; all numeric fields are attributes.
+    \\  const from = b58Bytes(core['from']);
+    \\  const to = b58Bytes(core['to']);
+    \\  const kind = core['kind'] as string;
+    \\  let capacity: number | undefined;
+    \\  let strength: number | undefined;
+    \\  let resistance: number | undefined;
+    \\  let capacitance: number | undefined;
+    \\  let conductance: number | undefined;
+    \\  let phase: Aqueduct['phase'];
+    \\  let lastTraversed: number | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'capacity') capacity = v as number;
+    \\    else if (k === 'strength') strength = v as number;
+    \\    else if (k === 'resistance') resistance = v as number;
+    \\    else if (k === 'capacitance') capacitance = v as number;
+    \\    else if (k === 'conductance') conductance = v as number;
+    \\    else if (k === 'phase') phase = v as Aqueduct['phase'];
+    \\    else if (k === 'last-traversed') {
+    \\      // epoch-time tag wrapper — extract inner value
+    \\      const tagged = v as { __cborTag?: number; value?: unknown };
+    \\      lastTraversed = (tagged.__cborTag === 1 ? tagged.value : v) as number;
+    \\    }
+    \\  }
+    \\  if (capacity === undefined || strength === undefined || resistance === undefined || capacitance === undefined) {
+    \\    throw new Error('decodeAqueduct: missing required numeric attribute');
+    \\  }
+    \\  const out: Aqueduct = {
+    \\    type: 'ball.aqueduct', 'format-version': 2,
+    \\    from, to, kind, capacity, strength, resistance, capacitance
+    \\  };
+    \\  if (conductance !== undefined) out.conductance = conductance;
+    \\  if (phase !== undefined) out.phase = phase;
+    \\  if (lastTraversed !== undefined) out['last-traversed'] = lastTraversed;
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.element-tag CBOR envelope. */
+    \\export function decodeElementTag(bytes: Uint8Array): ElementTag {
+    \\  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  let element: string | undefined;
+    \\  let phase: string | undefined;
+    \\  let note: string | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'element') element = v as string;
+    \\    else if (k === 'phase') phase = v as string;
+    \\    else if (k === 'note') note = v as string;
+    \\  }
+    \\  if (element === undefined) throw new Error('decodeElementTag: missing element attribute');
+    \\  const out: ElementTag = { type: 'ball.element-tag', 'format-version': 2, element };
+    \\  if (phase !== undefined) out.phase = phase;
+    \\  if (note !== undefined) out.note = note;
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.trust-observation CBOR envelope. */
+    \\export function decodeTrustObservation(bytes: Uint8Array): TrustObservation {
+    \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  const observer = b58Bytes(core['observer']);
+    \\  const about = b58Bytes(core['about']);
+    \\  const axes: TrustObservation['axes'] = [];
+    \\  const signatures: TrustObservation['signatures'] = [];
+    \\  let observedAt: number | undefined;
+    \\  let context: string | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'axis') {
+    \\      const m = v as Record<string, unknown>;
+    \\      axes!.push({
+    \\        name: m['name'] as string,
+    \\        value: m['value'] as number,
+    \\        range: m['range'] as [number, number],
+    \\      });
+    \\    } else if (k === 'observed-at') { observedAt = v as number; }
+    \\    else if (k === 'context') { context = v as string; }
+    \\    else if (k === 'signed') {
+    \\      const pair = v as unknown[];
+    \\      signatures!.push({ alg: pair[0] as 'ed25519' | 'ml-dsa-87', value: b58Bytes(pair[1]) });
+    \\    }
+    \\  }
+    \\  const out: TrustObservation = { type: 'ball.trust-observation', 'format-version': 2, observer, about };
+    \\  if (axes.length > 0) out.axes = axes;
+    \\  if (observedAt !== undefined) out['observed-at'] = observedAt;
+    \\  if (context !== undefined) out.context = context;
+    \\  if (signatures!.length > 0) out.signatures = signatures;
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.inscription CBOR envelope. */
+    \\export function decodeInscription(bytes: Uint8Array): Inscription {
+    \\  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  let surface: string | undefined;
+    \\  let placement = 'auto';
+    \\  let note: string | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'surface') surface = v as string;
+    \\    else if (k === 'placement') placement = v as string;
+    \\    else if (k === 'note') note = v as string;
+    \\  }
+    \\  if (surface === undefined) throw new Error('decodeInscription: missing surface attribute');
+    \\  const out: Inscription = { type: 'ball.inscription', 'format-version': 2, surface, placement };
+    \\  if (note !== undefined) out.note = note;
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.mythos CBOR envelope. */
+    \\export function decodeMythos(bytes: Uint8Array): Mythos {
+    \\  const { core, attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  const isGenesis = core['is-genesis'] as boolean;
+    \\  // predecessor lives in the CORE map alongside is-genesis (envelope_v2.zig
+    \\  // writeMap(core_len) block). Read it there first; fall back to an
+    \\  // attribute pair for tolerance of older/foreign encoders — see
+    \\  // Dreamball-cv9.
+    \\  let predecessor: `b58:${string}` | undefined =
+    \\    core['predecessor'] !== undefined ? b58Bytes(core['predecessor']) : undefined;
+    \\  let about: `b58:${string}` | undefined;
+    \\  let form: string | undefined;
+    \\  let body: string | undefined;
+    \\  let trueName: string | undefined;
+    \\  let discoveredIn: `b58:${string}` | undefined;
+    \\  const synthesizes: `b58:${string}`[] = [];
+    \\  const inspiredBy: `b58:${string}`[] = [];
+    \\  let author: `b58:${string}` | undefined;
+    \\  let authoredAt: number | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'predecessor') predecessor = predecessor ?? b58Bytes(v);
+    \\    else if (k === 'about') about = b58Bytes(v);
+    \\    else if (k === 'form') form = v as string;
+    \\    else if (k === 'body') body = v as string;
+    \\    else if (k === 'true-name') trueName = v as string;
+    \\    else if (k === 'discovered-in') discoveredIn = b58Bytes(v);
+    \\    else if (k === 'synthesizes') synthesizes.push(b58Bytes(v));
+    \\    else if (k === 'inspired-by') inspiredBy.push(b58Bytes(v));
+    \\    else if (k === 'author') author = b58Bytes(v);
+    \\    else if (k === 'authored-at') {
+    \\      const tagged = v as { __cborTag?: number; value?: unknown };
+    \\      authoredAt = (tagged.__cborTag === 1 ? tagged.value : v) as number;
+    \\    }
+    \\  }
+    \\  const out: Mythos = { type: 'ball.mythos', 'format-version': 2, 'is-genesis': isGenesis };
+    \\  if (predecessor !== undefined) out.predecessor = predecessor;
+    \\  if (about !== undefined) out.about = about;
+    \\  if (form !== undefined) out.form = form;
+    \\  if (body !== undefined) out.body = body;
+    \\  if (trueName !== undefined) out['true-name'] = trueName;
+    \\  if (discoveredIn !== undefined) out['discovered-in'] = discoveredIn;
+    \\  if (synthesizes.length > 0) out.synthesizes = synthesizes;
+    \\  if (inspiredBy.length > 0) out['inspired-by'] = inspiredBy;
+    \\  if (author !== undefined) out.author = author;
+    \\  if (authoredAt !== undefined) out['authored-at'] = authoredAt;
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.archiform CBOR envelope. */
+    \\export function decodeArchiform(bytes: Uint8Array): Archiform {
+    \\  const { attrs } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  let form: string | undefined;
+    \\  let tradition: string | undefined;
+    \\  let parentForm: string | undefined;
+    \\  let note: string | undefined;
+    \\  for (const [k, v] of attrs) {
+    \\    if (k === 'form') form = v as string;
+    \\    else if (k === 'tradition') tradition = v as string;
+    \\    else if (k === 'parent-form') parentForm = v as string;
+    \\    else if (k === 'note') note = v as string;
+    \\  }
+    \\  if (form === undefined) throw new Error('decodeArchiform: missing form attribute');
+    \\  const out: Archiform = { type: 'ball.archiform', 'format-version': 2, form };
+    \\  if (tradition !== undefined) out.tradition = tradition;
+    \\  if (parentForm !== undefined) out['parent-form'] = parentForm;
+    \\  if (note !== undefined) out.note = note;
+    \\  return out;
+    \\}
+    \\
+    \\/** Decode a ball.object3d CBOR envelope (sprint-003 D1).
+    \\ *
+    \\ * Core-map-only: mesh/position/rotation/scale all live in the tag-201 leaf
+    \\ * core map (no attribute pairs), mirroring `encodeObject3d`
+    \\ * (src/envelope_v2.zig). position/scale are 3-element float arrays and
+    \\ * rotation a 4-element quaternion array, read via CborReader.readAny(). */
+    \\export function decodeObject3d(bytes: Uint8Array): Object3d {
+    \\  const { core } = extractEnvelopeParts(decodeEnvelope(bytes));
+    \\  const mesh = core['mesh'] as string;
+    \\  const pos = core['position'] as number[];
+    \\  const rot = core['rotation'] as number[];
+    \\  const scl = core['scale'] as number[];
+    \\  return {
+    \\    type: 'ball.object3d', 'format-version': 2,
+    \\    mesh,
+    \\    position: [pos[0], pos[1], pos[2]],
+    \\    rotation: [rot[0], rot[1], rot[2], rot[3]],
+    \\    scale: [scl[0], scl[1], scl[2]],
+    \\  };
+    \\}
+    \\
+;
+
+// ============================================================================
+// cbor.test.ts — tests for the read-side decoder + base58 helpers.
+// Per AC7, no `Valibot.parse` / `safeParse` invocations live here.
+// ============================================================================
+
+const TEST_BODY =
+    \\import { describe, it, expect } from 'vitest';
+    \\import fc from 'fast-check';
+    \\import { CborReader, base58Encode, base58Decode, decodeEnvelope } from './cbor.js';
+    \\
+    \\describe('base58', () => {
+    \\  it('round-trips "Hello World!" to the canonical value', () => {
+    \\    const enc = base58Encode(new TextEncoder().encode('Hello World!'));
+    \\    expect(enc).toBe('2NEpo7TZRRrLZSi2U');
+    \\  });
+    \\
+    \\  it('preserves leading zero bytes as 1s', () => {
+    \\    const bytes = new Uint8Array([0, 0, 0, 0xab]);
+    \\    const enc = base58Encode(bytes);
+    \\    expect(enc.startsWith('1110')).toBe(false);
+    \\    expect(enc.startsWith('111')).toBe(true);
+    \\    const dec = base58Decode(enc);
+    \\    expect(Array.from(dec)).toEqual([0, 0, 0, 0xab]);
+    \\  });
+    \\
+    \\  it('round-trips a 32-byte buffer', () => {
+    \\    const input = new Uint8Array(32);
+    \\    for (let i = 0; i < 32; i++) input[i] = i;
+    \\    const enc = base58Encode(input);
+    \\    const dec = base58Decode(enc);
+    \\    expect(Array.from(dec)).toEqual(Array.from(input));
+    \\  });
+    \\
+    \\  it('throws on invalid characters', () => {
+    \\    expect(() => base58Decode('abc0')).toThrow();
+    \\  });
+    \\});
+    \\
+    \\describe('decodeEnvelope', () => {
+    \\  it('reads a minimal tag-200 envelope wrapping a leaf map', () => {
+    \\    // tag 200 → tag 201 → map { "type": "ball.test" }
+    \\    // CBOR bytes: 0xD8 0xC8 | 0xD8 0xC9 | 0xA1 | text("type") | text("ball.test")
+    \\    const bytes = new Uint8Array([
+    \\      0xd8, 0xc8,
+    \\      0xd8, 0xc9,
+    \\      0xa1,
+    \\      0x64, 0x74, 0x79, 0x70, 0x65,
+    \\      0x69, 0x62, 0x61, 0x6c, 0x6c, 0x2e, 0x74, 0x65, 0x73, 0x74
+    \\    ]);
+    \\    const decoded = decodeEnvelope(bytes) as { __cborTag: number; value: unknown };
+    \\    expect(decoded.__cborTag).toBe(200);
+    \\    const inner = (decoded.value as { __cborTag: number; value: unknown });
+    \\    expect(inner.__cborTag).toBe(201);
+    \\    const leaf = inner.value as Record<string, unknown>;
+    \\    expect(leaf.type).toBe('ball.test');
+    \\  });
+    \\});
+    \\
+    \\describe('HIGH-1: CborReader rejects non-canonical (padded) integers', () => {
+    \\  it('rejects info-24 encoding for value < 24 (e.g. 0x18 0x05 for 5)', () => {
+    \\    // Canonical encoding of uint 5 is 0x05 (1 byte).
+    \\    // 0x18 0x05 is the padded 2-byte form — must be rejected.
+    \\    const padded = new Uint8Array([0x18, 0x05]);
+    \\    const reader = new CborReader(padded);
+    \\    expect(() => reader.readAny()).toThrow('non-canonical');
+    \\  });
+    \\
+    \\  it('rejects info-25 encoding for value < 256 (e.g. 0x19 0x00 0xFF for 255)', () => {
+    \\    // Canonical: 0x18 0xFF. Padded: 0x19 0x00 0xFF.
+    \\    const padded = new Uint8Array([0x19, 0x00, 0xff]);
+    \\    const reader = new CborReader(padded);
+    \\    expect(() => reader.readAny()).toThrow('non-canonical');
+    \\  });
+    \\
+    \\  it('rejects info-26 encoding for value < 65536', () => {
+    \\    // Canonical: 0x19 0x01 0x00 (256). Padded: 0x1A 0x00 0x00 0x01 0x00.
+    \\    const padded = new Uint8Array([0x1a, 0x00, 0x00, 0x01, 0x00]);
+    \\    const reader = new CborReader(padded);
+    \\    expect(() => reader.readAny()).toThrow('non-canonical');
+    \\  });
+    \\
+    \\  it('accepts smallest-form uint at each boundary', () => {
+    \\    // 23 → inline (0x17)
+    \\    expect(new CborReader(new Uint8Array([0x17])).readAny()).toBe(23);
+    \\    // 24 → info-24 (0x18 0x18)
+    \\    expect(new CborReader(new Uint8Array([0x18, 0x18])).readAny()).toBe(24);
+    \\    // 256 → info-25 (0x19 0x01 0x00)
+    \\    expect(new CborReader(new Uint8Array([0x19, 0x01, 0x00])).readAny()).toBe(256);
+    \\  });
+    \\});
+    \\
+    \\// ── LOW-5: base58 round-trip property test (Sprint-1 code review) ────────────
+    \\
+    \\describe('LOW-5: base58 round-trip property test', () => {
+    \\  it('decode(encode(x)) === x for 1000 random byte buffers (length 0..256)', () => {
+    \\    fc.assert(
+    \\      fc.property(
+    \\        fc.uint8Array({ minLength: 0, maxLength: 256 }),
+    \\        (bytes) => {
+    \\          const encoded = base58Encode(bytes);
+    \\          const decoded = base58Decode(encoded);
+    \\          expect(Array.from(decoded)).toEqual(Array.from(bytes));
+    \\        }
+    \\      ),
+    \\      { numRuns: 1000 }
+    \\    );
+    \\  });
+    \\
+    \\  it('empty input round-trips correctly', () => {
+    \\    const enc = base58Encode(new Uint8Array(0));
+    \\    expect(enc).toBe('');
+    \\    const dec = base58Decode('');
+    \\    expect(dec.length).toBe(0);
+    \\  });
+    \\
+    \\  it('leading-zero bytes round-trip correctly', () => {
+    \\    // base58 has special leading-zero handling: each leading 0x00 byte
+    \\    // maps to a '1' character.
+    \\    const cases = [
+    \\      new Uint8Array([0]),
+    \\      new Uint8Array([0, 0]),
+    \\      new Uint8Array([0, 0, 0]),
+    \\      new Uint8Array([0, 0, 0, 1]),
+    \\      new Uint8Array([0, 0, 0, 0, 0xff]),
+    \\    ];
+    \\    for (const input of cases) {
+    \\      const enc = base58Encode(input);
+    \\      const dec = base58Decode(enc);
+    \\      expect(Array.from(dec)).toEqual(Array.from(input));
+    \\    }
+    \\  });
+    \\
+    \\  it('decode of non-alphabet characters throws', () => {
+    \\    // '0', 'O', 'I', 'l' are NOT in the Bitcoin base58 alphabet.
+    \\    expect(() => base58Decode('0')).toThrow();
+    \\    expect(() => base58Decode('O')).toThrow();
+    \\    expect(() => base58Decode('I')).toThrow();
+    \\    expect(() => base58Decode('l')).toThrow();
+    \\    expect(() => base58Decode('abc!def')).toThrow();
+    \\    expect(() => base58Decode('hello world')).toThrow(); // space
+    \\  });
+    \\});
+    \\
+;

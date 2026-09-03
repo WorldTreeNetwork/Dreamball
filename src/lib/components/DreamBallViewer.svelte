@@ -14,7 +14,7 @@
 -->
 <script lang="ts">
 	import type { DreamBall, Fingerprint } from '../generated/types.js';
-	import type { JellyBackend } from '../backend/JellyBackend.js';
+	import type { DreamballBackend } from '../backend/DreamballBackend.js';
 	import type { LensName } from '../lenses/lens-types.js';
 	import type { StoreAPI } from '../../memory-palace/store-types.js';
 	import ThumbnailLens from '../lenses/ThumbnailLens.svelte';
@@ -28,6 +28,7 @@
 	import PalaceLens from '../lenses/palace/PalaceLens.svelte';
 	import RoomLens from '../lenses/room/RoomLens.svelte';
 	import InscriptionLens from '../lenses/inscription/InscriptionLens.svelte';
+	import ShellLens from '../lenses/ShellLens.svelte';
 	import { isSplatAsset } from '../splat/media-types.js';
 	import { untrack } from 'svelte';
 
@@ -52,7 +53,7 @@
 		/** Observer's identity, for guild-policy slot filtering. Null means
 		 *  anonymous observer (public slots only). */
 		viewer?: Fingerprint | null;
-		backend?: JellyBackend | null;
+		backend?: DreamballBackend | null;
 		/** Hint to prefer WebGPU where available (not yet wired). */
 		preferGpu?: boolean;
 		/**
@@ -248,6 +249,8 @@
 			fallback={inscriptionMeta?.fallback ?? []}
 			{store}
 		/>
+	{:else if effectiveLens === 'shell'}
+		<ShellLens ball={filteredBall} />
 	{:else}
 		<FlatLens ball={filteredBall} />
 	{/if}

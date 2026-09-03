@@ -130,11 +130,11 @@ describe('AC3 — 500-inscription perf budget (p50 <200ms)', () => {
   const SKIP = process.env['SKIP_PERF'] === '1';
 
   it.skipIf(SKIP)(
-    'p50 kNN round-trip <200ms on 500-corpus ServerStore (JELLY_EMBED_MOCK=1)',
+    'p50 kNN round-trip <200ms on 500-corpus ServerStore (DREAMBALL_EMBED_MOCK=1)',
     async () => {
       // Set mock mode so embedFor returns instantly without network.
-      const origMock = process.env['JELLY_EMBED_MOCK'];
-      process.env['JELLY_EMBED_MOCK'] = '1';
+      const origMock = process.env['DREAMBALL_EMBED_MOCK'];
+      process.env['DREAMBALL_EMBED_MOCK'] = '1';
 
       const store = new ServerStore(':memory:');
       await store.open();
@@ -176,9 +176,9 @@ describe('AC3 — 500-inscription perf budget (p50 <200ms)', () => {
       await store.close();
 
       if (origMock !== undefined) {
-        process.env['JELLY_EMBED_MOCK'] = origMock;
+        process.env['DREAMBALL_EMBED_MOCK'] = origMock;
       } else {
-        delete process.env['JELLY_EMBED_MOCK'];
+        delete process.env['DREAMBALL_EMBED_MOCK'];
       }
 
       latencies.sort((a, b) => a - b);

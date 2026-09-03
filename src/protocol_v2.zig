@@ -11,7 +11,7 @@ const protocol = @import("protocol.zig");
 const Fingerprint = @import("fingerprint.zig").Fingerprint;
 
 // ============================================================================
-// §12.2 jelly.omnispherical-grid
+// §12.2 ball.omnispherical-grid
 // ============================================================================
 
 pub const Vec3 = struct { x: f64, y: f64, z: f64 };
@@ -33,136 +33,31 @@ pub const OmnisphericalGrid = struct {
 };
 
 // ============================================================================
-// §12.3 jelly.memory
+// §12.3 ball.memory
 // ============================================================================
 
-pub const MemoryConnectionKind = enum {
-    semantic,
-    emotional,
-    temporal,
-    other,
-
-    pub fn toWireString(self: MemoryConnectionKind) []const u8 {
-        return switch (self) {
-            .semantic => "semantic",
-            .emotional => "emotional",
-            .temporal => "temporal",
-            .other => "other",
-        };
-    }
-};
-
-pub const MemoryNode = struct {
-    id: u64,
-    /// Inline content (text) OR an asset fingerprint reference — one must be set.
-    content: ?[]const u8 = null,
-    /// Lookups: name → sort-key value. Supports named indices like an
-    /// "emotional" lookup that sorts memory by emotional salience.
-    lookups: []const LookupEntry = &.{},
-    created: ?i64 = null,
-    last_recalled: ?i64 = null,
-
-    pub const LookupEntry = struct {
-        name: []const u8,
-        value: f64,
-    };
-};
-
-pub const MemoryConnection = struct {
-    from: u64,
-    to: u64,
-    kind: MemoryConnectionKind,
-    strength: f64 = 1.0,
-    label: ?[]const u8 = null,
-};
-
-pub const Memory = struct {
-    nodes: []const MemoryNode = &.{},
-    connections: []const MemoryConnection = &.{},
-    last_updated: ?i64 = null,
-};
+// The memory slot is now a first-class DreamBall slot living in protocol.zig
+// beside look/feel/act (see docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md).
+// Dreamball-h7s.1 removed the `v2.Memory` / `v2.MemoryNode` / etc. re-export
+// shims below (no callers referenced them outside this file) — use
+// `protocol.Memory` / `protocol.MemoryNode` / etc. directly.
 
 // ============================================================================
-// §12.4 jelly.knowledge-graph
+// §12.4 ball.knowledge-graph / §12.5 ball.emotional-register /
+// §12.6 ball.interaction-set / §12.7 ball.guild-policy
 // ============================================================================
 
-pub const Triple = struct {
-    from: []const u8,
-    label: []const u8,
-    /// Either a text value or a fingerprint reference to another DreamBall.
-    to: []const u8,
-};
-
-pub const KnowledgeGraph = struct {
-    triples: []const Triple = &.{},
-    source: ?[]const u8 = null,
-};
+// These four slots are now first-class DreamBall slots living in protocol.zig
+// beside look/feel/act/memory (see
+// docs/decisions/2026-06-25-zig-canonical-supersedes-json-schema.md, Zig is
+// canonical). Dreamball-h7s.1 removed the `v2.KnowledgeGraph` / `v2.Triple` /
+// `v2.EmotionalAxis` / `v2.Interaction` / etc. re-export shims (no external
+// callers) — use `protocol.KnowledgeGraph` / `protocol.Triple` / etc. directly.
+// `GuildPolicy` is kept: `envelope_v2.zig:writePolicy` still takes `v2.GuildPolicy`.
+pub const GuildPolicy = protocol.GuildPolicy;
 
 // ============================================================================
-// §12.5 jelly.emotional-register
-// ============================================================================
-
-pub const EmotionalAxis = struct {
-    name: []const u8,
-    value: f64,
-    min: f64 = 0.0,
-    max: f64 = 1.0,
-};
-
-pub const EmotionalRegister = struct {
-    axes: []const EmotionalAxis = &.{},
-    observed_at: ?i64 = null,
-};
-
-// ============================================================================
-// §12.6 jelly.interaction-set
-// ============================================================================
-
-pub const InteractionKind = enum { speak, listen, act, receive };
-
-pub const Interaction = struct {
-    turn: u32,
-    actor: Fingerprint,
-    kind: InteractionKind,
-    content: ?[]const u8 = null,
-    timestamp: ?i64 = null,
-    outcome: ?[]const u8 = null,
-
-    pub fn kindString(self: Interaction) []const u8 {
-        return switch (self.kind) {
-            .speak => "speak",
-            .listen => "listen",
-            .act => "act",
-            .receive => "receive",
-        };
-    }
-};
-
-pub const InteractionSet = struct {
-    /// Content-addressable id for the set (16 random bytes at creation time).
-    set_id: [16]u8,
-    interactions: []const Interaction = &.{},
-    created: ?i64 = null,
-};
-
-// ============================================================================
-// §12.7 jelly.guild-policy
-// ============================================================================
-
-pub const GuildPolicy = struct {
-    public: []const []const u8 = &.{ "look", "thumbnail" },
-    guild_only: []const []const u8 = &.{
-        "memory",
-        "knowledge-graph",
-        "emotional-register",
-        "interaction-set",
-    },
-    admin_only: []const []const u8 = &.{"secret"},
-    note: ?[]const u8 = null,
-};
-
-// ============================================================================
-// §12.8 jelly.secret-ref
+// §12.8 ball.secret-ref
 // ============================================================================
 
 pub const SecretRef = struct {
@@ -175,7 +70,7 @@ pub const SecretRef = struct {
 };
 
 // ============================================================================
-// §12.9 jelly.transmission
+// §12.9 ball.transmission
 // ============================================================================
 
 pub const Transmission = struct {
@@ -228,24 +123,17 @@ pub const Relic = struct {
 };
 
 // ============================================================================
-// §13.1 field-kind attribute on jelly.dreamball.field
+// §13.1 field-kind attribute on ball.dreamball.field
 // ============================================================================
 
-/// Optional `field-kind` attribute on a `jelly.dreamball.field` envelope.
-/// Attribute-level addition — does NOT bump `format-version`.
-/// Unknown values MUST be preserved verbatim (open-enum rule, §13.1).
-pub const FieldKind = struct {
-    /// Wire name: "field-kind".
-    /// Values: "palace" | "room" | "ambient" | <open-enum>
-    value: []const u8,
-
-    pub const palace = "palace";
-    pub const room = "room";
-    pub const ambient = "ambient";
-};
+// Dreamball-h7s.1: the `FieldKind` struct (wire attribute `field-kind` on
+// `ball.dreamball.field`, §13.1) was removed — it wrapped a single
+// `[]const u8` and had zero callers outside its own tests; `DreamBall.field_kind`
+// is already `?[]const u8` at protocol.zig:334. The wire attribute itself is
+// untouched; only the redundant Zig wrapper type is gone.
 
 // ============================================================================
-// §13.2 jelly.layout
+// §13.2 ball.layout
 // ============================================================================
 
 /// A quaternion rotation.
@@ -268,49 +156,32 @@ pub const Placement = struct {
 
 pub const Layout = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.layout"`.
-    pub const type_string: []const u8 = "jelly.layout";
+    /// Wire type string: `"ball.layout"`.
+    pub const type_string: []const u8 = "ball.layout";
 
     placements: []const Placement = &.{},
     note: ?[]const u8 = null,
 };
 
 // ============================================================================
-// §13.3 jelly.timeline + jelly.action
+// §13.3 ball.timeline + ball.action
 // ============================================================================
 
-/// RC2 — ActionKind enum with all 9 known kinds.
-/// Wire representation is the kebab-case string in comments.
-pub const ActionKind = enum {
-    palace_minted, // "palace-minted"
-    room_added, // "room-added"
-    avatar_inscribed, // "avatar-inscribed"
-    aqueduct_created, // "aqueduct-created"
-    move, // "move"
-    true_naming, // "true-naming"
-    inscription_updated, // "inscription-updated"
-    inscription_orphaned, // "inscription-orphaned"
-    inscription_pending_embedding, // "inscription-pending-embedding"
-
-    pub fn toWireString(self: ActionKind) []const u8 {
-        return switch (self) {
-            .palace_minted => "palace-minted",
-            .room_added => "room-added",
-            .avatar_inscribed => "avatar-inscribed",
-            .aqueduct_created => "aqueduct-created",
-            .move => "move",
-            .true_naming => "true-naming",
-            .inscription_updated => "inscription-updated",
-            .inscription_orphaned => "inscription-orphaned",
-            .inscription_pending_embedding => "inscription-pending-embedding",
-        };
-    }
-};
+// `ActionKind` (the closed 9-value v3 palace-profile enum) was deleted here
+// (Dreamball-y4t.15, 2026-08-07): format_version 3 `ball.action` — the closed
+// palace profile — was dropped from the core substrate. The Memory Palace is
+// being extracted to its own repository (Dreamball-etk) and v3 is the
+// palace's closed profile, not a substrate concern; v4 (open `kind` string,
+// D-037/D-038) is the only format `ball.action` supports here now. The
+// palace CLI verbs that still author v3 envelopes (`src/cli/internal/`) keep
+// a verbatim copy of the wire strings + encoder in
+// `src/cli/internal/palace_action_v3.zig` until that extraction lands. See
+// docs/PROTOCOL.md §16.7.
 
 pub const Timeline = struct {
     pub const format_version: u32 = 3;
-    /// Wire type string: `"jelly.timeline"`.
-    pub const type_string: []const u8 = "jelly.timeline";
+    /// Wire type string: `"ball.timeline"`.
+    pub const type_string: []const u8 = "ball.timeline";
 
     /// 1:1 identity anchor — which palace this timeline belongs to.
     palace_fp: [32]u8,
@@ -321,19 +192,30 @@ pub const Timeline = struct {
     note: ?[]const u8 = null,
 };
 
-/// A `jelly.action-ref` is a 32-byte Blake3 of a canonical `jelly.action` envelope.
+/// A `ball.action-ref` is a 32-byte Blake3 of a canonical `ball.action` envelope.
 pub const ActionRef = [32]u8;
 
 pub const Action = struct {
-    pub const format_version: u32 = 3;
-    /// Wire type string: `"jelly.action"`.
-    pub const type_string: []const u8 = "jelly.action";
+    pub const format_version: u32 = 4;
+    /// Wire type string: `"ball.action"`.
+    pub const type_string: []const u8 = "ball.action";
 
-    action_kind: ActionKind,
+    /// OPEN kind string (D-037/D-038). v3's closed `action_kind` enum
+    /// (`ActionKind`) has been removed from the core (Dreamball-y4t.15) along
+    /// with v3 support itself; palace authors now supply a
+    /// `"palace.*"`-namespaced verb (see docs/PROTOCOL.md §18.3), other
+    /// consumers their own dot-namespaced verb. Wire key is `"kind"`.
+    kind: []const u8,
     /// ACKS — previous head(s) this action acknowledges; one for linear, multiple for merges.
     parent_hashes: [][32]u8,
     /// Fingerprint of the signer.
     actor: [32]u8,
+    /// Opaque, consumer-defined CBOR payload carried as a CBOR byte string
+    /// (CBOR-in-CBOR, D-040/D-043). The protocol does not interpret its schema.
+    body: ?[]const u8 = null,
+    /// Hybrid Logical Clock `[l, c]` (D-039): index 0 = `l` (ms wall-clock),
+    /// index 1 = `c` (intra-`l` counter). Structural in v4 envelopes.
+    hlc: [2]u64,
     /// Optional target DreamBall fingerprint.
     target_fp: ?[32]u8 = null,
     /// Unix timestamp (seconds).
@@ -345,7 +227,7 @@ pub const Action = struct {
 };
 
 // ============================================================================
-// §13.4 jelly.aqueduct
+// §13.4 ball.aqueduct
 // ============================================================================
 
 pub const AqueductPhase = enum {
@@ -366,8 +248,8 @@ pub const AqueductPhase = enum {
 
 pub const Aqueduct = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.aqueduct"`.
-    pub const type_string: []const u8 = "jelly.aqueduct";
+    /// Wire type string: `"ball.aqueduct"`.
+    pub const type_string: []const u8 = "ball.aqueduct";
 
     from: [32]u8,
     to: [32]u8,
@@ -385,13 +267,13 @@ pub const Aqueduct = struct {
 };
 
 // ============================================================================
-// §13.5 jelly.element-tag
+// §13.5 ball.element-tag
 // ============================================================================
 
 pub const ElementTag = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.element-tag"`.
-    pub const type_string: []const u8 = "jelly.element-tag";
+    /// Wire type string: `"ball.element-tag"`.
+    pub const type_string: []const u8 = "ball.element-tag";
 
     /// Open-enum element value; e.g. "wood", "fire", "earth", "metal", "water", …
     element: []const u8,
@@ -401,7 +283,7 @@ pub const ElementTag = struct {
 };
 
 // ============================================================================
-// §13.6 jelly.trust-observation
+// §13.6 ball.trust-observation
 // ============================================================================
 
 pub const TrustAxis = struct {
@@ -412,8 +294,8 @@ pub const TrustAxis = struct {
 
 pub const TrustObservation = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.trust-observation"`.
-    pub const type_string: []const u8 = "jelly.trust-observation";
+    /// Wire type string: `"ball.trust-observation"`.
+    pub const type_string: []const u8 = "ball.trust-observation";
 
     /// Fingerprint of the signer/observer.
     observer: [32]u8,
@@ -427,33 +309,33 @@ pub const TrustObservation = struct {
 };
 
 // ============================================================================
-// §13.7 jelly.inscription
+// §13.7 ball.inscription
 // ============================================================================
 
 pub const Inscription = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.inscription"`.
-    pub const type_string: []const u8 = "jelly.inscription";
+    /// Wire type string: `"ball.inscription"`.
+    pub const type_string: []const u8 = "ball.inscription";
 
     /// Open-enum surface; e.g. "scroll", "tablet", "book-spread", "etched-wall", "floating-glyph", …
     surface: []const u8,
-    /// "auto" = renderer chooses; "curator" = parent room's jelly.layout.
+    /// "auto" = renderer chooses; "curator" = parent room's ball.layout.
     placement: []const u8 = "auto",
     note: ?[]const u8 = null,
 };
 
 // ============================================================================
-// §13.8 jelly.mythos
+// §13.8 ball.mythos
 // ============================================================================
 
 pub const Mythos = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.mythos"`.
-    pub const type_string: []const u8 = "jelly.mythos";
+    /// Wire type string: `"ball.mythos"`.
+    pub const type_string: []const u8 = "ball.mythos";
 
     /// true iff this is the first mythos of this chain.
     is_genesis: bool,
-    /// Blake3 of the prior jelly.mythos envelope; MUST be absent iff is_genesis is true.
+    /// Blake3 of the prior ball.mythos envelope; MUST be absent iff is_genesis is true.
     predecessor: ?[32]u8 = null,
 
     /// POETIC ONLY — fingerprint of the DreamBall this mythos is about.
@@ -476,13 +358,13 @@ pub const Mythos = struct {
 };
 
 // ============================================================================
-// §13.9 jelly.archiform
+// §13.9 ball.archiform
 // ============================================================================
 
 pub const Archiform = struct {
     pub const format_version: u32 = 2;
-    /// Wire type string: `"jelly.archiform"`.
-    pub const type_string: []const u8 = "jelly.archiform";
+    /// Wire type string: `"ball.archiform"`.
+    pub const type_string: []const u8 = "ball.archiform";
 
     /// Open-enum form; e.g. "library", "forge", "throne-room", …
     form: []const u8,
@@ -493,27 +375,22 @@ pub const Archiform = struct {
     note: ?[]const u8 = null,
 };
 
-// ============================================================================
-// §13.11 palace invariant primitive (AC4)
-// ============================================================================
+// Dreamball-h7s.1: `Object3d` (§13.10 `ball.object3d`) was removed — its
+// docstring said it exists to demonstrate the Zig-canonical authoring
+// pipeline, which the 2026-08-06 Rust-canonical ADR dissolved. Its golden
+// fixture is PRESERVED as data: `golden.GOLDEN_OBJECT3D_BYTES_HEX` /
+// `GOLDEN_OBJECT3D_BLAKE3` in src/golden.zig are untouched, and
+// `tools/export-golden-fixtures/main.zig` now writes the `object3d` manifest
+// entry by decoding those pinned bytes directly instead of re-deriving them
+// from a live `Object3d{}` + `encodeObject3d` call (also removed, from
+// envelope_v2.zig). `fixtures/goldens/manifest.json`'s `object3d` entry is
+// therefore byte-for-byte unchanged. See the deletion report on
+// Dreamball-h7s.1 for the full accounting.
 
-pub const PalaceInvariantError = error{
-    /// PROTOCOL.md §13.11 fixture 1: a Field with field-kind "palace" MUST carry
-    /// a jelly.mythos attribute. This error is returned when that invariant is
-    /// violated. Full enforcement lives in Epic 3 (`jelly verify`).
-    PalaceMissingMythos,
-};
-
-/// Checks the palace-root invariant from PROTOCOL.md §13.11 fixture 1:
-/// a Field tagged `field-kind: "palace"` MUST carry a `jelly.mythos` attribute.
-/// `has_mythos` should be set to true if the envelope carries any `jelly.mythos` attribute.
-pub fn palaceInvariants(field_kind: ?[]const u8, has_mythos: bool) PalaceInvariantError!void {
-    if (field_kind) |fk| {
-        if (std.mem.eql(u8, fk, FieldKind.palace) and !has_mythos) {
-            return error.PalaceMissingMythos;
-        }
-    }
-}
+// Dreamball-h7s.1: `palaceInvariants` + `PalaceInvariantError` (§13.11) were
+// removed — a function named after one application (the palace CLI) had no
+// business living in the protocol core, and it had zero callers outside its
+// own test.
 
 // ============================================================================
 // Tests — sanity-check the value types round-trip through Zig defaults
@@ -558,12 +435,12 @@ test "Guild default policy has sensible slot split" {
 }
 
 test "MemoryConnectionKind strings" {
-    try std.testing.expectEqualStrings("semantic", MemoryConnectionKind.semantic.toWireString());
-    try std.testing.expectEqualStrings("emotional", MemoryConnectionKind.emotional.toWireString());
+    try std.testing.expectEqualStrings("semantic", protocol.MemoryConnectionKind.semantic.toWireString());
+    try std.testing.expectEqualStrings("emotional", protocol.MemoryConnectionKind.emotional.toWireString());
 }
 
 test "Interaction kind string" {
-    const it: Interaction = .{
+    const it: protocol.Interaction = .{
         .turn = 0,
         .actor = .{ .bytes = [_]u8{0} ** 32 },
         .kind = .speak,
@@ -578,7 +455,7 @@ test "Interaction kind string" {
 test "struct shape: Layout" {
     const l: Layout = .{};
     try std.testing.expectEqual(@as(u32, 2), Layout.format_version);
-    try std.testing.expectEqualStrings("jelly.layout", Layout.type_string);
+    try std.testing.expectEqualStrings("ball.layout", Layout.type_string);
     try std.testing.expectEqual(@as(usize, 0), l.placements.len);
     try std.testing.expectEqual(@as(?[]const u8, null), l.note);
 }
@@ -590,7 +467,7 @@ test "struct shape: Timeline" {
         .head_hashes = &heads,
     };
     try std.testing.expectEqual(@as(u32, 3), Timeline.format_version);
-    try std.testing.expectEqualStrings("jelly.timeline", Timeline.type_string);
+    try std.testing.expectEqualStrings("ball.timeline", Timeline.type_string);
     try std.testing.expectEqual(@as(usize, 1), t.head_hashes.len);
     try std.testing.expectEqual(@as(u8, 0xAB), t.head_hashes[0][0]);
 }
@@ -598,13 +475,16 @@ test "struct shape: Timeline" {
 test "struct shape: Action" {
     var parents = [_][32]u8{[_]u8{0x02} ** 32};
     const a: Action = .{
-        .action_kind = .true_naming,
+        .kind = "true-naming",
         .parent_hashes = &parents,
         .actor = [_]u8{0x03} ** 32,
+        .hlc = .{ 0, 0 },
     };
-    try std.testing.expectEqual(@as(u32, 3), Action.format_version);
-    try std.testing.expectEqualStrings("jelly.action", Action.type_string);
-    try std.testing.expectEqualStrings("true-naming", a.action_kind.toWireString());
+    try std.testing.expectEqual(@as(u32, 4), Action.format_version);
+    try std.testing.expectEqualStrings("ball.action", Action.type_string);
+    try std.testing.expectEqualStrings("true-naming", a.kind);
+    try std.testing.expectEqual(@as(?[]const u8, null), a.body);
+    try std.testing.expectEqual(@as(u64, 0), a.hlc[1]);
     try std.testing.expectEqual(@as(usize, 0), a.deps.len);
     try std.testing.expectEqual(@as(usize, 0), a.nacks.len);
 }
@@ -616,7 +496,7 @@ test "struct shape: Aqueduct" {
         .kind = "gaze",
     };
     try std.testing.expectEqual(@as(u32, 2), Aqueduct.format_version);
-    try std.testing.expectEqualStrings("jelly.aqueduct", Aqueduct.type_string);
+    try std.testing.expectEqualStrings("ball.aqueduct", Aqueduct.type_string);
     try std.testing.expectEqual(@as(?f32, null), aq.conductance);
     try std.testing.expectEqual(@as(?AqueductPhase, null), aq.phase);
 }
@@ -624,7 +504,7 @@ test "struct shape: Aqueduct" {
 test "struct shape: ElementTag" {
     const et: ElementTag = .{ .element = "wood" };
     try std.testing.expectEqual(@as(u32, 2), ElementTag.format_version);
-    try std.testing.expectEqualStrings("jelly.element-tag", ElementTag.type_string);
+    try std.testing.expectEqualStrings("ball.element-tag", ElementTag.type_string);
     try std.testing.expectEqualStrings("wood", et.element);
     try std.testing.expectEqual(@as(?[]const u8, null), et.phase);
 }
@@ -635,7 +515,7 @@ test "struct shape: TrustObservation" {
         .about = [_]u8{0x07} ** 32,
     };
     try std.testing.expectEqual(@as(u32, 2), TrustObservation.format_version);
-    try std.testing.expectEqualStrings("jelly.trust-observation", TrustObservation.type_string);
+    try std.testing.expectEqualStrings("ball.trust-observation", TrustObservation.type_string);
     try std.testing.expectEqual(@as(usize, 0), to.axes.len);
     try std.testing.expectEqual(@as(usize, 0), to.signatures.len);
 }
@@ -643,7 +523,7 @@ test "struct shape: TrustObservation" {
 test "struct shape: Inscription" {
     const ins: Inscription = .{ .surface = "scroll" };
     try std.testing.expectEqual(@as(u32, 2), Inscription.format_version);
-    try std.testing.expectEqualStrings("jelly.inscription", Inscription.type_string);
+    try std.testing.expectEqualStrings("ball.inscription", Inscription.type_string);
     try std.testing.expectEqualStrings("scroll", ins.surface);
     try std.testing.expectEqualStrings("auto", ins.placement);
 }
@@ -651,7 +531,7 @@ test "struct shape: Inscription" {
 test "struct shape: Mythos" {
     const m: Mythos = .{ .is_genesis = true };
     try std.testing.expectEqual(@as(u32, 2), Mythos.format_version);
-    try std.testing.expectEqualStrings("jelly.mythos", Mythos.type_string);
+    try std.testing.expectEqualStrings("ball.mythos", Mythos.type_string);
     try std.testing.expect(m.is_genesis);
     try std.testing.expectEqual(@as(?[32]u8, null), m.predecessor);
     try std.testing.expectEqual(@as(?[32]u8, null), m.about);
@@ -660,41 +540,16 @@ test "struct shape: Mythos" {
 test "struct shape: Archiform" {
     const ar: Archiform = .{ .form = "library" };
     try std.testing.expectEqual(@as(u32, 2), Archiform.format_version);
-    try std.testing.expectEqualStrings("jelly.archiform", Archiform.type_string);
+    try std.testing.expectEqualStrings("ball.archiform", Archiform.type_string);
     try std.testing.expectEqualStrings("library", ar.form);
     try std.testing.expectEqual(@as(?[]const u8, null), ar.parent_form);
 }
 
-test "AC2: field-kind palace and room preserved" {
-    const palace_fk: FieldKind = .{ .value = FieldKind.palace };
-    const room_fk: FieldKind = .{ .value = FieldKind.room };
-    try std.testing.expectEqualStrings("palace", palace_fk.value);
-    try std.testing.expectEqualStrings("room", room_fk.value);
-}
+// Dreamball-h7s.1 removed the "struct shape: Object3d", "AC2: field-kind
+// palace and room preserved", "AC3: unknown field-kind preserved verbatim",
+// and "AC4: palaceInvariants ..." tests along with the Object3d, FieldKind,
+// and palaceInvariants/PalaceInvariantError types they exercised.
 
-test "AC3: unknown field-kind preserved verbatim (open-enum)" {
-    const sanctuary_fk: FieldKind = .{ .value = "sanctuary" };
-    try std.testing.expectEqualStrings("sanctuary", sanctuary_fk.value);
-}
-
-test "AC4: palaceInvariants returns PalaceMissingMythos for palace without mythos" {
-    const result = palaceInvariants("palace", false);
-    try std.testing.expectError(error.PalaceMissingMythos, result);
-    // palace with mythos is ok
-    try palaceInvariants("palace", true);
-    // non-palace field kind without mythos is ok
-    try palaceInvariants("room", false);
-    try palaceInvariants(null, false);
-}
-
-test "ActionKind: all 9 wire strings present" {
-    try std.testing.expectEqualStrings("palace-minted", ActionKind.palace_minted.toWireString());
-    try std.testing.expectEqualStrings("room-added", ActionKind.room_added.toWireString());
-    try std.testing.expectEqualStrings("avatar-inscribed", ActionKind.avatar_inscribed.toWireString());
-    try std.testing.expectEqualStrings("aqueduct-created", ActionKind.aqueduct_created.toWireString());
-    try std.testing.expectEqualStrings("move", ActionKind.move.toWireString());
-    try std.testing.expectEqualStrings("true-naming", ActionKind.true_naming.toWireString());
-    try std.testing.expectEqualStrings("inscription-updated", ActionKind.inscription_updated.toWireString());
-    try std.testing.expectEqualStrings("inscription-orphaned", ActionKind.inscription_orphaned.toWireString());
-    try std.testing.expectEqualStrings("inscription-pending-embedding", ActionKind.inscription_pending_embedding.toWireString());
-}
+// Dreamball-y4t.15 removed the "ActionKind: all 9 wire strings present" test
+// along with the `ActionKind` enum it exercised (v3 `ball.action` dropped
+// from the core; see the doc comment above `Timeline` for the rationale).

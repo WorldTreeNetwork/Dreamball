@@ -1,5 +1,5 @@
 <!--
-  Field type tour — shows a jelly.dreamball.field in every applicable lens.
+  Field type tour — shows a ball.dreamball.field in every applicable lens.
   Meaningful lenses: thumbnail (field chip), omnispherical (the primary field lens —
   concentric wire spheres representing the graticule), flat (grid + palette slots), phone.
   Skipped: avatar/splat (no look asset), knowledge-graph (no triples),
