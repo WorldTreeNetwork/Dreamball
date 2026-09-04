@@ -6,7 +6,14 @@ scope_tier: mvp
 ---
 # PRD: DreamBall Open Type System — MVP
 
-> Seeded from [`docs/VISION.md` §17 "The open type system"](VISION.md). Scope is
+> **Canonical-medium note (2026-08-06):** FR16 / bead `Dreamball-m97.2`
+> (Zig `@typeInfo` generator) is **dissolved, not deferred**. Wire types
+> are Rust-canonical
+> ([ADR](decisions/2026-08-06-rust-canonical.md)); epic `Dreamball-y4t`.
+> Zig-canonical language below is historical for sprint-003. Do not
+> implement FR16.
+>
+> Seeded from [`docs/VISION.md` §1 "The open type system"](VISION.md#1-the-open-type-system--a-verifiable-container-for-anything). Scope is
 > **DreamBall-the-protocol/type-system only** — not any consumer application.
 > World-Tree's kanban CRDT is a validating probe, explicitly **not** the ideal
 > use case (VISION.md §9.1 guardrail 3).

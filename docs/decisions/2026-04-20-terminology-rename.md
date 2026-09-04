@@ -83,7 +83,7 @@ renamed:
 
 Preserved (intentional):
 
-- 3D mesh "edge loops" in VISION §4 — different meaning (Disney-style
+- 3D mesh "edge loops" in VISION §10 — different meaning (Disney-style
   base-mesh topology addressing), unambiguous in context.
 - Shell-test "assertions" in `docs/known-gaps.md` — different meaning
   (test assertions in e2e scripts).

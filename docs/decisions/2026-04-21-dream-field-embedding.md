@@ -3,11 +3,12 @@
 ## Status
 
 Accepted. Closes PRD `docs/products/memory-palace/prd.md §9` open question
-*"Relation to VISION §4.4.5 dream field"*.
+*"Relation to VISION §4.4.5 dream field"* (now §10.4.5 after the
+Part I–III restructure).
 
 ## Context
 
-VISION §4.4.5 frames the dream field as "the final layer — beyond the
+VISION §10.4.5 (then numbered §4.4.5) frames the dream field as "the final layer — beyond the
 last onion shell". That phrasing left an ambiguity for the Memory
 Palace composition: since a palace is itself a Field DreamBall with
 `field-kind: "palace"`, does a palace *become* the dream field for
@@ -42,7 +43,7 @@ promoted to one.
    with `field-kind: "palace"` is a container; the dream field is the
    substrate the container floats in.
 
-2. **The dream field is omnipresent, not boundary-layer.** VISION §4.4.5
+2. **The dream field is omnipresent, not boundary-layer.** VISION §10.4.5
    is revised (companion commit) from "the final layer beyond the last
    onion shell" to "the plasmatic substrate every DreamBall sits within
    and can unfold aspects of". The onion-shell phrasing is preserved as
@@ -91,7 +92,7 @@ promoted to one.
 - **Phase 1 impact: none on wire format.** The palace envelope work
   (nine auxiliary envelopes in PRD §5) proceeds as specified. The
   implementation cost of this ADR is one hook in the renderer's
-  ambient pass and a one-line note in VISION §4.4.5.
+  ambient pass and a one-line note in VISION §10.4.5.
 
 - **Future work (Vision tier).** A `jelly.dream-field` envelope naming
   persistent archetypal field states (e.g. a shared dream field a
@@ -100,7 +101,7 @@ promoted to one.
 
 ## References
 
-- `docs/VISION.md §4.4.5` — to be updated in a companion commit so
+- `docs/VISION.md §10.4.5` — to be updated in a companion commit so
   the "beyond the last shell" phrasing no longer implies a boundary.
 - `docs/products/memory-palace/prd.md §9` — open question closed by
   this ADR.

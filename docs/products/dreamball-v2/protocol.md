@@ -92,7 +92,7 @@ Members + policy container. Core adds `guild-name` (display) and `keyspace-root-
 
 ### 12.2 `ball.omnispherical-grid`
 
-The graticule that makes the dream-field renderable without committing to a mesh. See [`docs/VISION.md` §4](../../VISION.md#4-form-independence-in-the-look-slot-in-progress) for the optic-nerve / three-camera metaphor.
+The graticule that makes the dream-field renderable without committing to a mesh. See [`docs/VISION.md` §10.4.5](../../VISION.md#1045-the-omnispherical-perspective-grid) for the optic-nerve / three-camera metaphor.
 
 ```
 200(

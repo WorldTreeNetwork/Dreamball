@@ -154,7 +154,7 @@ small set of new envelope types that describe the topology honestly.
 Containment is fractal and symmetric in v1/v2 already. The palace just
 uses those connections deliberately: every `contains` is a *compositional
 hypothesis* (VISION §5) and every nested layer is an onion step
-(VISION §4.4.5). There are no "parent/primary child" distinctions.
+(VISION §10.4.5). There are no "parent/primary child" distinctions.
 
 ---
 
@@ -1212,7 +1212,7 @@ discipline.
 - **Palette / tempo / elemental binding.** Does every element tag get
   a palette + ambient track? Or is binding a renderer concern? Leans
   renderer — keep tags open, keep bindings themeable.
-- ~~**Relation to VISION §4.4.5 dream field.**~~ **Resolved
+- ~~**Relation to VISION §10.4.5 dream field.**~~ **Resolved
   (2026-04-21).** A palace **embeds in** a dream field; it does not
   **become** one. The dream field is the omnipresent plasmatic
   substrate every DreamBall sits within and can *unfold aspects of* —
@@ -1362,14 +1362,14 @@ own circulation.
   an optional accelerator exactly as in v2.
 - **Mythos is load-bearing.** The renderer is allowed (and required)
   to prefer aesthetic coherence over geometric minimalism. See
-  NFR14 + VISION §15.
+  NFR14 + [`products/memory-palace/vision.md`](vision.md).
 
 ---
 
 ## 12. Existing system context
 
-- `docs/VISION.md §4, §10, §12` — omnispherical grid, six-type
-  taxonomy, lenses. All palace work rides on these.
+- `docs/VISION.md §10, §11, §12` — form-independence / omnispherical
+  grid, lenses, six-type taxonomy. All palace work rides on these.
 - `docs/PROTOCOL.md §12` — v2 typed envelopes. Palace adds seven
   auxiliary envelope types in a new §13.
 - `docs/products/dreamball-v2/prd.md` — the v2 PRD this composition
@@ -1461,7 +1461,7 @@ own circulation.
   aqueduct `strength` on the signed chain, renderer-side freshness
   derived from `last-traversed` so unused palaces dim, gather
   cobwebs, and relight on return. No wire-format change from either
-  resolution; both land as renderer hooks and a VISION §4.4.5
+  resolution; both land as renderer hooks and a VISION §10.4.5
   rewording (companion commit). ADRs:
   `docs/decisions/2026-04-21-dream-field-embedding.md`,
   `docs/decisions/2026-04-21-vril-flow-model.md`.

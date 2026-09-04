@@ -16,6 +16,11 @@ effective_capacity: 21
 
 # Sprint-002 Scope
 
+> Historical sprint record. JSON-Schema-canonical (D-018) was later
+> superseded by Zig-canonical (2026-06-25) and then by
+> [Rust-canonical (2026-08-06)](../../decisions/2026-08-06-rust-canonical.md).
+> VISION form-independence is now §10, not §4.
+
 ## Sprint Size
 
 **standard** (8-18 stories target; this sprint runs slightly above at ~22 IN). Sprint-001 velocity supports `ambitious` (~21 effective capacity) but sprint-002's binary gating constraint (NFR1 byte-equivalence — no partial credit) and architectural-reframing nature favor a tight, coherent scope over a stretched one. The four 2026-04-25 decision notes only land *together*; spreading them across two sprints loses the architectural coherence.

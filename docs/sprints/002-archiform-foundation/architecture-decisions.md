@@ -252,7 +252,7 @@ For sprint-002, the contracts subject to this discipline:
 **Status**: accepted
 **Source**: [docs/decisions/2026-04-24-coord-frames.md](../../decisions/2026-04-24-coord-frames.md)
 
-**Context**: Dreamballs are nested spheres (PROTOCOL.md §12.2, VISION.md §4). Polar at the field layer matches semantic intent; cartesian everywhere else matches GPU/library reality. The ADR formalizes the two-regime composition.
+**Context**: Dreamballs are nested spheres (PROTOCOL.md §12.2, VISION.md §10). Polar at the field layer matches semantic intent; cartesian everywhere else matches GPU/library reality. The ADR formalizes the two-regime composition.
 
 **Decision**: Two coordinate regimes — polar at the omnispherical-grid (field) layer, cartesian (right-handed, Y-up, meters, glTF-2.0 quaternion order) for placements local to parent dreamball. Nested reference frames compose via cached world matrices (`resolveWorldMatrices`); GPU consumes `worldMatrix × localPosition` (zero polar math in shader). Sprint-001 simplified path documented; `polarShellToCartesian` and full multi-frame resolution are Growth-tier work.
 

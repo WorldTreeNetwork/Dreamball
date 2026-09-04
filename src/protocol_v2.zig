@@ -27,7 +27,7 @@ pub const OmnisphericalGrid = struct {
     pole_south: Vec3 = .{ .x = 0, .y = -1, .z = 0 },
     camera_rings: []const CameraRing = &.{},
     layer_depth: u32 = 3,
-    /// Subdivision level — forward-only (see docs/VISION.md §4.4.5).
+    /// Subdivision level — forward-only (see docs/VISION.md §10.4.5).
     resolution: u32 = 8,
     note: ?[]const u8 = null,
 };

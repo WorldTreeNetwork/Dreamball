@@ -283,6 +283,9 @@ That is the case. It is not a guarantee; see Consequences.
    document still asserts Zig-canonical field shapes.
 3. Close `Dreamball-m97.2` as obsolete (generator dissolved, not
    deferred); note the dissolution on the parent epic `Dreamball-m97`.
+   **Done 2026-09-03:** `m97.2` closed dissolved; parent `m97` closed
+   (decoders shipped). Tracker pointer `Dreamball-y4t` now exists in
+   this beads db.
 4. `Dreamball-y4t.8` — extract golden vectors into language-neutral
    fixtures. This is the gate for everything below it and should land
    first.

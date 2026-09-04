@@ -7,7 +7,7 @@ Sprint: sprint-001 · Epic: 5 · Significance: MEDIUM · Related:
 ## Context
 
 Dreamballs are philosophically *nested spheres* — a palace is an
-omnispherical onion-shell (PROTOCOL.md §12.2, VISION.md §4), rooms are
+omnispherical onion-shell (PROTOCOL.md §12.2, VISION.md §10), rooms are
 nodes on the shell, inscriptions live inside rooms. A pure protocol
 would use **polar coordinates** throughout: everything is (r, θ, φ)
 relative to the nearest reference-frame origin. This matches the
@@ -52,7 +52,8 @@ second float carve-out or lossy conversions at the wire.
    - Render time: GPU consumes `worldMatrix × localPosition` — O(1) per
      object, zero polar math in the shader.
    - Re-walk only when the envelope tree changes (rare — palace shifts
-     per VISION §15.7 trigger a cache invalidation for affected subtrees).
+     per [`memory-palace/vision.md` §7](../products/memory-palace/vision.md)
+     trigger a cache invalidation for affected subtrees).
 
 ## Implementation status (sprint-001)
 
@@ -138,14 +139,15 @@ per-engine transform in §5 at the lens boundary, not inside
 
 1. **Wrong ontology.** Dreamballs ARE reference frames. A global world
    coordinate implies a containing space that pre-exists the
-   dreamballs, which contradicts VISION §4 (the field IS the
+   dreamballs, which contradicts VISION §10 (the field IS the
    space, not a view onto one).
 2. **Composition.** Nested reference frames let a palace be nested
    inside a guild room inside another palace — each layer is a
    local cartesian + a position-in-parent. Global coords break
    composition.
 3. **Editability.** Shifting a palace's autumn arrangement
-   (VISION §15.7) only changes the palace's layout; all inscriptions
+   ([`memory-palace/vision.md` §7](../products/memory-palace/vision.md))
+   only changes the palace's layout; all inscriptions
    inside move with it, because their positions are LOCAL. A global
    system would require rewriting every position.
 

@@ -168,7 +168,7 @@ The primary envelope — represents a single DreamBall at any stage of its lifec
 ### 4.2 `ball.look` (evolving)
 
 **Status:** v1 is the simple asset-list shape below. v2 is actively being
-designed around form-independence — see [`docs/VISION.md` §4](VISION.md#4-form-independence-in-the-look-slot-in-progress)
+designed around form-independence — see [`docs/VISION.md` §10](VISION.md#10-form-independence-in-the-look-slot-in-progress)
 for the full rationale (shader-first layer, optional addressable base mesh,
 graticule refs, resolution declarations). v2 will land as *additive*
 attributes so v1 envelopes keep working.
@@ -278,7 +278,7 @@ An asset MUST have at least one of `url` or `embedded`. Consumers verify `hash` 
 | `application/vnd.playcanvas.gsplat+ply`    | PlayCanvas compressed PLY alias                              |
 | `model/gsplat`                             | Plain PLY (non-compressed fallback)                          |
 
-Splats are the topology-free rendering mode — no mesh, no UVs, just spatial distribution of gaussian primitives. This is why `docs/VISION.md §4.4.5` privileges them as the most honest expression of the omnispherical-graticule idea. The reference renderer exposes them via the `splat` lens in the Svelte library. Future splat formats (`.splat`, `.ksplat`, `.spz`) land behind the same media-type registry as they gain PlayCanvas or independent-handler support.
+Splats are the topology-free rendering mode — no mesh, no UVs, just spatial distribution of gaussian primitives. This is why `docs/VISION.md §10.4.5` privileges them as the most honest expression of the omnispherical-graticule idea. The reference renderer exposes them via the `splat` lens in the Svelte library. Future splat formats (`.splat`, `.ksplat`, `.spz`) land behind the same media-type registry as they gain PlayCanvas or independent-handler support.
 
 ### 4.6 `ball.key-bundle`
 
@@ -925,7 +925,7 @@ same `l` value.
 
 Events where `l1 == l2` and `c1 == c2` are **concurrent**. The protocol
 imposes no merge rule for concurrent events — the consumer's domain logic
-determines the outcome (VISION.md §17, guardrail 1).
+determines the outcome (VISION.md §9 — not a consensus system; §9.1 guardrail 3).
 
 ### 17.4 Coverage by `content_hash`
 

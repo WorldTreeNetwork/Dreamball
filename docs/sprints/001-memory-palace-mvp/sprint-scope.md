@@ -13,6 +13,10 @@ velocity_basis: null
 
 # Sprint-001 Scope
 
+> Historical sprint record. Palace *why* that this folder cites as
+> VISION §15 now lives in
+> [`products/memory-palace/vision.md`](../../products/memory-palace/vision.md).
+
 ## Sprint Size
 
 **Ambitious** (15–30 stories, 4–6 epics). 28 stories across 6 epics — sits comfortably in the upper-middle of the band. Scope was user-narrowed in Phase 1 (26 MVP FRs distilled from PRD §10.3); no further cuts justified.

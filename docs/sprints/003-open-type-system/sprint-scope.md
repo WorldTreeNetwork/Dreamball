@@ -12,6 +12,11 @@ velocity_basis: sprint-002
 
 # Sprint Scope
 
+> Historical sprint record. Zig-canonical / `Dreamball-m97.2` language in
+> this folder is superseded by
+> [ADR 2026-08-06](../../decisions/2026-08-06-rust-canonical.md).
+> Do not implement the `@typeInfo` generator. VISION §17 is now §1.
+
 ## Sprint Size
 **standard** (8–18 stories) — the MVP is a single coherent end-to-end slice (a new
 wire type + its WASM authoring/verify surface + the cross-runtime determinism

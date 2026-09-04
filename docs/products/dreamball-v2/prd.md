@@ -252,7 +252,7 @@ Requires real crypto wire-up plus multi-hop delegation semantics.
 - `src/graph.zig` — v1 fleet cycle detection; reused for Guild member graphs.
 - `src/golden.zig` — canonical byte-lock; extend with v2 fixtures.
 - `docs/PROTOCOL.md` — v1 wire format (§4.2 `ball.look` already marked evolving for form-independence).
-- `docs/VISION.md` — living why-doc; §4 needs the omnispherical/three-camera addition.
+- `docs/VISION.md` — living why-doc; §10.4.5 carries the omnispherical/three-camera addition.
 - `docs/products/dreamball-v2/` — this PRD's home.
 - `src/lib/` — Svelte library root (from `sv` template).
 - `src/routes/` — SvelteKit showcase app root.
