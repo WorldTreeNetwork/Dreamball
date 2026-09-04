@@ -22,6 +22,9 @@ zig-pkg/
 # OMC
 .omc/
 
+# intention spawn scratch (spawn.py)
+.spawns/
+
 # Claude Code local harness state
 .claude/
 .metacoding/
