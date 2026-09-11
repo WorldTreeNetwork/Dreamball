@@ -280,6 +280,60 @@ pub const GuildPolicy = struct {
     note: ?[]const u8 = null,
 };
 
+// ─── ball.coverage attribute (not a look/feel/act axis) ──────────────────────
+//
+// Labeled Gordian assertion on a ball/1 node. Snapshot of mesh coverage for
+// a viewer data-input: nodes, optional last-known WGS84, optional radio
+// snapshots or RSSI samples, and a render recipe. Unmarked coordinates are
+// omitted, never (0,0). See docs/PROTOCOL.md §4.8.
+
+pub const CoverageNode = struct {
+    id: []const u8,
+    name: []const u8,
+    backhaul_addr: []const u8,
+    lat: ?f64 = null,
+    lon: ?f64 = null,
+};
+
+pub const CoverageRadioStation = struct {
+    mac: []const u8,
+    signal_dbm: i32,
+    expected_throughput_mbps: ?u32 = null,
+};
+
+pub const CoverageRadio = struct {
+    backhaul_addr: []const u8,
+    mesh_mac: ?[]const u8 = null,
+    channel: ?u32 = null,
+    freq_mhz: ?u32 = null,
+    stations: []const CoverageRadioStation = &.{},
+};
+
+pub const CoverageSample = struct {
+    x: ?f64 = null,
+    z: ?f64 = null,
+    lat: ?f64 = null,
+    lon: ?f64 = null,
+    heading: ?f64 = null,
+    rssi_dbm: ?i32 = null,
+    t: u64,
+    node_id: ?[]const u8 = null,
+    ssid: ?[]const u8 = null,
+};
+
+pub const CoverageRender = struct {
+    paint: []const u8,
+    score: ?[]const u8 = null,
+    note: ?[]const u8 = null,
+};
+
+pub const Coverage = struct {
+    nodes: []const CoverageNode = &.{},
+    radio: []const CoverageRadio = &.{},
+    samples: []const CoverageSample = &.{},
+    render: ?CoverageRender = null,
+};
+
 pub const Signature = struct {
     /// "ed25519" or "ml-dsa-87"
     alg: []const u8,
@@ -329,6 +383,9 @@ pub const DreamBall = struct {
     /// Fingerprints of DreamBalls this one is derived from.
     derived_from: []const Fingerprint = &.{},
     signatures: []const Signature = &.{},
+    /// Labeled `coverage` assertion — mesh snapshot + render recipe.
+    /// Not a look/feel/act axis. Null when the ball carries none.
+    coverage: ?Coverage = null,
     /// §13.1 optional field-kind attribute on ball.dreamball.field envelopes.
     /// Values: "palace" | "room" | "ambient" | <open-enum>.  Null = not a field.
     field_kind: ?[]const u8 = null,

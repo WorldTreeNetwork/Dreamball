@@ -38,6 +38,7 @@ pub const FEEL_TYPE: []const u8 = "ball.feel";
 pub const ACT_TYPE: []const u8 = "ball.act";
 pub const ASSET_TYPE: []const u8 = "ball.asset";
 pub const SKILL_TYPE: []const u8 = "ball.skill";
+pub const COVERAGE_TYPE: []const u8 = "ball.coverage";
 
 const PairList = dcbor.PairList;
 
@@ -977,6 +978,358 @@ pub fn decodeGuildPolicy(allocator: Allocator, bytes: []const u8) !protocol.Guil
     };
 }
 
+// ─── ball.coverage attribute (labeled assertion, not a look/feel/act axis) ──
+//
+// Nested envelope attached as ("coverage", <ball.coverage>). Nodes, optional
+// radio snapshots, RSSI samples, and a render recipe ride as labeled
+// assertions. lat/lon/x/z/heading are floats under the §12.2 spatial
+// exception. Unmarked coordinates omit the key.
+
+fn encodeSortedMap(allocator: Allocator, pairs: *PairList) ![]u8 {
+    pairs.sort();
+    var ai = std.Io.Writer.Allocating.init(allocator);
+    errdefer ai.deinit();
+    try emitMap(&ai.writer, pairs.*);
+    return ai.toOwnedSlice();
+}
+
+fn encodeCoverageNodeMap(allocator: Allocator, n: protocol.CoverageNode) ![]u8 {
+    var pairs = PairList.init(allocator);
+    defer pairs.deinit();
+    try pairs.addText("id", n.id);
+    try pairs.addText("name", n.name);
+    try pairs.addText("backhaul-addr", n.backhaul_addr);
+    if (n.lat) |lat| try pairs.addFloat("lat", lat);
+    if (n.lon) |lon| try pairs.addFloat("lon", lon);
+    return encodeSortedMap(allocator, &pairs);
+}
+
+fn encodeCoverageStationMap(allocator: Allocator, s: protocol.CoverageRadioStation) ![]u8 {
+    var pairs = PairList.init(allocator);
+    defer pairs.deinit();
+    try pairs.addText("mac", s.mac);
+    try pairs.addInt("signal-dbm", s.signal_dbm);
+    if (s.expected_throughput_mbps) |mbps| try pairs.addUint("expected-throughput-mbps", mbps);
+    return encodeSortedMap(allocator, &pairs);
+}
+
+fn encodeCoverageRadioMap(allocator: Allocator, r: protocol.CoverageRadio) ![]u8 {
+    var pairs = PairList.init(allocator);
+    defer pairs.deinit();
+    try pairs.addText("backhaul-addr", r.backhaul_addr);
+    if (r.mesh_mac) |mac| try pairs.addText("mesh-mac", mac);
+    if (r.channel) |ch| try pairs.addUint("channel", ch);
+    if (r.freq_mhz) |f| try pairs.addUint("freq-mhz", f);
+    if (r.stations.len > 0) {
+        var ai = std.Io.Writer.Allocating.init(allocator);
+        errdefer ai.deinit();
+        try zbor.builder.writeArray(&ai.writer, r.stations.len);
+        for (r.stations) |st| {
+            const st_bytes = try encodeCoverageStationMap(allocator, st);
+            defer allocator.free(st_bytes);
+            try ai.writer.writeAll(st_bytes);
+        }
+        try pairs.addRawOwned("stations", try ai.toOwnedSlice());
+    }
+    return encodeSortedMap(allocator, &pairs);
+}
+
+fn encodeCoverageSampleMap(allocator: Allocator, s: protocol.CoverageSample) ![]u8 {
+    var pairs = PairList.init(allocator);
+    defer pairs.deinit();
+    try pairs.addUint("t", s.t);
+    if (s.x) |x| try pairs.addFloat("x", x);
+    if (s.z) |z| try pairs.addFloat("z", z);
+    if (s.lat) |lat| try pairs.addFloat("lat", lat);
+    if (s.lon) |lon| try pairs.addFloat("lon", lon);
+    if (s.heading) |h| try pairs.addFloat("heading", h);
+    if (s.rssi_dbm) |rssi| try pairs.addInt("rssi-dbm", rssi);
+    if (s.node_id) |id| try pairs.addText("node-id", id);
+    if (s.ssid) |ssid| try pairs.addText("ssid", ssid);
+    return encodeSortedMap(allocator, &pairs);
+}
+
+fn encodeCoverageRenderMap(allocator: Allocator, r: protocol.CoverageRender) ![]u8 {
+    var pairs = PairList.init(allocator);
+    defer pairs.deinit();
+    try pairs.addText("paint", r.paint);
+    if (r.score) |sc| try pairs.addText("score", sc);
+    if (r.note) |n| try pairs.addText("note", n);
+    return encodeSortedMap(allocator, &pairs);
+}
+
+pub fn encodeCoverage(allocator: Allocator, c: protocol.Coverage) ![]u8 {
+    var subj = PairList.init(allocator);
+    defer subj.deinit();
+    try subj.addText("type", COVERAGE_TYPE);
+    try subj.addUint("format-version", protocol.FORMAT_VERSION);
+    subj.sort();
+
+    var asserts = PairList.init(allocator);
+    defer asserts.deinit();
+    for (c.nodes) |n| {
+        try asserts.addRawOwned("node", try encodeCoverageNodeMap(allocator, n));
+    }
+    for (c.radio) |r| {
+        try asserts.addRawOwned("radio", try encodeCoverageRadioMap(allocator, r));
+    }
+    for (c.samples) |s| {
+        try asserts.addRawOwned("sample", try encodeCoverageSampleMap(allocator, s));
+    }
+    if (c.render) |r| {
+        try asserts.addRawOwned("render", try encodeCoverageRenderMap(allocator, r));
+    }
+    asserts.sort();
+
+    return emitEnvelope(allocator, subj, asserts);
+}
+
+fn readNumericF64(bytes: []const u8, cursor: *usize) !f64 {
+    const major = try peekMajor(bytes, cursor.*);
+    switch (major) {
+        0 => return @floatFromInt(try readUint(bytes, cursor)),
+        1 => {
+            const h = try dcbor.readHead(bytes, cursor);
+            const mag: i64 = @intCast(h.arg);
+            return @floatFromInt(-1 - mag);
+        },
+        7 => return dcbor.readAnyFloat(bytes, cursor),
+        else => return error.UnexpectedMajorType,
+    }
+}
+
+fn readNumericI64(bytes: []const u8, cursor: *usize) !i64 {
+    const major = try peekMajor(bytes, cursor.*);
+    switch (major) {
+        0 => return @intCast(try readUint(bytes, cursor)),
+        1 => {
+            const h = try dcbor.readHead(bytes, cursor);
+            const mag: i64 = @intCast(h.arg);
+            return -1 - mag;
+        },
+        7 => return @intFromFloat(@round(try dcbor.readAnyFloat(bytes, cursor))),
+        else => return error.UnexpectedMajorType,
+    }
+}
+
+fn readNumericU64(bytes: []const u8, cursor: *usize) !u64 {
+    const major = try peekMajor(bytes, cursor.*);
+    switch (major) {
+        0 => return try readUint(bytes, cursor),
+        7 => return @intFromFloat(@round(try dcbor.readAnyFloat(bytes, cursor))),
+        else => return error.UnexpectedMajorType,
+    }
+}
+
+fn decodeCoverageStation(arena: Allocator, bytes: []const u8, cursor: *usize) !protocol.CoverageRadioStation {
+    const map_n = try readMapHeader(bytes, cursor);
+    var mac: ?[]const u8 = null;
+    var signal_dbm: ?i32 = null;
+    var mbps: ?u32 = null;
+    var i: u64 = 0;
+    while (i < map_n) : (i += 1) {
+        const k = try readText(bytes, cursor);
+        if (std.mem.eql(u8, k, "mac")) {
+            mac = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "signal-dbm")) {
+            signal_dbm = @intCast(try readNumericI64(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "expected-throughput-mbps")) {
+            mbps = @intCast(try readNumericU64(bytes, cursor));
+        } else {
+            dcbor.skipItem(bytes, cursor) catch return error.Truncated;
+        }
+    }
+    return .{
+        .mac = mac orelse return error.MissingField,
+        .signal_dbm = signal_dbm orelse return error.MissingField,
+        .expected_throughput_mbps = mbps,
+    };
+}
+
+fn decodeCoverageNode(arena: Allocator, bytes: []const u8, cursor: *usize) !protocol.CoverageNode {
+    const map_n = try readMapHeader(bytes, cursor);
+    var id: ?[]const u8 = null;
+    var name: ?[]const u8 = null;
+    var backhaul: ?[]const u8 = null;
+    var lat: ?f64 = null;
+    var lon: ?f64 = null;
+    var i: u64 = 0;
+    while (i < map_n) : (i += 1) {
+        const k = try readText(bytes, cursor);
+        if (std.mem.eql(u8, k, "id")) {
+            id = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "name")) {
+            name = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "backhaul-addr")) {
+            backhaul = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "lat")) {
+            lat = try readNumericF64(bytes, cursor);
+        } else if (std.mem.eql(u8, k, "lon")) {
+            lon = try readNumericF64(bytes, cursor);
+        } else {
+            dcbor.skipItem(bytes, cursor) catch return error.Truncated;
+        }
+    }
+    return .{
+        .id = id orelse return error.MissingField,
+        .name = name orelse return error.MissingField,
+        .backhaul_addr = backhaul orelse return error.MissingField,
+        .lat = lat,
+        .lon = lon,
+    };
+}
+
+fn decodeCoverageRadio(arena: Allocator, bytes: []const u8, cursor: *usize) !protocol.CoverageRadio {
+    const map_n = try readMapHeader(bytes, cursor);
+    var backhaul: ?[]const u8 = null;
+    var mesh_mac: ?[]const u8 = null;
+    var channel: ?u32 = null;
+    var freq_mhz: ?u32 = null;
+    var stations: []const protocol.CoverageRadioStation = &.{};
+    var i: u64 = 0;
+    while (i < map_n) : (i += 1) {
+        const k = try readText(bytes, cursor);
+        if (std.mem.eql(u8, k, "backhaul-addr")) {
+            backhaul = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "mesh-mac")) {
+            mesh_mac = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "channel")) {
+            channel = @intCast(try readNumericU64(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "freq-mhz")) {
+            freq_mhz = @intCast(try readNumericU64(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "stations")) {
+            const n = try readArrayHeader(bytes, cursor);
+            const list = try arena.alloc(protocol.CoverageRadioStation, @intCast(n));
+            var si: usize = 0;
+            while (si < list.len) : (si += 1) {
+                list[si] = try decodeCoverageStation(arena, bytes, cursor);
+            }
+            stations = list;
+        } else {
+            dcbor.skipItem(bytes, cursor) catch return error.Truncated;
+        }
+    }
+    return .{
+        .backhaul_addr = backhaul orelse return error.MissingField,
+        .mesh_mac = mesh_mac,
+        .channel = channel,
+        .freq_mhz = freq_mhz,
+        .stations = stations,
+    };
+}
+
+fn decodeCoverageSample(arena: Allocator, bytes: []const u8, cursor: *usize) !protocol.CoverageSample {
+    const map_n = try readMapHeader(bytes, cursor);
+    var x: ?f64 = null;
+    var z: ?f64 = null;
+    var lat: ?f64 = null;
+    var lon: ?f64 = null;
+    var heading: ?f64 = null;
+    var rssi_dbm: ?i32 = null;
+    var t: ?u64 = null;
+    var node_id: ?[]const u8 = null;
+    var ssid: ?[]const u8 = null;
+    var i: u64 = 0;
+    while (i < map_n) : (i += 1) {
+        const k = try readText(bytes, cursor);
+        if (std.mem.eql(u8, k, "x")) {
+            x = try readNumericF64(bytes, cursor);
+        } else if (std.mem.eql(u8, k, "z")) {
+            z = try readNumericF64(bytes, cursor);
+        } else if (std.mem.eql(u8, k, "lat")) {
+            lat = try readNumericF64(bytes, cursor);
+        } else if (std.mem.eql(u8, k, "lon")) {
+            lon = try readNumericF64(bytes, cursor);
+        } else if (std.mem.eql(u8, k, "heading")) {
+            heading = try readNumericF64(bytes, cursor);
+        } else if (std.mem.eql(u8, k, "rssi-dbm")) {
+            rssi_dbm = @intCast(try readNumericI64(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "t")) {
+            t = try readNumericU64(bytes, cursor);
+        } else if (std.mem.eql(u8, k, "node-id")) {
+            node_id = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "ssid")) {
+            ssid = try arena.dupe(u8, try readText(bytes, cursor));
+        } else {
+            dcbor.skipItem(bytes, cursor) catch return error.Truncated;
+        }
+    }
+    return .{
+        .x = x,
+        .z = z,
+        .lat = lat,
+        .lon = lon,
+        .heading = heading,
+        .rssi_dbm = rssi_dbm,
+        .t = t orelse return error.MissingField,
+        .node_id = node_id,
+        .ssid = ssid,
+    };
+}
+
+fn decodeCoverageRender(arena: Allocator, bytes: []const u8, cursor: *usize) !protocol.CoverageRender {
+    const map_n = try readMapHeader(bytes, cursor);
+    var paint: ?[]const u8 = null;
+    var score: ?[]const u8 = null;
+    var note: ?[]const u8 = null;
+    var i: u64 = 0;
+    while (i < map_n) : (i += 1) {
+        const k = try readText(bytes, cursor);
+        if (std.mem.eql(u8, k, "paint")) {
+            paint = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "score")) {
+            score = try arena.dupe(u8, try readText(bytes, cursor));
+        } else if (std.mem.eql(u8, k, "note")) {
+            note = try arena.dupe(u8, try readText(bytes, cursor));
+        } else {
+            dcbor.skipItem(bytes, cursor) catch return error.Truncated;
+        }
+    }
+    return .{
+        .paint = paint orelse return error.MissingField,
+        .score = score,
+        .note = note,
+    };
+}
+
+pub fn decodeCoverage(arena: Allocator, bytes: []const u8) !protocol.Coverage {
+    try dcbor.assertCanonicalAllowFloats(bytes);
+    var cursor: usize = 0;
+    const assertion_count = try enterEnvelope(bytes, &cursor);
+    // enterEnvelope leaves the cursor on the subject map header.
+    dcbor.skipItem(bytes, &cursor) catch return error.Truncated;
+
+    var nodes: std.ArrayList(protocol.CoverageNode) = .empty;
+    var radio: std.ArrayList(protocol.CoverageRadio) = .empty;
+    var samples: std.ArrayList(protocol.CoverageSample) = .empty;
+    var render: ?protocol.CoverageRender = null;
+
+    var a_i: u64 = 0;
+    while (a_i < assertion_count) : (a_i += 1) {
+        const h = try readArrayHeader(bytes, &cursor);
+        if (h != 2) return error.BadAssertion;
+        const pred = try readText(bytes, &cursor);
+        if (std.mem.eql(u8, pred, "node")) {
+            try nodes.append(arena, try decodeCoverageNode(arena, bytes, &cursor));
+        } else if (std.mem.eql(u8, pred, "radio")) {
+            try radio.append(arena, try decodeCoverageRadio(arena, bytes, &cursor));
+        } else if (std.mem.eql(u8, pred, "sample")) {
+            try samples.append(arena, try decodeCoverageSample(arena, bytes, &cursor));
+        } else if (std.mem.eql(u8, pred, "render")) {
+            render = try decodeCoverageRender(arena, bytes, &cursor);
+        } else {
+            dcbor.skipItem(bytes, &cursor) catch return error.Truncated;
+        }
+    }
+
+    return .{
+        .nodes = try nodes.toOwnedSlice(arena),
+        .radio = try radio.toOwnedSlice(arena),
+        .samples = try samples.toOwnedSlice(arena),
+        .render = render,
+    };
+}
+
 pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     var subj = PairList.init(allocator);
     defer subj.deinit();
@@ -1037,6 +1390,10 @@ pub fn encodeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
     if (db.policy) |p| {
         const bytes = try encodeGuildPolicy(allocator, p);
         try asserts.addRawOwned("guild-policy", bytes);
+    }
+    if (db.coverage) |c| {
+        const bytes = try encodeCoverage(allocator, c);
+        try asserts.addRawOwned("coverage", bytes);
     }
 
     if (db.field_kind) |fk| try asserts.addText("field-kind", fk);
@@ -1752,6 +2109,11 @@ pub fn decodeDreamBall(arena: Allocator, env_bytes: []const u8) !protocol.DreamB
             const sub = env_bytes[cursor .. cursor + len];
             cursor += len;
             out.policy = try decodeGuildPolicy(arena, sub);
+        } else if (std.mem.eql(u8, pred, "coverage")) {
+            const len = dcbor.itemLen(env_bytes, cursor) catch return error.Truncated;
+            const sub = env_bytes[cursor .. cursor + len];
+            cursor += len;
+            out.coverage = try decodeCoverage(arena, sub);
         } else if (std.mem.eql(u8, pred, "archiform-fp")) {
             // FR5 / Story 2.3 — round-trip the genesis envelope's
             // archiform_fp attribute. 32-byte blake3 of the archiform
@@ -2249,6 +2611,73 @@ test "encodeGuildPolicy -> decodeGuildPolicy round-trip" {
     try std.testing.expectEqual(@as(usize, 1), got.admin_only.len);
     try std.testing.expectEqualStrings("secret", got.admin_only[0]);
     try std.testing.expectEqualStrings("default v2 policy", got.note.?);
+}
+
+test "encodeCoverage -> decodeCoverage round-trip" {
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const nodes = [_]protocol.CoverageNode{
+        .{ .id = "wr3000s-a", .name = "Front Porch", .backhaul_addr = "10.254.242.84" },
+        .{ .id = "m3000-b", .name = "Kitchen", .backhaul_addr = "10.254.12.214", .lat = 37.75, .lon = -122.44 },
+    };
+    const samples = [_]protocol.CoverageSample{
+        .{ .x = 6.0, .z = 8.0, .heading = 180.0, .rssi_dbm = -41, .t = 800, .node_id = "wr3000s-a", .ssid = "Lightning Mesh" },
+    };
+    const cov = protocol.Coverage{
+        .nodes = &nodes,
+        .samples = &samples,
+        .render = .{ .paint = "magenta-tiles", .score = "hud" },
+    };
+
+    const bytes = try encodeCoverage(gpa, cov);
+    defer gpa.free(bytes);
+
+    const got = try decodeCoverage(arena, bytes);
+    try std.testing.expectEqual(@as(usize, 2), got.nodes.len);
+    try std.testing.expectEqualStrings("wr3000s-a", got.nodes[0].id);
+    try std.testing.expectEqualStrings("Front Porch", got.nodes[0].name);
+    try std.testing.expect(got.nodes[0].lat == null);
+    try std.testing.expectEqual(@as(f64, 37.75), got.nodes[1].lat.?);
+    try std.testing.expectEqual(@as(usize, 1), got.samples.len);
+    try std.testing.expectEqual(@as(i32, -41), got.samples[0].rssi_dbm.?);
+    try std.testing.expectEqualStrings("magenta-tiles", got.render.?.paint);
+    try std.testing.expectEqualStrings("hud", got.render.?.score.?);
+}
+
+test "decodeDreamBall round-trips coverage attribute" {
+    const gpa = std.testing.allocator;
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const nodes = [_]protocol.CoverageNode{
+        .{ .id = "tr3000", .name = "Workshop", .backhaul_addr = "10.254.61.115" },
+    };
+    const db = protocol.DreamBall{
+        .stage = .dreamball,
+        .identity = [_]u8{7} ** 32,
+        .genesis_hash = [_]u8{8} ** 32,
+        .revision = 1,
+        .name = "Lightning Mesh coverage",
+        .coverage = .{
+            .nodes = &nodes,
+            .render = .{ .paint = "magenta-tiles" },
+        },
+    };
+
+    const bytes = try encodeDreamBall(gpa, db);
+    defer gpa.free(bytes);
+    const decoded = try decodeDreamBall(arena, bytes);
+    try std.testing.expect(decoded.coverage != null);
+    try std.testing.expectEqual(@as(usize, 1), decoded.coverage.?.nodes.len);
+    try std.testing.expectEqualStrings("Workshop", decoded.coverage.?.nodes[0].name);
+    try std.testing.expectEqualStrings("magenta-tiles", decoded.coverage.?.render.?.paint);
+    try std.testing.expect(decoded.look == null);
+    try std.testing.expect(decoded.feel == null);
+    try std.testing.expect(decoded.act == null);
 }
 
 // ─── all four slots through decodeDreamBall ──────────────────────────────────

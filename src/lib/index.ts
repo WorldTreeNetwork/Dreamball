@@ -56,6 +56,7 @@ export {
 	FeelSchema,
 	ActSchema,
 	SkillSchema,
+	CoverageSchema,
 	MemorySchema,
 	KnowledgeGraphSchema,
 	EmotionalRegisterSchema,
@@ -82,6 +83,19 @@ export {
 	type TransmittableLocator,
 	type TransmittableError
 } from './transmittable.js';
+
+export {
+	loadCoverage,
+	loadCoverageFromBytes,
+	memoryCoverageSource,
+	addressKey,
+	isTransmittableAddress,
+	type CoverageAddress,
+	type CoverageBytesSource,
+	type CoverageLoadResult,
+	type CoverageLoadOk,
+	type CoverageLoadErr
+} from './coverage.js';
 
 export { MockBackend, mockBall } from './backend/MockBackend.js';
 export { HttpBackend } from './backend/HttpBackend.js';

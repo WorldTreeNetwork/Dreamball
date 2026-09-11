@@ -1,0 +1,22 @@
+{
+  "nodes": [
+    { "id": "wr3000s-a", "name": "Front Porch", "backhaul-addr": "10.254.242.84" },
+    { "id": "m3000-b", "name": "Kitchen", "backhaul-addr": "10.254.12.214" },
+    { "id": "tr3000", "name": "Workshop", "backhaul-addr": "10.254.61.115" },
+    { "id": "m3000", "name": "Hill", "backhaul-addr": "10.254.242.172" }
+  ],
+  "samples": [
+    { "x": 6, "z": 8, "heading": 180, "rssi-dbm": -41, "t": 800, "node-id": "wr3000s-a", "ssid": "Lightning Mesh" },
+    { "x": 6.4, "z": 7.4, "heading": 175, "rssi-dbm": -48, "t": 1400, "node-id": "wr3000s-a" },
+    { "x": 5.6, "z": 8.3, "heading": 190, "rssi-dbm": -52, "t": 2000, "node-id": "wr3000s-a" },
+    { "x": 8, "z": -4, "heading": 90, "rssi-dbm": -43, "t": 3200, "node-id": "m3000-b", "ssid": "Lightning Mesh" },
+    { "x": 7.6, "z": -3.5, "heading": 95, "rssi-dbm": -55, "t": 3800, "node-id": "m3000-b" },
+    { "x": 8.4, "z": -4.4, "heading": 85, "rssi-dbm": -61, "t": 4400, "node-id": "m3000-b" },
+    { "x": -6, "z": 2, "heading": 270, "rssi-dbm": -78, "t": 5200, "node-id": "tr3000" },
+    { "x": -16, "z": -10, "heading": 225, "rssi-dbm": -97, "t": 6400 }
+  ],
+  "render": {
+    "paint": "magenta-tiles",
+    "score": "hud"
+  }
+}

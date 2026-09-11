@@ -10,18 +10,12 @@
  *
  * Decode scope (current): the Zig parser typed-decodes the core,
  * signatures, `look`, `feel`, `act` (incl. nested `asset` / `skill`),
- * and `archiform-fp`, plus the scalar/list attributes (name, dates,
- * note, contains, derived-from, guilds). The remaining nested slots —
- * `memory`, `knowledge-graph`, `emotional-register`, `interaction-set`,
- * `guild-policy` — are NOT yet decoded: the decode walk skips unknown
- * assertions, so today they are dropped from the JSON rather than
- * surfaced (there is no raw-passthrough field). Finishing them is
- * tracked as Dreamball-m97 and is done by extending
- * `schemas/root-2.0.0.json` + regenerating (the JSON-Schema-canonical
- * pipeline, D-018/D-030), not by hand-writing decoders. Once a slot
- * lands and the WASM is rebuilt, the browser upgrades for free — the
- * `.wasm` bytes are the interface, and the generated `cbor.ts` decode
- * path regenerates from the same schema in lockstep.
+ * `coverage` (labeled assertion, not a look/feel/act axis),
+ * `archiform-fp`, plus the scalar/list attributes (name, dates,
+ * note, contains, derived-from, guilds), and the v2 slots that have
+ * landed (memory, knowledge-graph, emotional-register, interaction-set,
+ * guild-policy). Unknown assertions are skipped. TypeScript MUST NOT
+ * hand-decode CBOR — wasm verifyBall then parseBall is the path.
  */
 
 import type { DreamBall } from '../generated/types.js';
@@ -568,6 +562,15 @@ let modulePromise: Promise<WebAssembly.Module> | null = null;
 async function getModule(): Promise<WebAssembly.Module> {
 	if (!modulePromise) {
 		modulePromise = (async () => {
+			// Node / Vitest server: load the sibling .wasm from disk. Vite's
+			// `?url` import returns a site-relative path that `fetch` cannot
+			// open outside the browser.
+			if (typeof process !== 'undefined' && process.versions?.node) {
+				const { readFileSync } = await import('node:fs');
+				const { fileURLToPath } = await import('node:url');
+				const wasmPath = fileURLToPath(new URL('./dreamball.wasm', import.meta.url));
+				return WebAssembly.compile(readFileSync(wasmPath));
+			}
 			// Resolve the wasm URL via Vite's asset handling. `?url` makes
 			// Vite copy the file into the build output and return its
 			// resolved URL, which works in dev + production alike.

@@ -323,6 +323,47 @@ A single skill definition.
 ]
 ```
 
+### 4.8 `coverage` (labeled attribute, not an axis)
+
+Coverage is a **labeled Gordian assertion** on a `ball/1` node — a signed
+snapshot of mesh coverage plus a render recipe for a viewer data-input
+(web3d-space `/mesh`). It is **not** a fourth look/feel/act axis. It is
+**not** the D-035 closed `attributes` object on `ball.action` envelopes
+(`destructive` / `requiresConfirmation` / …). Those remain closed.
+
+The live last-known coordinate stays on the gossiped directory; the ball
+is an explicit export, not the live store. Decode is `dreamball.wasm`
+`verifyBall` then `parseBall` only. TypeScript does not hand-decode CBOR.
+
+```
+200(
+  201(
+    {
+      "type":           "ball.coverage",
+      "format-version": 1
+    }
+  )
+) [
+  "node":    { "id", "name", "backhaul-addr", "lat"?, "lon"? },   ; repeatable
+  "radio":   { "backhaul-addr", "mesh-mac"?, "channel"?, "freq-mhz"?, "stations"? },
+  "sample":  { "t", "x"?, "z"?, "lat"?, "lon"?, "heading"?, "rssi-dbm"?, "node-id"?, "ssid"? },
+  "render":  { "paint": "magenta-tiles", "score": "hud" }
+]
+```
+
+Attached on the DreamBall as `("coverage", <ball.coverage envelope>)`.
+
+| Field | Meaning |
+| --- | --- |
+| `node` | Mesh node: `id`, `name`, `backhaul-addr`. Optional WGS84 `lat`/`lon` — unmarked omits the keys, never `(0,0)`. |
+| `radio` | Optional RF snapshot joined by `backhaul-addr`. |
+| `sample` | Optional geolocated (or local-metre `x`/`z`) RSSI sample. |
+| `render` | Viewer recipe (e.g. paint magenta tiles, completeness score on the HUD). |
+
+lat/lon/x/z/heading are floats under the §12.2 spatial exception. Identity
+of the carrying DreamBall remains its Ed25519 fingerprint whether the
+bytes were addressed by fingerprint or by a transmittable `{bucket, filename}`.
+
 ---
 
 ## 5. Lifecycle: Seed → Ball → Dragon
