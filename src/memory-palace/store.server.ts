@@ -23,8 +23,9 @@
  * See cypher-utils.ts for the rationale; this file is the primary consumer.
  *
  * VECTOR extension: @ladybugdb/core 0.15.3 bundles the VECTOR extension but does NOT
- * auto-load it. open() calls INSTALL VECTOR + LOAD EXTENSION VECTOR before DDL,
- * then issues CREATE_VECTOR_INDEX guarded by SHOW_INDEXES(). (Discovered in S2.1 spike.)
+ * auto-load it. INSTALL/LOAD + CREATE_VECTOR_INDEX are lazy via
+ * ServerStore._ensureVectorReady() so palace open/mint is not blocked when the
+ * host extension is unloadable (Dreamball-7bc). (Discovered in S2.1 spike.)
  *
  * NFR18 replay: recordAction + mirrorAction (action-mirror.ts) are the dual-write path.
  */
@@ -140,8 +141,9 @@ async function runDDL(conn: InstanceType<typeof lbug.Connection>): Promise<void>
     await runQuery(conn, stmt);
   }
 
-  // AC4: Vector index — guarded by SHOW_INDEXES()
-  await ensureVectorIndex(conn);
+  // AC4: Vector index lives behind ServerStore._ensureVectorReady() so DDL
+  // doesn't fail closed when the host's bundled `vector` extension is
+  // unloadable. Callers that need the index (upsertEmbedding, kNN) take it.
 }
 
 async function ensureVectorIndex(conn: InstanceType<typeof lbug.Connection>): Promise<void> {
@@ -196,12 +198,37 @@ export class ServerStore implements StoreAPI {
     this.db = new lbug.Database(this.dbPath);
     this.conn = new lbug.Connection(this.db);
 
-    // VECTOR extension must be explicitly loaded (not auto-loaded in v0.15.3).
-    // Discovered during S2.1 spike — see Dev Agent Record.
-    await runQuery(this.conn, 'INSTALL VECTOR');
-    await runQuery(this.conn, 'LOAD EXTENSION VECTOR');
+    // Vector extension is loaded lazily by _ensureVectorReady() — opening
+    // a palace that never runs a vector op (e.g. mint with no inscriptions,
+    // schema reads, structural queries) doesn't pay the INSTALL/LOAD cost
+    // and isn't blocked by the upstream packaging mismatch where every
+    // published @ladybugdb/core ships a vector extension that fails LOAD
+    // with `undefined symbol: _ZTIN4lbug7catalog12IndexAuxInfoE`.
+    // Tracked as Dreamball-7bc.
 
     await runDDL(this.conn);
+  }
+
+  /** True once _ensureVectorReady has succeeded; never resets within a process. */
+  private _vectorReady: Promise<void> | null = null;
+
+  /**
+   * Lazily load the VECTOR extension + create the inscription_emb index.
+   * Idempotent: subsequent calls await the same promise.
+   *
+   * Vector-using methods (upsertEmbedding, kNN) call this on entry so the
+   * extension cost is only paid by callers that need vector ops. Callers
+   * that don't (mint, addRoom, basic Cypher) avoid the load entirely.
+   */
+  private _ensureVectorReady(): Promise<void> {
+    if (this._vectorReady) return this._vectorReady;
+    const conn = this._conn;
+    this._vectorReady = (async () => {
+      await runQuery(conn, 'INSTALL VECTOR');
+      await runQuery(conn, 'LOAD EXTENSION VECTOR');
+      await ensureVectorIndex(conn);
+    })();
+    return this._vectorReady;
   }
 
   async close(): Promise<void> {
@@ -210,6 +237,7 @@ export class ServerStore implements StoreAPI {
     await this.db!.close();
     this.conn = null;
     this.db = null;
+    this._vectorReady = null;
   }
 
   /** AC7: no-op on server — resolves within 1 ms */
@@ -548,6 +576,7 @@ export class ServerStore implements StoreAPI {
    */
   async upsertEmbedding(fp: string, vec: Float32Array): Promise<void> {
     this._gateWrite('upsertEmbedding');
+    await this._ensureVectorReady();
     const iFp = sanitizeFp(fp, 'fp');
     const rows = await this._q<{
       source_blake3: string;
@@ -712,6 +741,7 @@ export class ServerStore implements StoreAPI {
     k: number,
     _filter?: { palaceFp?: string; roomFp?: string }
   ): Promise<Array<{ fp: string; roomFp: string; distance: number }>> {
+    await this._ensureVectorReady();
     const kInt = sanitizeInt(k, 'k');
     const arr = `[${Array.from(vec).map((f) => sanitizeFloat(f, 'embedding')).join(',')}]`;
     const results = await this._q<{ fp: string; roomFp: string; distance: number }>(
