@@ -12,6 +12,8 @@ The general `DreamBallViewer` / `AvatarLens` path described below remains availa
 
 The frontend direction is a quiet, editorial character stage: one character,
 studio reflections, a soft painted contact shadow, and accessible playback controls.
+The viewer offers play/pause and Say hello; it has no timeline scrubber or time readout.
+Seeking remains available in the player API for future authoring tools.
 
 The animation path is:
 

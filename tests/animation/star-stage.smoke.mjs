@@ -20,8 +20,8 @@ try {
 	before = await frames();
 	await page.waitForTimeout(500);
 	assert.equal(await frames(), before, 'paused player must not redraw');
-	await page.getByRole('slider', { name: 'Animation time' }).fill('2');
-	assert.match(await page.locator('output').innerText(), /^2.0/);
+	assert.equal(await page.getByRole('slider').count(), 0, 'viewer has no timeline scrubber');
+	assert.equal(await page.locator('output').count(), 0, 'viewer has no time readout');
 	await page.getByRole('button', { name: 'Say hello to Star', exact: true }).click();
 	await page.waitForFunction(
 		() => document.querySelector('[data-reacting]')?.getAttribute('data-reacting') === 'true'
@@ -83,7 +83,7 @@ try {
 	);
 	assert.deepEqual(errors, []);
 	console.log(
-		`PASS: idle (${rendered} frames/1.1s), pause, scrub, reaction, hidden/offscreen suspension, mobile, reduced motion, invalid capsule.`
+		`PASS: idle (${rendered} frames/1.1s), pause, no timeline controls, reaction, hidden/offscreen suspension, mobile, reduced motion, invalid capsule.`
 	);
 } finally {
 	await browser.close();

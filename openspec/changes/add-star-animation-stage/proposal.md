@@ -2,7 +2,7 @@
 
 > **ACTIVE BUILD** — browser first, idle float and click reaction explicitly selected by the user.
 
-Star needs an inexpensive animated browser stage. The demo loads the existing signed capsule and GLB, then presents a float loop and a touch-triggered bounce/spin with pause and seek controls. A renderer-independent local document defines curves; a scoped player handles touch and reaction lifecycle events; a small Three.js adapter draws the pose.
+Star needs an inexpensive animated browser stage. The demo loads the existing signed capsule and GLB, then presents a float loop and a touch-triggered bounce/spin with play/pause and Say hello controls. The viewer has no timeline scrubber or time readout; seeking remains in the player API. A renderer-independent local document defines curves; a scoped player handles touch and reaction lifecycle events; a small Three.js adapter draws the pose.
 
 Capability: `character-animation`. Tracking: `Dreamball-juv`.
 

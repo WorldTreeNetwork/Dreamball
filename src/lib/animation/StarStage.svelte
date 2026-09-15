@@ -67,19 +67,6 @@
 		aria-label={playback.playing ? 'Pause animation' : 'Play animation'}
 		>{playback.playing ? 'Pause' : 'Play'}</button
 	>
-	<label
-		><span class="sr-only">Animation time</span><input
-			aria-label="Animation time"
-			type="range"
-			min="0"
-			max="4"
-			step="0.01"
-			value={playback.time}
-			disabled={!playback.ready || !!error}
-			oninput={(event) => controller?.seek(event.currentTarget.valueAsNumber)}
-		/></label
-	>
-	<output>{playback.time.toFixed(1)} / 4.0 s</output>
 	<button class="hello" onclick={touch} disabled={!playback.ready || playback.reacting || !!error}
 		>Say hello ↗</button
 	>
@@ -157,19 +144,6 @@
 		border-color: #dcedaa;
 		margin-left: auto;
 	}
-	.transport label {
-		flex: 1;
-		min-width: 80px;
-	}
-	input {
-		width: 100%;
-		height: 44px;
-		accent-color: #bace92;
-	}
-	output {
-		font-variant-numeric: tabular-nums;
-		font-size: 0.8rem;
-	}
 	button:disabled {
 		opacity: 0.5;
 		cursor: default;
@@ -177,13 +151,6 @@
 	.note {
 		font-size: 0.85rem;
 		opacity: 0.8;
-	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
 	}
 	@media (prefers-color-scheme: dark) {
 		.stage {
