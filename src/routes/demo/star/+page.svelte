@@ -1,157 +1,106 @@
-<!--
-  Demo — Star Tamagotchi, the first character DreamBall.
-
-  The honest end-to-end path the rest of the character system builds on:
-
-    fetch /characters/star-tamagotchi.ball   (a signed ball/1 capsule)
-      → verifyBall(bytes)    (Ed25519 + ML-DSA, via dreamball.wasm)
-      → parseBall(bytes)     (wasm decodes the CBOR envelope → typed ball)
-      → <DreamBallViewer ball lens="avatar" />
-          → AvatarLens reads ball.look.asset → loads the glTF → renders it
-
-  Nothing here knows it's a "star" — it knows it's a DreamBall whose look
-  slot points at a glTF mesh. Every future character (and the editor that
-  authors them) rides this exact path; today Star is just a textured glTF
-  inside a signed ball, tomorrow she carries personality / act / memory
-  slots and an AI persona, and the same viewer renders the richer ball.
--->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { DreamBallViewer, parseBall, verifyBall, type DreamBall } from '$lib/index.js';
-
-	const BALL_URL = '/characters/star-tamagotchi.ball';
-
+	import { parseBall, verifyBall } from '$lib/wasm/loader.js';
+	import type { DreamBall } from '$lib/generated/types.js';
+	import StarStage from '$lib/animation/StarStage.svelte';
 	let ball: DreamBall | null = $state(null);
-	let status = $state('Fetching capsule…');
-	let verify = $state('');
-	let error: string | null = $state(null);
-
-	onMount(async () => {
-		try {
-			const resp = await fetch(BALL_URL);
-			if (!resp.ok) throw new Error(`fetch ${BALL_URL} → ${resp.status}`);
-			const bytes = new Uint8Array(await resp.arrayBuffer());
-
-			status = 'Verifying signatures (wasm)…';
-			const v = await verifyBall(bytes);
-			verify = v.ok ? (v.hadEd25519 ? '✓ signature verified' : '✓ parsed (unsigned)') : `✗ verify failed: ${v.reason ?? v.code}`;
-
-			status = 'Decoding capsule (wasm)…';
-			ball = (await parseBall(bytes)) as unknown as DreamBall;
-			status = 'Rendering…';
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-		}
+	let modelUrl = $state('');
+	let error = $state('');
+	onMount(() => {
+		const abort = new AbortController();
+		(async () => {
+			const response = await fetch('/characters/star-tamagotchi.ball', { signal: abort.signal });
+			if (!response.ok) throw new Error(`Capsule fetch failed (${response.status})`);
+			const bytes = new Uint8Array(await response.arrayBuffer());
+			const verification = await verifyBall(bytes);
+			if (!verification.ok || !verification.hadEd25519)
+				throw new Error('Star’s capsule signature could not be verified.');
+			const parsed = (await parseBall(bytes)) as unknown as DreamBall;
+			const mesh = parsed.look?.asset?.find((asset) => asset['media-type'] === 'model/gltf-binary');
+			if (!mesh?.url?.[0]) throw new Error('Star’s capsule has no GLB asset.');
+			if (!abort.signal.aborted) {
+				modelUrl = mesh.url[0];
+				ball = parsed;
+			}
+		})().catch((e: unknown) => {
+			if (!abort.signal.aborted) error = e instanceof Error ? e.message : String(e);
+		});
+		return () => abort.abort();
 	});
 </script>
 
+<svelte:head
+	><title>Star — a little company · Dreamball</title><meta
+		name="description"
+		content="A tiny stage for Star. Float, pause, and say hello."
+	/></svelte:head
+>
 <section>
-	<h1>★ Star Tamagotchi — first character DreamBall</h1>
-	<p>
-		A glTF character wrapped in a signed <code>ball/1</code> capsule. The
-		<code>dreamball.wasm</code> module verifies and decodes the ball in the
-		browser; <code>AvatarLens</code> reads <code>look.asset</code> and loads
-		the mesh. Same path for every character to come.
-	</p>
-
-	<div class="meta">
-		{#if error}
-			<span class="pill bad">error</span> <span class="mono">{error}</span>
-		{:else if ball}
-			<span class="pill ok">{verify}</span>
-			<span class="kv"><b>name</b> {ball.name ?? '(unnamed)'}</span>
-			<span class="kv"><b>stage</b> {ball.stage ?? '—'}</span>
-			<span class="kv mono"><b>identity</b> {(ball.identity ?? '').slice(0, 22)}…</span>
-		{:else}
-			<span class="pill">{status}</span>
-		{/if}
-	</div>
-
-	<div class="stage">
-		{#if ball}
-			<DreamBallViewer {ball} lens="avatar" />
-		{:else if !error}
-			<p class="hint">{status}</p>
-		{/if}
-	</div>
-
-	<h2>Why it matters</h2>
-	<ul>
-		<li>
-			The capsule is the source of truth: identity, signatures, and a
-			<code>look.asset</code> pointer to the glTF — verified by the same
-			wasm in browser, server, and CLI.
-		</li>
-		<li>
-			<code>AvatarLens</code> auto-fits any character mesh (Blender, Meshy,
-			…) into the lens frame, so every character renders consistently.
-		</li>
-		<li>
-			This is the seed of "all characters as DreamBalls" + a DreamBall
-			editor — add <code>act</code> / <code>memory</code> / persona slots and
-			the same viewer renders the richer ball.
-		</li>
-	</ul>
+	<header>
+		<div>
+			<p class="eyebrow">DREAMBALL / CHARACTER STUDY</p>
+			<h1>A little company.</h1>
+		</div>
+		<p class="intro">Meet Star.<br />A small presence with a little joy to share.</p>
+	</header>
+	{#if error}<p role="alert">{error}</p>
+	{:else if ball}<StarStage url={modelUrl} />
+	{:else}<div class="loading" role="status">Opening Star’s Dreamball…</div>{/if}
+	<footer>
+		<span>Star / 001</span><span>{ball ? 'Signed character capsule' : 'Dreamball'}</span>
+	</footer>
 </section>
 
 <style>
 	section {
-		max-width: 52rem;
-		margin: 0 auto;
+		max-width: 850px;
+		margin: 2rem auto;
+		color: #e1e9df;
 	}
-	.meta {
+	header {
 		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-bottom: 1.75rem;
+	}
+	.eyebrow {
+		font-size: 0.65rem;
+		letter-spacing: 0.17em;
+		color: #bace92;
+	}
+	h1 {
+		font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+		font-weight: 400;
+		font-size: clamp(2.8rem, 7vw, 4.7rem);
+		letter-spacing: -0.055em;
+		margin: 0.5rem 0;
+		line-height: 1.05;
+	}
+	.intro {
+		color: #a8b7b1;
+		line-height: 1.6;
+		font-size: 1rem;
+	}
+	footer {
+		display: flex;
+		justify-content: space-between;
 		gap: 1rem;
-		align-items: center;
-		flex-wrap: wrap;
-		font-family: system-ui, sans-serif;
-		font-size: 0.85rem;
-		margin: 0.5rem 0 1rem;
+		padding-top: 1.5rem;
+		margin-top: 1.5rem;
+		border-top: 1px solid #34443e;
+		font-size: 0.75rem;
+		color: #a8b7b1;
 	}
-	.kv b {
-		color: #e0b7ff;
-		font-weight: 600;
+	.loading {
+		min-height: 360px;
+		display: grid;
+		place-items: center;
 	}
-	.mono {
-		font-family: ui-monospace, Menlo, monospace;
-	}
-	.pill {
-		display: inline-block;
-		padding: 0.1rem 0.55rem;
-		border-radius: 999px;
-		background: #1a2240;
-		color: #aab;
-	}
-	.pill.ok {
-		background: #14331f;
-		color: #a6e3a1;
-	}
-	.pill.bad {
-		background: #3a1420;
-		color: #f38ba8;
-	}
-	.hint {
-		opacity: 0.6;
-		font-size: 0.85rem;
-	}
-	.stage {
-		margin: 1rem 0;
-		max-width: 480px;
-		background: #0a0e20;
-		padding: 1rem;
-		border-radius: 1rem;
-	}
-	h2 {
-		margin-top: 2rem;
-		color: #e0b7ff;
-	}
-	code {
-		background: #1a2240;
-		padding: 0.1rem 0.35rem;
-		border-radius: 0.25rem;
-		font-family: ui-monospace, Menlo, monospace;
-	}
-	ul {
-		line-height: 1.5;
+	@media (min-width: 700px) {
+		header {
+			flex-direction: row;
+			align-items: flex-end;
+			justify-content: space-between;
+		}
 	}
 </style>

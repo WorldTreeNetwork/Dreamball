@@ -1,8 +1,50 @@
 # Character DreamBalls — rendering a glTF inside a ball
 
-**Phase:** first character DreamBall (Star Tamagotchi)
+**Phase:** character capsule + first browser animation stage (Star Tamagotchi)
 **Code:** `src/lib/lenses/AvatarLens.svelte` + `AvatarModel.svelte`,
 `src/routes/demo/star/+page.svelte`, fixtures in `static/characters/`
+
+## Animated Star stage (2026-09-14)
+
+`/demo/star` now uses `src/lib/animation/StarStage.svelte`. It verifies the
+existing signed capsule, reads its GLB URL, and mounts a small Three.js player.
+The general `DreamBallViewer` / `AvatarLens` path described below remains available.
+
+The frontend direction is a quiet, editorial character stage: one character,
+studio reflections, a soft painted contact shadow, and accessible playback controls.
+
+The animation path is:
+
+```text
+local StageDocument → scoped StagePlayer → sampled pose → Three.js adapter
+                           ↑
+                    star.touch event
+```
+
+`star-stage.ts` contains plain-data linear, smooth and step curves. A four-second
+idle loop floats and tilts Star; touch starts a 1.8-second bounce, stretch and spin.
+Only one reaction runs at a time. The player emits started/finished/cancelled
+events; seek cancels a reaction without replaying events. Playhead seconds are
+distinct from `ball.timeline` causal history and the capsule's lifecycle `Stage`.
+
+The adapter caps continuous rendering at 30 fps, device pixel ratio at 1.5 and
+the largest canvas dimension at 1200 physical pixels. It stops recurring work
+when paused, hidden or offscreen, freezes the clock during suspension, and frees
+GPU resources on unmount. Reduced motion defaults to a still pose and text response.
+This is a workload ceiling, not a hardware performance guarantee. No full-screen
+bloom or dynamic shadow maps are used in this stage.
+
+Run `bun run dev -- --host 127.0.0.1 --port 5178`, then open `/demo/star`.
+Checks: `bun run test:unit -- --run src/lib/animation/star-stage.test.ts` and,
+with Vite running, `node tests/animation/star-stage.smoke.mjs`.
+
+**Packaging boundary:** the signed capsule currently supplies the character asset;
+the animation document is local application data. It is JSON-serializable but has
+not been assigned a canonical Dreamball wire type or embedded into the capsule.
+No arbitrary embedded scripts execute. Next work is a versioned stage/curve asset
+contract with validation and embedded-asset loading, followed by a bounded WASM
+event host. Scoped named events provide a starting point for process composition;
+name passing, channel capabilities and full pi-calculus semantics are not implemented.
 
 ---
 
@@ -94,7 +136,7 @@ glTF is the stand-in. Do not hunt for a missing pokeball `.blend`.
 The repo GLB is already optimized (~1 MB / 18k tris, webp textures).
 `SHELL_MESH_URL` in `src/lib/lenses/shell-mesh.ts` is the shell-lens constant;
 AvatarLens still reads `look.asset`. Both paths share the bytes and the
-auto-fit contract. `/demo/star` (`lens="avatar"`) is unchanged.
+auto-fit contract. The animated `/demo/star` stage consumes the same asset separately.
 
 A clean clone with no `.blend` files loads the shell from
 `static/characters/star-tamagotchi.glb` without Blender.

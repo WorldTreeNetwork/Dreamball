@@ -21,6 +21,7 @@
 <style>
 	nav {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 1rem;
 		padding: 1rem 2rem;
 		background: #0a0e20;
