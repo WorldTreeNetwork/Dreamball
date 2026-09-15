@@ -205,6 +205,53 @@ export const SecretRefSchema = v.object({
   description: v.optional(v.string())
 });
 
+export const CoverageNodeSchema = v.object({
+  id: v.string(),
+  name: v.string(),
+  'backhaul-addr': v.string(),
+  lat: v.optional(v.number()),
+  lon: v.optional(v.number())
+});
+
+export const CoverageRadioStationSchema = v.object({
+  mac: v.string(),
+  'signal-dbm': v.number(),
+  'expected-throughput-mbps': v.optional(v.number())
+});
+
+export const CoverageRadioSchema = v.object({
+  'backhaul-addr': v.string(),
+  'mesh-mac': v.optional(v.string()),
+  channel: v.optional(v.number()),
+  'freq-mhz': v.optional(v.number()),
+  stations: v.optional(v.array(CoverageRadioStationSchema))
+});
+
+export const CoverageSampleSchema = v.object({
+  t: v.number(),
+  x: v.optional(v.number()),
+  z: v.optional(v.number()),
+  lat: v.optional(v.number()),
+  lon: v.optional(v.number()),
+  heading: v.optional(v.number()),
+  'rssi-dbm': v.optional(v.number()),
+  'node-id': v.optional(v.string()),
+  ssid: v.optional(v.string())
+});
+
+export const CoverageRenderSchema = v.object({
+  paint: v.string(),
+  score: v.optional(v.string()),
+  note: v.optional(v.string())
+});
+
+export const CoverageSchema = v.object({
+  nodes: v.array(CoverageNodeSchema),
+  radio: v.optional(v.array(CoverageRadioSchema)),
+  samples: v.optional(v.array(CoverageSampleSchema)),
+  render: v.optional(CoverageRenderSchema)
+});
+
 // ========================================================================
 // DreamBall — common core fields, then per-type variants
 // ========================================================================
@@ -223,6 +270,8 @@ const commonCore = {
   'derived-from': v.optional(v.array(Base58Schema)),
   guild: v.optional(v.array(Base58Schema)),
   signatures: v.optional(v.array(SignatureSchema)),
+  // Labeled coverage assertion — not a look/feel/act axis, not D-035 action attrs.
+  coverage: v.optional(CoverageSchema),
   // FR5 / Story 2.3 — optional genesis archiform binding (D-017).
   // Sprint-001 envelopes lack the field; the publish-boundary parse
   // helper in src/lib/parse.ts substitutes the implicit Memory Palace

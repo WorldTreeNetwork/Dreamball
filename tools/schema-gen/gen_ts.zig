@@ -334,6 +334,54 @@ const BODY =
     \\  description?: string;
     \\}
     \\
+    \\// Coverage is a labeled assertion on ball/1, not a look/feel/act axis.
+    \\export interface CoverageNode {
+    \\  id: string;
+    \\  name: string;
+    \\  'backhaul-addr': string;
+    \\  lat?: number;
+    \\  lon?: number;
+    \\}
+    \\
+    \\export interface CoverageRadioStation {
+    \\  mac: string;
+    \\  'signal-dbm': number;
+    \\  'expected-throughput-mbps'?: number;
+    \\}
+    \\
+    \\export interface CoverageRadio {
+    \\  'backhaul-addr': string;
+    \\  'mesh-mac'?: string;
+    \\  channel?: number;
+    \\  'freq-mhz'?: number;
+    \\  stations?: CoverageRadioStation[];
+    \\}
+    \\
+    \\export interface CoverageSample {
+    \\  t: number;
+    \\  x?: number;
+    \\  z?: number;
+    \\  lat?: number;
+    \\  lon?: number;
+    \\  heading?: number;
+    \\  'rssi-dbm'?: number;
+    \\  'node-id'?: string;
+    \\  ssid?: string;
+    \\}
+    \\
+    \\export interface CoverageRender {
+    \\  paint: string;
+    \\  score?: string;
+    \\  note?: string;
+    \\}
+    \\
+    \\export interface Coverage {
+    \\  nodes: CoverageNode[];
+    \\  radio?: CoverageRadio[];
+    \\  samples?: CoverageSample[];
+    \\  render?: CoverageRender;
+    \\}
+    \\
     \\// ===== The top-level DreamBall =====
     \\
     \\export interface DreamBall {
@@ -350,6 +398,7 @@ const BODY =
     \\  look?: Look;
     \\  feel?: Feel;
     \\  act?: Act;
+    \\  coverage?: Coverage;
     \\  memory?: Memory;
     \\  'knowledge-graph'?: KnowledgeGraph;
     \\  'emotional-register'?: EmotionalRegister;

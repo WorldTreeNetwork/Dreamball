@@ -94,6 +94,22 @@ pub const PairList = struct {
         try self.addOwned(key, bytes);
     }
 
+    pub fn addInt(self: *PairList, key: []const u8, v: i64) !void {
+        var ai = std.Io.Writer.Allocating.init(self.allocator);
+        errdefer ai.deinit();
+        try zbor.builder.writeInt(&ai.writer, v);
+        const bytes = try ai.toOwnedSlice();
+        try self.addOwned(key, bytes);
+    }
+
+    pub fn addFloat(self: *PairList, key: []const u8, v: f64) !void {
+        var ai = std.Io.Writer.Allocating.init(self.allocator);
+        errdefer ai.deinit();
+        try zbor.builder.writeFloat(&ai.writer, v);
+        const bytes = try ai.toOwnedSlice();
+        try self.addOwned(key, bytes);
+    }
+
     pub fn addBytes(self: *PairList, key: []const u8, b: []const u8) !void {
         var ai = std.Io.Writer.Allocating.init(self.allocator);
         errdefer ai.deinit();

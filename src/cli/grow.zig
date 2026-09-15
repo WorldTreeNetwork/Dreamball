@@ -18,6 +18,7 @@ const SPECS = [_]args_mod.Spec{
     .{ .long = "set-model" },
     .{ .long = "set-system-prompt" },
     .{ .long = "set-look" },
+    .{ .long = "set-coverage" },
     .{ .long = "revision-bump", .takes_value = false },
     .{ .long = "help", .takes_value = false },
 };
@@ -26,7 +27,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     var parsed = try args_mod.parse(gpa, argv, &SPECS);
     defer parsed.deinit();
 
-    if (parsed.flag(10) or parsed.positional.items.len == 0) {
+    if (parsed.flag(11) or parsed.positional.items.len == 0) {
         try io.writeAllStdout(
             \\dreamball grow <in.ball> --key <keyfile> [flags]
             \\  --out <path>             write updated file here (default: in-place)
@@ -37,6 +38,7 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
             \\  --set-model <str>
             \\  --set-system-prompt <str>
             \\  --set-look <look.json>   attach a ball.look scene slot (assets/url/background)
+            \\  --set-coverage <coverage.json>  attach a coverage snapshot (not look/feel/act)
             \\  --revision-bump          increment revision by 1
             \\
         );
@@ -105,7 +107,16 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
         };
     }
 
-    if (parsed.flag(9)) db.revision += 1;
+    if (parsed.get(9)) |cov_path| {
+        const cov_json = try helpers.readFile(gpa, cov_path);
+        defer gpa.free(cov_json);
+        db.coverage = dreamball.json.readCoverage(arena.allocator(), cov_json) catch {
+            try io.writeAllStderr("error: --set-coverage: invalid coverage JSON\n");
+            return 2;
+        };
+    }
+
+    if (parsed.flag(10)) db.revision += 1;
     db.updated = io.unixSeconds();
     if (db.stage == .seed) db.stage = .dreamball;
 

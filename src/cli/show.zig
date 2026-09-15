@@ -144,8 +144,11 @@ pub fn run(gpa: Allocator, argv: [][:0]const u8) !u8 {
     // Detect identity envelope: CBOR tag 200 = 0xd8 0xc8
     if (bytes.len >= 2 and bytes[0] == 0xd8 and bytes[1] == 0xc8) {
         var identity = identity_envelope.decode(gpa, bytes) catch |err| switch (err) {
-            error.WrongEnvelopeType => {
-                // Not a recrypt.identity — fall through to DreamBall path
+            error.WrongEnvelopeType, error.UnsupportedItem => {
+                // Not a recrypt.identity — fall through to DreamBall path.
+                // UnsupportedItem is the float-bearing coverage/memory path:
+                // identity envelopes never carry floats, so this is a
+                // DreamBall with the §12.2 spatial exception.
                 return showDreamBall(gpa, path, bytes, format);
             },
             else => return err,

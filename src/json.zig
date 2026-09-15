@@ -156,6 +156,12 @@ pub fn writeDreamBall(allocator: Allocator, db: protocol.DreamBall) ![]u8 {
         try writeGuildPolicy(&buf, p);
     }
 
+    if (db.coverage) |c| {
+        try buf.writeByte(',');
+        try writeKey(&buf, "coverage");
+        try writeCoverage(&buf, c);
+    }
+
     if (db.guilds.len > 0) {
         try buf.writeByte(',');
         try writeKey(&buf, "guild");
@@ -674,6 +680,149 @@ fn writeGuildPolicy(buf: *Buf, p: protocol.GuildPolicy) !void {
     try buf.writeByte('}');
 }
 
+fn writeOptionalNumber(buf: *Buf, key: []const u8, v: ?f64) !void {
+    if (v) |n| {
+        try buf.writeByte(',');
+        try writeKey(buf, key);
+        try buf.print("{d}", .{n});
+    }
+}
+
+fn writeCoverageNode(buf: *Buf, n: protocol.CoverageNode) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "id");
+    try writeEscapedString(buf, n.id);
+    try buf.writeByte(',');
+    try writeKey(buf, "name");
+    try writeEscapedString(buf, n.name);
+    try buf.writeByte(',');
+    try writeKey(buf, "backhaul-addr");
+    try writeEscapedString(buf, n.backhaul_addr);
+    try writeOptionalNumber(buf, "lat", n.lat);
+    try writeOptionalNumber(buf, "lon", n.lon);
+    try buf.writeByte('}');
+}
+
+fn writeCoverageRadio(buf: *Buf, r: protocol.CoverageRadio) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "backhaul-addr");
+    try writeEscapedString(buf, r.backhaul_addr);
+    if (r.mesh_mac) |mac| {
+        try buf.writeByte(',');
+        try writeKey(buf, "mesh-mac");
+        try writeEscapedString(buf, mac);
+    }
+    if (r.channel) |ch| {
+        try buf.writeByte(',');
+        try writeKey(buf, "channel");
+        try buf.print("{d}", .{ch});
+    }
+    if (r.freq_mhz) |f| {
+        try buf.writeByte(',');
+        try writeKey(buf, "freq-mhz");
+        try buf.print("{d}", .{f});
+    }
+    if (r.stations.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(buf, "stations");
+        try buf.writeByte('[');
+        for (r.stations, 0..) |st, i| {
+            if (i > 0) try buf.writeByte(',');
+            try buf.writeByte('{');
+            try writeKey(buf, "mac");
+            try writeEscapedString(buf, st.mac);
+            try buf.writeByte(',');
+            try writeKey(buf, "signal-dbm");
+            try buf.print("{d}", .{st.signal_dbm});
+            if (st.expected_throughput_mbps) |mbps| {
+                try buf.writeByte(',');
+                try writeKey(buf, "expected-throughput-mbps");
+                try buf.print("{d}", .{mbps});
+            }
+            try buf.writeByte('}');
+        }
+        try buf.writeByte(']');
+    }
+    try buf.writeByte('}');
+}
+
+fn writeCoverageSample(buf: *Buf, s: protocol.CoverageSample) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "t");
+    try buf.print("{d}", .{s.t});
+    try writeOptionalNumber(buf, "x", s.x);
+    try writeOptionalNumber(buf, "z", s.z);
+    try writeOptionalNumber(buf, "lat", s.lat);
+    try writeOptionalNumber(buf, "lon", s.lon);
+    try writeOptionalNumber(buf, "heading", s.heading);
+    if (s.rssi_dbm) |rssi| {
+        try buf.writeByte(',');
+        try writeKey(buf, "rssi-dbm");
+        try buf.print("{d}", .{rssi});
+    }
+    if (s.node_id) |id| {
+        try buf.writeByte(',');
+        try writeKey(buf, "node-id");
+        try writeEscapedString(buf, id);
+    }
+    if (s.ssid) |ssid| {
+        try buf.writeByte(',');
+        try writeKey(buf, "ssid");
+        try writeEscapedString(buf, ssid);
+    }
+    try buf.writeByte('}');
+}
+
+fn writeCoverage(buf: *Buf, c: protocol.Coverage) !void {
+    try buf.writeByte('{');
+    try writeKey(buf, "nodes");
+    try buf.writeByte('[');
+    for (c.nodes, 0..) |n, i| {
+        if (i > 0) try buf.writeByte(',');
+        try writeCoverageNode(buf, n);
+    }
+    try buf.writeByte(']');
+    if (c.radio.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(buf, "radio");
+        try buf.writeByte('[');
+        for (c.radio, 0..) |r, i| {
+            if (i > 0) try buf.writeByte(',');
+            try writeCoverageRadio(buf, r);
+        }
+        try buf.writeByte(']');
+    }
+    if (c.samples.len > 0) {
+        try buf.writeByte(',');
+        try writeKey(buf, "samples");
+        try buf.writeByte('[');
+        for (c.samples, 0..) |s, i| {
+            if (i > 0) try buf.writeByte(',');
+            try writeCoverageSample(buf, s);
+        }
+        try buf.writeByte(']');
+    }
+    if (c.render) |r| {
+        try buf.writeByte(',');
+        try writeKey(buf, "render");
+        try buf.writeByte('{');
+        try writeKey(buf, "paint");
+        try writeEscapedString(buf, r.paint);
+        if (r.score) |sc| {
+            try buf.writeByte(',');
+            try writeKey(buf, "score");
+            try writeEscapedString(buf, sc);
+        }
+        if (r.note) |n| {
+            try buf.writeByte(',');
+            try writeKey(buf, "note");
+            try writeEscapedString(buf, n);
+        }
+        try buf.writeByte('}');
+    }
+    try buf.writeByte('}');
+}
+
 fn writeStringArray(buf: *Buf, items: []const []const u8) !void {
     try buf.writeByte('[');
     for (items, 0..) |s, i| {
@@ -730,6 +879,20 @@ pub fn readLook(arena: Allocator, json_text: []const u8) ImportError!protocol.Lo
     return lookFromValue(arena, parsed);
 }
 
+/// Parse a standalone coverage JSON document into a Coverage. Used by
+/// `grow --set-coverage`. Accepts either a typed `{type:"ball.coverage",...}`
+/// object or a bare `{nodes, radio?, samples?, render?}` document.
+pub fn readCoverage(arena: Allocator, json_text: []const u8) ImportError!protocol.Coverage {
+    const parsed = std.json.parseFromSliceLeaky(
+        std.json.Value,
+        arena,
+        json_text,
+        .{},
+    ) catch return ImportError.InvalidJson;
+
+    return coverageFromValue(arena, parsed);
+}
+
 fn dreamBallFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.DreamBall {
     const obj = switch (v) {
         .object => |o| o,
@@ -773,6 +936,7 @@ fn dreamBallFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.
     if (obj.get("look")) |l| db.look = try lookFromValue(arena, l);
     if (obj.get("feel")) |f| db.feel = try feelFromValue(arena, f);
     if (obj.get("act")) |a| db.act = try actFromValue(arena, a);
+    if (obj.get("coverage")) |c| db.coverage = try coverageFromValue(arena, c);
 
     if (obj.get("contains")) |c| {
         const arr = switch (c) {
@@ -838,6 +1002,151 @@ fn getString(v: std.json.Value) ImportError![]const u8 {
         .string => |s| s,
         else => ImportError.WrongType,
     };
+}
+
+fn getNumberF64(v: std.json.Value) ImportError!f64 {
+    return switch (v) {
+        .integer => |i| @floatFromInt(i),
+        .float => |f| f,
+        else => ImportError.WrongType,
+    };
+}
+
+fn getNumberI64(v: std.json.Value) ImportError!i64 {
+    return switch (v) {
+        .integer => |i| i,
+        .float => |f| @intFromFloat(@round(f)),
+        else => ImportError.WrongType,
+    };
+}
+
+fn getNumberU64(v: std.json.Value) ImportError!u64 {
+    return switch (v) {
+        .integer => |i| @intCast(i),
+        .float => |f| @intFromFloat(@round(f)),
+        else => ImportError.WrongType,
+    };
+}
+
+fn asObject(v: std.json.Value) ImportError!std.json.ObjectMap {
+    return switch (v) {
+        .object => |o| o,
+        else => ImportError.InvalidJson,
+    };
+}
+
+fn asArray(v: std.json.Value) ImportError!std.json.Array {
+    return switch (v) {
+        .array => |a| a,
+        else => ImportError.InvalidJson,
+    };
+}
+
+fn coverageNodeFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.CoverageNode {
+    const obj = try asObject(v);
+    const id = try dupeString(arena, try getString(obj.get("id") orelse return ImportError.MissingField));
+    const name = try dupeString(arena, try getString(obj.get("name") orelse return ImportError.MissingField));
+    const backhaul = try dupeString(arena, try getString(obj.get("backhaul-addr") orelse return ImportError.MissingField));
+    var lat: ?f64 = null;
+    var lon: ?f64 = null;
+    if (obj.get("lat")) |x| lat = try getNumberF64(x);
+    if (obj.get("lon")) |x| lon = try getNumberF64(x);
+    return .{ .id = id, .name = name, .backhaul_addr = backhaul, .lat = lat, .lon = lon };
+}
+
+fn coverageStationFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.CoverageRadioStation {
+    const obj = try asObject(v);
+    const mac = try dupeString(arena, try getString(obj.get("mac") orelse return ImportError.MissingField));
+    const signal = try getNumberI64(obj.get("signal-dbm") orelse return ImportError.MissingField);
+    var mbps: ?u32 = null;
+    if (obj.get("expected-throughput-mbps")) |x| mbps = @intCast(try getNumberU64(x));
+    return .{ .mac = mac, .signal_dbm = @intCast(signal), .expected_throughput_mbps = mbps };
+}
+
+fn coverageRadioFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.CoverageRadio {
+    const obj = try asObject(v);
+    const backhaul = try dupeString(arena, try getString(obj.get("backhaul-addr") orelse return ImportError.MissingField));
+    var mesh_mac: ?[]const u8 = null;
+    if (obj.get("mesh-mac")) |x| mesh_mac = try dupeString(arena, try getString(x));
+    var channel: ?u32 = null;
+    if (obj.get("channel")) |x| channel = @intCast(try getNumberU64(x));
+    var freq_mhz: ?u32 = null;
+    if (obj.get("freq-mhz")) |x| freq_mhz = @intCast(try getNumberU64(x));
+    var stations: []const protocol.CoverageRadioStation = &.{};
+    if (obj.get("stations")) |st| {
+        const arr = try asArray(st);
+        const list = try arena.alloc(protocol.CoverageRadioStation, arr.items.len);
+        for (arr.items, 0..) |item, i| list[i] = try coverageStationFromValue(arena, item);
+        stations = list;
+    }
+    return .{
+        .backhaul_addr = backhaul,
+        .mesh_mac = mesh_mac,
+        .channel = channel,
+        .freq_mhz = freq_mhz,
+        .stations = stations,
+    };
+}
+
+fn coverageSampleFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.CoverageSample {
+    const obj = try asObject(v);
+    var sample = protocol.CoverageSample{
+        .t = try getNumberU64(obj.get("t") orelse return ImportError.MissingField),
+    };
+    if (obj.get("x")) |x| sample.x = try getNumberF64(x);
+    if (obj.get("z")) |x| sample.z = try getNumberF64(x);
+    if (obj.get("lat")) |x| sample.lat = try getNumberF64(x);
+    if (obj.get("lon")) |x| sample.lon = try getNumberF64(x);
+    if (obj.get("heading")) |x| sample.heading = try getNumberF64(x);
+    if (obj.get("rssi-dbm")) |x| sample.rssi_dbm = @intCast(try getNumberI64(x));
+    if (obj.get("node-id")) |x| sample.node_id = try dupeString(arena, try getString(x));
+    if (obj.get("ssid")) |x| sample.ssid = try dupeString(arena, try getString(x));
+    return sample;
+}
+
+fn coverageFromValue(arena: Allocator, v: std.json.Value) ImportError!protocol.Coverage {
+    const obj = try asObject(v);
+    if (obj.get("type")) |t| {
+        const s = try getString(t);
+        if (!std.mem.eql(u8, s, "ball.coverage")) return ImportError.WrongType;
+    }
+
+    var nodes: []const protocol.CoverageNode = &.{};
+    if (obj.get("nodes")) |n| {
+        const arr = try asArray(n);
+        const list = try arena.alloc(protocol.CoverageNode, arr.items.len);
+        for (arr.items, 0..) |item, i| list[i] = try coverageNodeFromValue(arena, item);
+        nodes = list;
+    }
+
+    var radio: []const protocol.CoverageRadio = &.{};
+    if (obj.get("radio")) |r| {
+        const arr = try asArray(r);
+        const list = try arena.alloc(protocol.CoverageRadio, arr.items.len);
+        for (arr.items, 0..) |item, i| list[i] = try coverageRadioFromValue(arena, item);
+        radio = list;
+    }
+
+    var samples: []const protocol.CoverageSample = &.{};
+    if (obj.get("samples")) |s| {
+        const arr = try asArray(s);
+        const list = try arena.alloc(protocol.CoverageSample, arr.items.len);
+        for (arr.items, 0..) |item, i| list[i] = try coverageSampleFromValue(arena, item);
+        samples = list;
+    }
+
+    var render: ?protocol.CoverageRender = null;
+    if (obj.get("render")) |r| {
+        const robj = try asObject(r);
+        const paint = try dupeString(arena, try getString(robj.get("paint") orelse return ImportError.MissingField));
+        var score: ?[]const u8 = null;
+        var note: ?[]const u8 = null;
+        if (robj.get("score")) |x| score = try dupeString(arena, try getString(x));
+        if (robj.get("note")) |x| note = try dupeString(arena, try getString(x));
+        render = .{ .paint = paint, .score = score, .note = note };
+    }
+
+    return .{ .nodes = nodes, .radio = radio, .samples = samples, .render = render };
 }
 
 fn decodeB58Field(arena: Allocator, obj: std.json.ObjectMap, key: []const u8) ImportError![]const u8 {
@@ -1176,4 +1485,27 @@ test "JSON export populated" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"revision\":5") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"created\":\"2024-04-08T00:00:00Z\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"alg\":\"ed25519\"") != null);
+}
+
+test "JSON export coverage attribute" {
+    const allocator = std.testing.allocator;
+    const nodes = [_]protocol.CoverageNode{
+        .{ .id = "wr3000s-a", .name = "Front Porch", .backhaul_addr = "10.254.242.84" },
+    };
+    const db = protocol.DreamBall{
+        .stage = .dreamball,
+        .identity = [_]u8{1} ** 32,
+        .genesis_hash = [_]u8{2} ** 32,
+        .revision = 1,
+        .coverage = .{
+            .nodes = &nodes,
+            .render = .{ .paint = "magenta-tiles", .score = "hud" },
+        },
+    };
+    const json = try writeDreamBall(allocator, db);
+    defer allocator.free(json);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"coverage\":{") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"id\":\"wr3000s-a\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"paint\":\"magenta-tiles\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"score\":\"hud\"") != null);
 }

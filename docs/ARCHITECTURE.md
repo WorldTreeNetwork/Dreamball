@@ -170,6 +170,21 @@ The viewer-shell mesh (Star Tamagotchi glTF at
 locator. Path, capsule, AvatarModel auto-fit, and Blender provenance:
 [`character-dreamball-rendering.md`](character-dreamball-rendering.md).
 
+### 3.2 Coverage labeled attribute (not a fourth axis)
+
+A DreamBall may carry **coverage** as a labeled Gordian assertion on a
+`ball/1` envelope (nodes, last-known coords, radio snapshots or samples,
+render recipe). It is **not** a fourth look/feel/act axis and **not**
+the D-035 closed action-attribute object. Wire:
+[`PROTOCOL.md` §4.8](PROTOCOL.md). Living spec:
+[`openspec/specs/dreamball-coverage/spec.md`](../openspec/specs/dreamball-coverage/spec.md).
+
+Decode is `dreamball.wasm` `verifyBall` then `parseBall` only.
+TypeScript does not hand-decode CBOR. A `/mesh` consumer loads by
+fingerprint or transmittable `{bucket, filename}`; identity remains the
+Ed25519 fingerprint. Helper: `src/lib/coverage.ts`. Fixture:
+`static/coverage/lightning-fleet.ball`.
+
 ---
 
 ## 4. The three crypto tiers
